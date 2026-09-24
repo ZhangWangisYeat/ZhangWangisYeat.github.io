@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alex Zhang</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+  <!-- the fixed background layers, bottom to top -->
+  <div class="bg-photo" aria-hidden="true"></div>
+  <div class="bg-scroll" aria-hidden="true"></div>
+  <div class="bg-flood" aria-hidden="true"></div>
+
+  <nav id="navbar" data-theme="light">
+    <a href="#hero" class="nav-logo" aria-label="Home">
+      <img src="assets/logo-a.png" alt="" class="nav-logo-mark">
+    </a>
+    <ul class="nav-links">
+      <li><a href="#projects" class="nav-link">Work</a></li>
+      <li><a href="#about" class="nav-link">About</a></li>
+      <li><a href="#contact" class="nav-link">Contact</a></li>
+    </ul>
+  </nav>
+
+  <section id="hero" class="hero" data-bg="#ffffff">
+    <div class="hero-inner">
+      <h1 class="hero-headline">
+        Building<br/>
+        systems people<br/>
+        actually use.
+      </h1>
+      <div class="hero-foot">
+        <span class="hero-tag">CS @ UCLA</span>
+        <span class="hero-dot">·</span>
+        <span class="hero-tag">SWE @ MSISI</span>
+      </div>
+    </div>
+    <div class="scroll-cue"><span></span></div>
+  </section>
+
+  <section id="projects" class="dark projects" data-bg="#0d0d0d">
+    <div class="projects-head" data-reveal>
+      <span class="eyebrow">Selected Work</span>
+      <h2 class="section-heading">Projects</h2>
+    </div>
+    <div class="tiles">
+
+      <a class="tile" href="https://github.com/ZhangWangisYeat/MailSISI" target="_blank" data-color="#DC143C" data-reveal>
+        <!-- <div class="tile-bg" style="background-image: url('assets/bruinpop.png')"></div> -->
+        <div class="tile-bg"></div>
+        <div class="tile-content">
+          <span class="tile-name">MailSISI</span>
+          <span class="tile-meta">Full-Stack · 2026</span>
+        </div>
+        <div class="tile-hover">
+          <p class="tile-desc">Desktop tool that replaced thousands of manual Excel downloads a month at MSISI. Watches a mailbox, pulls attachments from whitelisted distributors, and auto-files them by distributor and manufacturer. Email threading and SHA-256 hashing allow for the saving of superceded versions.</p>
+          <div class="tile-tags"><span>Python</span><span>Tkinter</span><span>IMAP</span><span>SQLite</span><span>SHA-256</span></div>
+        </div>
+      </a>
+      <a class="tile" href="https://github.com/ZhangWangisYeat/MailSISIbox" target="_blank" data-color="#2774AE" data-reveal>
+        <!-- <div class="tile-bg" style="background-image: url('assets/bruinpop.png')"></div> -->
+        <div class="tile-bg"></div>
+        <div class="tile-content">
+          <span class="tile-name">MailSISIBox</span>
+          <span class="tile-meta">Full-Stack · 2026</span>
+        </div>
+        <div class="tile-hover">
+          <p class="tile-desc">Desktop tool utilizing PowerShell directly for transferring files between two remote desktop connections. Transfers are chunked and SHA-256 verified end to end, attempting to use the fastest TCP socket available. This allows for fast, reliable transfers of large files (up to 100GB efficiently).</p>
+          <div class="tile-tags"><span>PowerShell</span><span>.NET</span><span>TCP Sockets</span><span>Clipboard IPC</span><span>SHA-256</span><span>Azure AVD</span></div>
+        </div>
+      </a>
+
+      <a class="tile" href="https://github.com/libozaza/bruinpop" target="_blank" data-color="#2774AE" data-reveal>
+        <!-- <div class="tile-bg" style="background-image: url('assets/bruinpop.png')"></div> -->
+        <div class="tile-bg"></div>
+        <div class="tile-content">
+          <span class="tile-name">BruinPop</span>
+          <span class="tile-meta">Full-Stack · 2026</span>
+        </div>
+        <div class="tile-hover">
+          <p class="tile-desc">Full-stack social platform mapping pop-ups around UCLA. Interactive Leaflet map, JWT auth, 100+ campus users.</p>
+          <div class="tile-tags"><span>React</span><span>Next.js</span><span>Tailwind</span><span>Leaflet</span></div>
+        </div>
+      </a>
+
+      <a class="tile" href="https://github.com/codeArjya/DesperateMeasures" target="_blank" data-color="#3a1d6e" data-reveal>
+        <div class="tile-bg"></div>
+        <div class="tile-content">
+          <span class="tile-name">Desperate Measures</span>
+          <span class="tile-meta">Game Dev · 2025</span>
+        </div>
+        <div class="tile-hover">
+          <p class="tile-desc">2D co-op sandbox inspired by Terraria and Minecraft. Infinite multiverses from a single seed. 50+ alpha testers, beta Sept 2026.</p>
+          <div class="tile-tags"><span>Unity</span><span>C#</span><span>Lua</span><span>Procedural</span></div>
+        </div>
+      </a>
+
+      <a class="tile" href="https://github.com/uclaacm/teach-la-website" target="_blank" data-color="#4cbb17" data-reveal>
+        <!-- <div class="tile-bg" style="background-image: url('assets/teachLA.png')"></div> -->
+    <div class="tile-bg"></div>
+        <div class="tile-content">
+          <span class="tile-name">ACM TeachLA</span>
+          <span class="tile-meta">Web · 2025</span>
+        </div>
+        <div class="tile-hover">
+          <p class="tile-desc">Login backend on Netlify, blog + events pages with static category filtering. Transitioning to fully dynamic.</p>
+          <div class="tile-tags"><span>HTML5</span><span>CSS3</span><span>Netlify</span></div>
+        </div>
+      </a>
+
+    </div>
+  </section>
+
+  <section id="about" class="about-cover" data-bg="#ffffff">
+    <div class="about-cover-text" data-reveal>
+      <h2 class="about-headline">
+        Let's get<br/>
+        it<br/>
+        DONE.
+      </h2>
+    </div>
+    <div class="about-cover-photo" data-reveal>
+      <img src="assets/profile.jpg" alt="Alex Zhang" onerror="this.parentElement.style.display='none';" />
+    </div>
+  </section>
+
+  <section id="about-detail" class="dark about-body" data-bg="#100d12">
+    <div class="skills-watermark" aria-hidden="true" data-text="ABOUT">ABOUT</div>
+    <div class="skills-grid">
+
+      <div class="skill-col" data-reveal>
+        <h3 class="skill-heading">Who am I?</h3>
+        <p class="skill-blurb">CSE student at UCLA building full-stack systems, games, and AI tooling to ship things people actually use.</p>
+        <ul class="skill-list">
+          <li>CS @ UCLA · Exp. 2029</li>
+          <li>SWE Intern @ MSISI</li>
+          <li>School Lead, ACM TeachLA</li>
+          <li>Unity Studio Dev</li>
+        </ul>
+        <a href="resume.html" target="_blank" class="resume-link" style="margin-top: 28px; display: inline-block;">View Résumé →</a>
+      </div>
+
+      <div class="skill-col" data-reveal>
+        <h3 class="skill-heading">Experience</h3>
+        <p class="skill-blurb">Training Delphi AI agentic models to instantaneously match records, revolutionizing the field.</p>
+        <ul class="skill-list">
+          <li>MSISI — Kai AI training and UOM standardization · 2026</li>
+          <li>MSISI — ACFM facility matching · 2025</li>
+          <li>ACM TeachLA School Lead · 2026</li>
+        </ul>
+      </div>
+
+      <div class="skill-col" data-reveal>
+        <h3 class="skill-heading">Education</h3>
+        <p class="skill-blurb">UCLA Samueli Engineering school career built on curiosity and passion.</p>
+        <ul class="skill-list">
+          <li>UCLA · B.S. CSE · 2029</li>
+          <li>Glastonbury HS · Summa Cum Laude · GPA 4.80 · 2025</li>
+          
+        </ul>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="skills" class="dark skills" data-bg="#0a0e13">
+    <div class="skills-watermark" aria-hidden="true" data-text="SKILLS">SKILLS</div>
+    <div class="skills-grid">
+
+      <div class="skill-col" data-reveal>
+        <h3 class="skill-heading">Languages</h3>
+        <p class="skill-blurb">The core toolkit managing systems, scripting, and data work.</p>
+        <ul class="skill-list">
+          <li>Python</li><li>PowerShell</li><li>JavaScript</li><li>Java</li><li>C++</li>
+          <li>PHP</li><li>Delphi</li><li>Lua</li><li>R</li><li>SQL</li>
+        </ul>
+      </div>
+
+      <div class="skill-col" data-reveal>
+        <h3 class="skill-heading">Frameworks</h3>
+        <p class="skill-blurb">Building products and training models that hold up in production.</p>
+        <ul class="skill-list">
+          <li>React</li><li>Next.js</li><li>PyTorch</li><li>TensorFlow</li>
+          <li>RLlib</li><li>MongoDB</li><li>Tailwind</li>
+          <li>Tkinter</li><li>WinForms / .NET</li><li>PyInstaller</li>
+        </ul>
+      </div>
+
+      <div class="skill-col" data-reveal>
+        <h3 class="skill-heading">Tools &amp; CS</h3>
+        <p class="skill-blurb">Where the work actually ships — and the fundamentals behind it.</p>
+        <ul class="skill-list">
+          <li>Git</li><li>MySQL</li><li>SQLite</li><li>Unity</li><li>Azure</li>
+          <li>Claude Code</li><li>Kai Studio</li><li>Data Structures</li><li>Distributed Systems</li>
+          <li>TCP Sockets</li><li>IMAP</li><li>SHA-256 Integrity</li>
+          <li>Fuzzy Matching</li>
+        </ul>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="contact" class="dark contact" data-bg="#0b0b0c">
+    <div class="contact-inner" data-reveal>
+      <span class="eyebrow">Get in touch</span>
+      <h2 class="contact-headline">Let's build<br/>something.</h2>
+      <form class="contact-form" id="contact-form" novalidate>
+        <div class="cf-row">
+          <div class="cf-field">
+            <input type="text" id="cf-name" name="name" placeholder=" " autocomplete="name" maxlength="80" required />
+            <label for="cf-name">Your name</label>
+            <span class="cf-line"></span>
+          </div>
+          <div class="cf-field">
+            <input type="email" id="cf-email" name="email" placeholder=" " autocomplete="email" maxlength="120" required />
+            <label for="cf-email">Your email</label>
+            <span class="cf-line"></span>
+          </div>
+        </div>
+
+        <div class="cf-field cf-field-msg">
+          <textarea id="cf-message" name="message" rows="2" placeholder=" " maxlength="1200" required></textarea>
+          <label for="cf-message">Your message</label>
+          <span class="cf-line"></span>
+          <span class="cf-count"><span id="cf-count-n">0</span> / 1200</span>
+        </div>
+
+        <!-- hidden from people, so only bots ever fill it in -->
+        <input type="text" name="_honey" class="cf-honey" tabindex="-1" autocomplete="off" aria-hidden="true" />
+
+        <div class="cf-actions">
+          <button type="submit" class="cf-send">
+            <span class="cf-send-label">Send message</span>
+            <span class="cf-send-arrow" aria-hidden="true">&#8594;</span>
+          </button>
+          <p class="cf-status" id="cf-status" role="status" aria-live="polite"></p>
+        </div>
+      </form>
+
+      <a href="mailto:zalex9111@gmail.com" class="contact-email-alt">Or email me directly &mdash; zalex9111@gmail.com</a>
+      <div class="contact-socials">
+        <a href="https://www.linkedin.com/in/alex-zhang-23b386329/" target="_blank">LinkedIn</a>
+        <a href="https://github.com/ZhangWangisYeat" target="_blank">GitHub</a>
+        <a href="resume.html" target="_blank">Résumé</a>
+      </div>
+    </div>
+    <div class="footer-line">
+      <span>Alex Zhang</span>
+      <a href="#hero" class="back-top">Back to top ↑</a>
+    </div>
+  </section>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

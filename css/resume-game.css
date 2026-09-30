@@ -324,6 +324,17 @@ body.journal-closed .j-toggle-icon { transform: scaleX(-1); }
   box-shadow: inset 0 0 0 var(--n) var(--accent);
   transform: translateX(-4px);
 }
+.entry.is-locked { background: repeating-linear-gradient(135deg, var(--panel-2) 0 6px, #17181d 6px 12px); }
+.entry.is-locked .entry-title { font-family: var(--px); font-size: 0.9rem; letter-spacing: 0.1em; color: var(--muted); }
+.entry.is-locked .entry-sub { color: var(--faint); }
+.redacted { display: grid; gap: 6px; margin-top: 12px; }
+.redacted i { display: block; height: 8px; background: #2a2c34; }
+.entry.just-found { animation: unlock 0.6s steps(4); }
+@keyframes unlock {
+  0%   { background: #fff; box-shadow: inset 0 0 0 var(--n) #fff; }
+  100% { background: var(--panel-2); }
+}
+
 .entry-head {
   display: flex;
   justify-content: space-between;

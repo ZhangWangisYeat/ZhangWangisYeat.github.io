@@ -904,15 +904,32 @@ function renderTabs() {
 
 function foundCount() { return `${found.size} / ${POIS.length}`; }
 
-function blockHTML(block) {
-  const head = block.heading ? `<h3 class="j-sec-title">${esc(block.heading)}</h3>` : '';
-  const blurb = block.blurb ? `<p class="j-sec-blurb">${esc(block.blurb)}</p>` : '';
-  const goto = gotoHTML;
-  const foundCls = poi => (poi && found.has(poi.id) ? ' is-found' : '');
+// the journal only shows what you've actually found. until then a landmark's
+// card is a locked "? ? ?" placeholder with blacked-out bars roughly the shape
+// of the real text, plus the walk-here button, since walking there is how you
+// unlock it. camp is known from the start so contact info is never hidden.
+const known = poi => !poi || poi.id === 'camp' || found.has(poi.id);
+const poiById = Object.fromEntries(POIS.map(p => [p.id, p]));
 
-  if (block.type === 'entries') {
-    return `<section class="j-section">${head}${blurb}${block.items.map(it => `
-      <article class="entry px${foundCls(it.poi)}" ${it.poi ? `data-poi="${it.poi.id}"` : ''}>
+function lockedCard(poi, skill) {
+  const where = regionById[poiById[poi.id].region].biome;
+  const bars = [0, 1, 2].map(i => `<i style="width:${Math.round(55 + hash2(i, poi.id.length, poi.id.charCodeAt(0)) * 40)}%"></i>`).join('');
+  return `
+      <article class="entry is-locked px${skill ? ' skill-group' : ''}" data-poi="${poi.id}">
+        <div class="entry-head">
+          <h4 class="entry-title">? ? ?</h4>
+          <span class="entry-date">???</span>
+        </div>
+        <p class="entry-sub">Undiscovered. Somewhere in ${esc(where)}.</p>
+        <div class="redacted" aria-hidden="true">${bars}</div>
+        <div class="entry-foot"><span></span>${gotoHTML(poi)}</div>
+      </article>`;
+}
+
+function entryCard(it) {
+  if (!known(it.poi)) return lockedCard(it.poi, false);
+  return `
+      <article class="entry px${it.poi ? ' is-found' : ''}" ${it.poi ? `data-poi="${it.poi.id}"` : ''}>
         <div class="entry-head">
           <h4 class="entry-title">${esc(it.title)}${it.flag ? `<span class="entry-flag">${esc(it.flag)}</span>` : ''}</h4>
           <span class="entry-date">${esc(it.date)}</span>
@@ -921,21 +938,45 @@ function blockHTML(block) {
         ${it.desc ? `<p class="entry-desc">${esc(it.desc)}</p>` : ''}
         <div class="entry-foot">
           <ul class="loot">${(it.loot || []).map(l => `<li>${esc(l)}</li>`).join('')}</ul>
-          ${goto(it.poi)}
+          ${gotoHTML(it.poi)}
         </div>
-      </article>`).join('')}</section>`;
-  }
+      </article>`;
+}
 
-  if (block.type === 'skills') {
-    return `<section class="j-section">${head}${block.groups.map(gr => `
-      <article class="entry skill-group px${foundCls(gr.poi)}" data-poi="${gr.poi.id}">
+function skillCard(gr) {
+  if (!known(gr.poi)) return lockedCard(gr.poi, true);
+  return `
+      <article class="entry skill-group px is-found" data-poi="${gr.poi.id}">
         <div class="entry-head">
           <h4 class="entry-title">${esc(gr.title)}</h4>
           <span class="entry-date">${gr.items.length} items</span>
         </div>
         <ul class="loot">${gr.items.map(s => `<li>${esc(s)}</li>`).join('')}</ul>
-        <div class="entry-foot"><span></span>${goto(gr.poi)}</div>
-      </article>`).join('')}</section>`;
+        <div class="entry-foot"><span></span>${gotoHTML(gr.poi)}</div>
+      </article>`;
+}
+
+// looks up the content item behind a landmark so its card can be re-rendered
+function cardFor(id) {
+  for (const r of REGIONS) for (const b of r.blocks) {
+    const it = (b.items || []).find(i => i.poi && i.poi.id === id);
+    if (it) return entryCard(it);
+    const gr = (b.groups || []).find(g => g.poi.id === id);
+    if (gr) return skillCard(gr);
+  }
+  return '';
+}
+
+function blockHTML(block) {
+  const head = block.heading ? `<h3 class="j-sec-title">${esc(block.heading)}</h3>` : '';
+  const blurb = block.blurb ? `<p class="j-sec-blurb">${esc(block.blurb)}</p>` : '';
+
+  if (block.type === 'entries') {
+    return `<section class="j-section">${head}${blurb}${block.items.map(entryCard).join('')}</section>`;
+  }
+
+  if (block.type === 'skills') {
+    return `<section class="j-section">${head}${block.groups.map(skillCard).join('')}</section>`;
   }
 
   if (block.type === 'profile') {
@@ -1133,10 +1174,15 @@ function discover(poi) {
   paintMinimap();
   updateFoundUI();
   const el = journalBody.querySelector(`[data-poi="${poi.id}"]`);
-  if (el) {
+  if (el && el.classList.contains('is-locked')) {
+    el.outerHTML = cardFor(poi.id);
+    const fresh = journalBody.querySelector(`[data-poi="${poi.id}"]`);
+    if (fresh) {
+      fresh.classList.add('just-found');
+      if (poi === nearPoi) fresh.classList.add('is-near');
+    }
+  } else if (el) {
     el.classList.add('is-found');
-    const btn = el.querySelector('.goto');
-    if (btn) btn.outerHTML = gotoHTML(poi);
   }
   if (found.size === POIS.length) toast('World explored', 'All landmarks found', 'Thanks for playing. Now let\'s talk.');
   else toast(`Landmark ${foundCount()}`, poi.label, regionById[poi.region].label);
@@ -1183,7 +1229,7 @@ function canTravel(poi) { return poi.id === 'camp' || found.has(poi.id); }
 
 function travelTo(poi) {
   if (!canTravel(poi)) {
-    toast('Uncharted', poi.label, 'Find it on foot first, then you can travel back');
+    toast('Uncharted', '? ? ?', `Somewhere in ${regionById[poi.region].biome}. Find it on foot first.`);
     sfx.deny();
     return;
   }
@@ -1470,7 +1516,7 @@ function drawLabels(toX, toY, t) {
     const x = toX(o.x), topY = toY(o.y - o.frames[0].height - 3);
     if (x < -200 || x > canvas.width + 200 || topY < -60 || topY > canvas.height + 60) continue;
     const near = p === nearPoi, got = found.has(p.id);
-    const text = p.label.toUpperCase();
+    const text = known(p) ? p.label.toUpperCase() : '? ? ?';
     const tw = ctx.measureText(text).width;
     const pad = Math.round(fs * 0.5), bh = Math.round(fs * 1.6);
     const bx = Math.round(x - tw / 2 - pad), by = Math.round(topY - bh);

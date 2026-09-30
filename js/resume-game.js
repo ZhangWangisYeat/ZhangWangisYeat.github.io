@@ -745,14 +745,6 @@ function paintWorld() {
     }
   }
 
-  // camp gets a ring of trampled dirt so it reads as a place
-  for (let y = CAMP.y - 7; y <= CAMP.y + 7; y++) for (let x = CAMP.x - 8; x <= CAMP.x + 8; x++) {
-    const d = Math.hypot(x - CAMP.x, (y - CAMP.y) * 1.15);
-    if (d > 4.5 + hash2(x, y, 3) * 1.4) continue;
-    g.fillStyle = 'rgba(96,62,32,0.22)';
-    g.fillRect(x * TILE, y * TILE, TILE, TILE);
-  }
-
   miniCanvas = $('#minimap');
   miniCanvas.width = W;
   miniCanvas.height = H;
@@ -1119,6 +1111,9 @@ function warpTo(tx, ty) {
     player.y = best[1] * TILE + 12;
     player.path = null;
     Object.assign(cam, clampCam(camTarget()));
+    // the fade hides the jump, so snap the ambience (dark, snow) too
+    const here = regionAt(player.x / TILE, player.y / TILE);
+    for (const k in amb) amb[k] = k === here ? 1 : 0;
   };
   sfx.warp();
   if (reduceMotion) { land(); return; }
@@ -1323,7 +1318,7 @@ function render(t) {
     const gx = toX(gl.x), gy = toY(gl.y);
     const rad = gl.rad * TILE * S * (gl.flicker ? 0.94 + Math.sin(t / 90 + gl.x) * 0.04 + Math.random() * 0.03 : 1);
     if (gx < -rad || gy < -rad || gx > cw + rad || gy > ch + rad) continue;
-    const strength = gl.always ? 0.3 : gl.mine ? 0.1 + 0.4 * dark : 0.12;
+    const strength = gl.always ? 0.16 + 0.3 * dark : gl.mine ? 0.1 + 0.4 * dark : 0.1;
     const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, rad);
     g.addColorStop(0, `rgba(${gl.rgb},${strength})`);
     g.addColorStop(1, `rgba(${gl.rgb},0)`);
@@ -1362,7 +1357,7 @@ function drawPlayer(toX, toY, t) {
   }
   const tileUnder = tiles[idx(clamp(Math.floor(player.x / TILE), 0, W - 1), clamp(Math.floor((player.y - 1) / TILE), 0, H - 1))];
   const wading = tileUnder === T.WATER && player.swing < 0;
-  // wading: sink him a few pixels and cut the legs off at the waterline
+  // wading: sink the sprite a few pixels and cut the legs off at the waterline
   const sink = wading ? 3 : 0;
   const srcH = wading ? CELL - 8 : CELL;
   const dx = toX(player.x - 24), dy = toY(player.y - 42 + sink);
@@ -1382,11 +1377,11 @@ function drawPlayer(toX, toY, t) {
   }
 }
 
-let labelFont = '';
 function drawLabels(toX, toY, t) {
-  const fs = Math.max(11, Math.round(S * 4.2));
-  if (!labelFont) labelFont = `${fs}px Silkscreen, monospace`;
-  ctx.font = labelFont;
+  // silkscreen is drawn on an 8px grid, so keep it on multiples of 8 or the
+  // letters smear (a C starts looking like an O)
+  const fs = Math.max(16, 8 * Math.round((S * 5.3) / 8));
+  ctx.font = `${fs}px Silkscreen, monospace`;
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
   const bob = reduceMotion ? 0 : Math.floor(t / 400) % 2;
@@ -1415,7 +1410,7 @@ function drawLabels(toX, toY, t) {
 }
 
 // the title screen's character: standing on a little floating chunk of the
-// meadow, idling and swinging his sword every few seconds
+// meadow, idling and swinging the sword every few seconds
 const hero = $('#hero');
 const heroCtx = hero.getContext('2d');
 const HERO_W = 80, HERO_H = 76;

@@ -691,6 +691,11 @@ body.is-title .toast { opacity: 0; pointer-events: none; }
   line-height: 2.2;
 }
 .title-hero { display: grid; place-items: center; }
+.on-touch { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .on-keys { display: none; }
+  .on-touch { display: inline; }
+}
 #hero { display: block; image-rendering: pixelated; }
 
 .noscript-note {

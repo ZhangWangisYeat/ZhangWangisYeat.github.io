@@ -1,11 +1,6 @@
 # an old source photo that nothing uses
 assets/profiletest.png
 
-# the game version of the resume isn't published yet
-resume-game.html
-css/resume-game.css
-js/resume-game.js
-
 # windows and mac junk
 Thumbs.db
 desktop.ini

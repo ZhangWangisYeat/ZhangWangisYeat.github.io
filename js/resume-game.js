@@ -759,10 +759,12 @@ function paintMinimap() {
     g.fillRect(x, y, 1, 1);
   }
   POIS.forEach(p => {
+    const [x, y] = p.at;
+    const big = canTravel(p);
     g.fillStyle = '#000';
-    g.fillRect(p.at[0] - 1, p.at[1] - 1, 3, 3);
-    g.fillStyle = found.has(p.id) ? regionById[p.region].accent : '#ffffff';
-    g.fillRect(p.at[0], p.at[1], 1, 1);
+    g.fillRect(x - (big ? 2 : 1), y - (big ? 2 : 1), big ? 5 : 3, big ? 5 : 3);
+    g.fillStyle = big ? regionById[p.region].accent : '#ffffff';
+    g.fillRect(x - (big ? 1 : 0), y - (big ? 1 : 0), big ? 3 : 1, big ? 3 : 1);
   });
 }
 
@@ -777,7 +779,8 @@ const SPEED = 92;       // world px per second, about 5.75 tiles
 const player = {
   x: SPAWN.x * TILE + 8, y: SPAWN.y * TILE + 12,
   face: 'down', flip: false, moving: false,
-  anim: 0, swing: -1, path: null, dustT: 0
+  anim: 0, swing: -1, path: null, dustT: 0,
+  heading: Math.PI / 2      // last walking direction in radians, starts facing down
 };
 
 function blocked(x, y) {
@@ -823,10 +826,14 @@ const MOVE_KEYS = {
 };
 
 let audio;
+function getAudio() {
+  audio = audio || new (window.AudioContext || window['webkitAudioContext'])();
+  return audio;
+}
 function tone(freq, duration = 0.06, type = 'square', peak = 0.035, delay = 0) {
   if (!soundOn) return;
   try {
-    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    getAudio();
     const t0 = audio.currentTime + delay;
     const osc = audio.createOscillator();
     const gain = audio.createGain();
@@ -842,7 +849,7 @@ function tone(freq, duration = 0.06, type = 'square', peak = 0.035, delay = 0) {
 function whoosh() {
   if (!soundOn) return;
   try {
-    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    getAudio();
     const len = audio.sampleRate * 0.14;
     const buf = audio.createBuffer(1, len, audio.sampleRate);
     const data = buf.getChannelData(0);
@@ -863,6 +870,7 @@ const sfx = {
   ui:     () => tone(620, 0.05),
   region: () => { tone(523, 0.08, 'triangle', 0.05); tone(784, 0.14, 'triangle', 0.05, 0.08); },
   found:  () => { tone(660, 0.07); tone(880, 0.07, 'square', 0.035, 0.07); tone(1320, 0.12, 'square', 0.035, 0.14); },
+  deny:   () => tone(170, 0.14, 'square', 0.03),
   warp:   () => { tone(900, 0.1, 'sawtooth', 0.02); tone(450, 0.14, 'sawtooth', 0.02, 0.08); },
   swing:  whoosh
 };
@@ -887,7 +895,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 
 function renderTabs() {
   regionNav.innerHTML = REGIONS.map((r, i) => `
-    <button type="button" class="region-tab" data-warp="${r.id}" style="--accent:${r.accent}" aria-label="${esc(r.biome)}: ${esc(r.label)}">
+    <button type="button" class="region-tab" data-view="${r.id}" style="--accent:${r.accent}" aria-label="${esc(r.biome)}: ${esc(r.label)}">
       <span class="rt-swatch" style="background-image:url(${SWATCH[r.id]})"></span>
       <span class="rt-key" aria-hidden="true">${i + 1}</span>
       <span class="rt-name">${esc(r.biome.replace(/^The /, ''))}<span class="rt-sec">${esc(r.label)}</span></span>
@@ -899,7 +907,7 @@ function foundCount() { return `${found.size} / ${POIS.length}`; }
 function blockHTML(block) {
   const head = block.heading ? `<h3 class="j-sec-title">${esc(block.heading)}</h3>` : '';
   const blurb = block.blurb ? `<p class="j-sec-blurb">${esc(block.blurb)}</p>` : '';
-  const goto = poi => poi ? `<button type="button" class="goto" data-goto="${poi.id}">▸ Walk here</button>` : '';
+  const goto = gotoHTML;
   const foundCls = poi => (poi && found.has(poi.id) ? ' is-found' : '');
 
   if (block.type === 'entries') {
@@ -956,15 +964,22 @@ function blockHTML(block) {
 
   if (block.type === 'guide') {
     return `<section class="j-section">${head}<div class="guide">${REGIONS.filter(r => r.id !== 'camp').map(r => `
-      <button type="button" class="guide-row px" data-warp="${r.id}" style="--row-accent:${r.accent}">
+      <button type="button" class="guide-row px" data-view="${r.id}" style="--row-accent:${r.accent}">
         <span class="guide-swatch" style="background-image:url(${SWATCH[r.id]})"></span>
         <span class="guide-name">${esc(r.biome)}<span class="guide-sec">${esc(r.label)}</span></span>
-        <span class="guide-go">Travel ▸</span>
+        <span class="guide-go">Read ▸</span>
       </button>`).join('')}</div></section>`;
   }
 
   // note
   return `<section class="j-section">${head}<p class="game-note">${block.html}</p></section>`;
+}
+
+function gotoHTML(poi) {
+  if (!poi) return '';
+  return canTravel(poi)
+    ? `<button type="button" class="goto" data-travel="${poi.id}">▸ Travel here</button>`
+    : `<button type="button" class="goto" data-goto="${poi.id}">▸ Walk here</button>`;
 }
 
 let journalRegion = null;
@@ -981,7 +996,7 @@ function renderJournal(id) {
     </header>
     <div class="j-body">${R.blocks.map(blockHTML).join('')}</div>`;
   journalBody.scrollTop = 0;
-  regionNav.querySelectorAll('.region-tab').forEach(b => b.classList.toggle('is-active', b.dataset.warp === id));
+  regionNav.querySelectorAll('.region-tab').forEach(b => b.classList.toggle('is-active', b.dataset.view === id));
   if (nearPoi) markNear(nearPoi, true);
 }
 
@@ -1083,7 +1098,11 @@ function discover(poi) {
   paintMinimap();
   updateFoundUI();
   const el = journalBody.querySelector(`[data-poi="${poi.id}"]`);
-  if (el) el.classList.add('is-found');
+  if (el) {
+    el.classList.add('is-found');
+    const btn = el.querySelector('.goto');
+    if (btn) btn.outerHTML = gotoHTML(poi);
+  }
   if (found.size === POIS.length) toast('World explored', 'All landmarks found', 'Thanks for playing. Now let\'s talk.');
   else toast(`Landmark ${foundCount()}`, poi.label, regionById[poi.region].label);
   sfx.found();
@@ -1122,6 +1141,30 @@ function warpTo(tx, ty) {
   setTimeout(() => { land(); w.classList.remove('is-on'); }, 170);
 }
 
+// fast travel only goes to landmarks you've already reached on foot, and it
+// drops you right in front of that landmark instead of on whatever tile you
+// clicked. camp counts as found from the start because that's where you spawn.
+function canTravel(poi) { return poi.id === 'camp' || found.has(poi.id); }
+
+function travelTo(poi) {
+  if (!canTravel(poi)) {
+    toast('Uncharted', poi.label, 'Find it on foot first, then you can travel back');
+    sfx.deny();
+    return;
+  }
+  if (poi.id === 'camp') warpTo(SPAWN.x, SPAWN.y);
+  else warpTo(poi.at[0], poi.at[1] + 2);
+}
+
+function viewRegion(id) {
+  openJournal();
+  if (id === journalRegion) return;
+  renderJournal(id);
+  sfx.ui();
+}
+
+// only used by deep links (#mines etc), which are for sharing a region
+// directly, so they skip the explore-first rule
 function warpToRegion(id) {
   if (id === 'camp') { warpTo(SPAWN.x, SPAWN.y); return; }
   const first = POIS.find(p => p.region === id);
@@ -1176,6 +1219,7 @@ function update(dt, t) {
   if (player.moving) {
     const n = len > 1 ? len : 1;
     const vx = (ix / n) * speed, vy = (iy / n) * speed;
+    player.heading = Math.atan2(vy, vx);
     const nx = player.x + vx * dt, ny = player.y + vy * dt;
     if (!blocked(nx, player.y)) player.x = nx;
     if (!blocked(player.x, ny)) player.y = ny;
@@ -1218,7 +1262,8 @@ function update(dt, t) {
   });
   if (started && near !== nearPoi) {
     nearPoi = near;
-    if (near && near.region !== journalRegion) enterRegion(near.region);
+    // if you were reading another region's page, flip back quietly (no banner)
+    if (near && near.region !== journalRegion) renderJournal(near.region);
     markNear(near);
     if (near) discover(near);
   }
@@ -1503,6 +1548,10 @@ function frame(t) {
   const mx = (player.x / (W * TILE)) * mm.clientWidth, my = (player.y / (H * TILE)) * mm.clientHeight;
   marker.style.left = `${mx}px`;
   marker.style.top = `${my}px`;
+  // the arrow art points down, so it's heading minus 90deg, snapped to 8 ways
+  // so it clicks between directions like a sprite instead of spinning smoothly
+  const deg = Math.round(((player.heading * 180) / Math.PI - 90) / 45) * 45;
+  marker.style.transform = `rotate(${deg}deg)`;
   requestAnimationFrame(frame);
 }
 const marker = $('#mm-marker');
@@ -1528,7 +1577,7 @@ document.addEventListener('keydown', e => {
   if ((e.key === ' ' || e.key === 'e' || e.key === 'E') && !onControl) { e.preventDefault(); swing(); return; }
   if (e.key === 'j' || e.key === 'J') { toggleJournal(); return; }
   const n = Number(e.key);
-  if (n >= 1 && n <= REGIONS.length) warpToRegion(REGIONS[n - 1].id);
+  if (n >= 1 && n <= REGIONS.length) viewRegion(REGIONS[n - 1].id);
 });
 document.addEventListener('keyup', e => keys.delete(e.key));
 window.addEventListener('blur', () => keys.clear());
@@ -1547,16 +1596,29 @@ canvas.addEventListener('pointerdown', e => {
 
 $('#mm-frame').addEventListener('click', e => {
   const r = e.currentTarget.getBoundingClientRect();
-  warpTo(Math.floor(((e.clientX - r.left) / r.width) * W), Math.floor(((e.clientY - r.top) / r.height) * H));
+  const tx = ((e.clientX - r.left) / r.width) * W, ty = ((e.clientY - r.top) / r.height) * H;
+  // snap to the nearest landmark you've found. if the closest thing is still
+  // undiscovered, travelTo turns you away with its name so you know where to walk
+  const byDist = POIS.map(p => [p, Math.hypot(p.at[0] - tx, p.at[1] - ty)]).sort((a, b) => a[1] - b[1]);
+  const foundNear = byDist.find(([p, d]) => canTravel(p) && d < 12);
+  if (foundNear) travelTo(foundNear[0]);
+  else if (byDist[0][1] < 12) travelTo(byDist[0][0]);
+  else { toast('Uncharted', 'Nothing found here yet', 'Walk out and find a landmark first'); sfx.deny(); }
 });
 
 document.addEventListener('click', e => {
-  const warpBtn = e.target.closest('[data-warp]');
-  if (warpBtn) {
-    warpToRegion(warpBtn.dataset.warp);
+  const viewBtn = e.target.closest('[data-view]');
+  if (viewBtn) {
+    viewRegion(viewBtn.dataset.view);
     // pointer clicks shouldn't leave focus on the button, otherwise the next
     // space press re-triggers it instead of swinging
-    if (e.detail) warpBtn.blur();
+    if (e.detail) viewBtn.blur();
+    return;
+  }
+  const travelBtn = e.target.closest('[data-travel]');
+  if (travelBtn) {
+    travelTo(POIS.find(q => q.id === travelBtn.dataset.travel));
+    if (e.detail) travelBtn.blur();
     return;
   }
   const go = e.target.closest('[data-goto]');

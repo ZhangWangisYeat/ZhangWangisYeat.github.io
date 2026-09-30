@@ -530,12 +530,24 @@ a.contact-row[href^="mailto"] .cv::after { content: ' ✉'; }
   position: absolute;
   width: 10px;
   height: 12px;
-  margin: -12px 0 0 -5px;
+  margin: -6px 0 0 -5px;
+  filter: drop-shadow(1px 1px 0 #000);
+  pointer-events: none;
+}
+.mm-marker span {
+  position: absolute;
+  inset: 0;
   background: #e8261f;
   clip-path: polygon(30% 0, 70% 0, 70% 45%, 100% 45%, 50% 100%, 0 45%, 30% 45%);
-  filter: drop-shadow(1px 1px 0 #000);
   animation: bob 0.9s steps(2) infinite;
-  pointer-events: none;
+}
+.mm-key {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 2px 1px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px #000;
 }
 @keyframes bob { 50% { transform: translateY(-2px); } }
 

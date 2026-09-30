@@ -951,6 +951,7 @@ function blockHTML(block) {
           <span class="xp-label">Explored</span>
           <span class="xp-bar"><i style="width:${pct}%"></i></span>
           <span class="xp-count" data-found-count>${foundCount()}</span>
+          <button type="button" class="xp-reset" data-reset>Reset</button>
         </div>
       </div></section>`;
   }
@@ -1009,6 +1010,40 @@ function markNear(poi, quiet) {
   if (!quiet && !document.body.classList.contains('journal-closed')) {
     el.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
   }
+}
+
+// progress only lives in this visitor's localStorage, so a reset just empties
+// it. two clicks instead of a confirm() dialog: "reset" arms it, "sure?" does it,
+// and it disarms itself after a few seconds if you wander off.
+let resetArmed = null;
+function resetProgress(btn) {
+  if (resetArmed !== btn) {
+    clearTimeout(resetArmed && resetArmed.timer);
+    resetArmed = btn;
+    btn.textContent = 'Sure?';
+    btn.classList.add('is-armed');
+    btn.timer = setTimeout(() => {
+      btn.textContent = 'Reset';
+      btn.classList.remove('is-armed');
+      if (resetArmed === btn) resetArmed = null;
+    }, 3000);
+    sfx.deny();
+    return;
+  }
+  clearTimeout(btn.timer);
+  resetArmed = null;
+  found.clear();
+  store.write('dm-found', []);
+  nearPoi = null;
+  // claim camp now so the region check doesn't also fire an "entering" banner
+  // over the reset one while the warp fade is still running
+  region = 'camp';
+  pendingRegion = null;
+  paintMinimap();
+  warpTo(SPAWN.x, SPAWN.y);
+  renderJournal('camp');
+  updateFoundUI();
+  toast('Progress reset', 'Fresh save', 'Every landmark is uncharted again');
 }
 
 function updateFoundUI() {
@@ -1607,6 +1642,11 @@ $('#mm-frame').addEventListener('click', e => {
 });
 
 document.addEventListener('click', e => {
+  const resetBtn = e.target.closest('[data-reset]');
+  if (resetBtn) {
+    resetProgress(resetBtn);
+    return;
+  }
   const viewBtn = e.target.closest('[data-view]');
   if (viewBtn) {
     viewRegion(viewBtn.dataset.view);

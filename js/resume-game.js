@@ -758,13 +758,14 @@ function paintMinimap() {
     g.fillStyle = MINI[t] || PAL[t].base;
     g.fillRect(x, y, 1, 1);
   }
-  POIS.forEach(p => {
+  // only landmarks you've found go on the map. undiscovered ones stay off it
+  // entirely, so the minimap can't be used as a treasure map
+  POIS.filter(canTravel).forEach(p => {
     const [x, y] = p.at;
-    const big = canTravel(p);
     g.fillStyle = '#000';
-    g.fillRect(x - (big ? 2 : 1), y - (big ? 2 : 1), big ? 5 : 3, big ? 5 : 3);
-    g.fillStyle = big ? regionById[p.region].accent : '#ffffff';
-    g.fillRect(x - (big ? 1 : 0), y - (big ? 1 : 0), big ? 3 : 1, big ? 3 : 1);
+    g.fillRect(x - 2, y - 2, 5, 5);
+    g.fillStyle = regionById[p.region].accent;
+    g.fillRect(x - 1, y - 1, 3, 3);
   });
 }
 
@@ -1678,12 +1679,13 @@ canvas.addEventListener('pointerdown', e => {
 $('#mm-frame').addEventListener('click', e => {
   const r = e.currentTarget.getBoundingClientRect();
   const tx = ((e.clientX - r.left) / r.width) * W, ty = ((e.clientY - r.top) / r.height) * H;
-  // snap to the nearest landmark you've found. if the closest thing is still
-  // undiscovered, travelTo turns you away with its name so you know where to walk
-  const byDist = POIS.map(p => [p, Math.hypot(p.at[0] - tx, p.at[1] - ty)]).sort((a, b) => a[1] - b[1]);
-  const foundNear = byDist.find(([p, d]) => canTravel(p) && d < 12);
+  // snap to the nearest landmark you've found. undiscovered ones are ignored
+  // here on purpose, otherwise clicking around would hint where they are
+  const foundNear = POIS.filter(canTravel)
+    .map(p => [p, Math.hypot(p.at[0] - tx, p.at[1] - ty)])
+    .sort((a, b) => a[1] - b[1])
+    .find(([, d]) => d < 12);
   if (foundNear) travelTo(foundNear[0]);
-  else if (byDist[0][1] < 12) travelTo(byDist[0][0]);
   else { toast('Uncharted', 'Nothing found here yet', 'Walk out and find a landmark first'); sfx.deny(); }
 });
 

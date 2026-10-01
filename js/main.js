@@ -240,7 +240,7 @@ if (contactForm) {
       'Referrer': document.referrer || 'direct',
       'Sent at': new Date().toLocaleString(),
       'Browser': navigator.userAgent,
-      _subject: `alexzhang.site — new message from ${nameEl.value.trim()}`,
+      _subject: `alexzhang.site | new message from ${nameEl.value.trim()}`,
       _template: 'table',
       _captcha: 'false'
     };
@@ -265,7 +265,7 @@ if (contactForm) {
       // instead of claiming it was delivered.
       if (/activat|confirm/i.test(note)) {
         contactForm.classList.add('sent');
-        setStatus('Message received — awaiting one-time inbox confirmation.', 'ok');
+        setStatus('Message received, awaiting one-time inbox confirmation.', 'ok');
         console.info('FormSubmit activation pending:', note);
         return;
       }
@@ -277,7 +277,7 @@ if (contactForm) {
         sendBtn.disabled = false;
         sendBtn.classList.remove('sending');
         sendLabel.textContent = 'Send message';
-        setStatus('Local file preview — run a web server to send.', 'err');
+        setStatus('Local file preview: run a web server to send.', 'err');
         console.warn(
           'FormSubmit rejects file:// submissions. Serve the folder instead:\n' +
           '  py -m http.server 8000   →   http://localhost:8000\n' +
@@ -291,7 +291,7 @@ if (contactForm) {
       }
 
       contactForm.classList.add('sent');
-      setStatus(`Thanks, ${payload.name.split(' ')[0]} — I'll get back to you soon.`, 'ok');
+      setStatus(`Thanks, ${payload.name.split(' ')[0]}! I'll get back to you soon.`, 'ok');
     } catch (err) {
       clearTimeout(timeout);
       console.error('Contact form failed:', err);
@@ -299,7 +299,7 @@ if (contactForm) {
       sendBtn.classList.remove('sending');
       sendLabel.textContent = 'Send message';
       // last resort, hand the message to their own mail app
-      const mailto = `mailto:${CONTACT_MAILTO}?subject=${encodeURIComponent(payload._subject)}&body=${encodeURIComponent(`${payload.message}\n\n— ${payload.name} (${payload.email})`)}`;
+      const mailto = `mailto:${CONTACT_MAILTO}?subject=${encodeURIComponent(payload._subject)}&body=${encodeURIComponent(`${payload.message}\n\nFrom ${payload.name} (${payload.email})`)}`;
       statusEl.innerHTML = `Couldn't send. <a href="${mailto}">Email it instead →</a>`;
       statusEl.className = 'cf-status show err';
     }

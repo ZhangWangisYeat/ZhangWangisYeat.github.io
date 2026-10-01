@@ -89,7 +89,7 @@ const REGIONS = [
         blurb: 'Teaching the next party how to play.',
         items: [
           {
-            title: 'School Team Lead — ACM TeachLA',
+            title: 'School Team Lead | ACM TeachLA',
             date: 'Jan 2026 – Present',
             sub: 'Association for Computing Machinery at UCLA | Ex-React & Next.js Lead (North Hollywood HS) | Unity Lead (Walt Whitman HS)',
             desc: 'Planned curriculum and ran weekly hands-on workshops where students built dynamic websites in React and Next.js and 2D games in Unity, including their own versions of Flappy Bird, Street Fighter, and Terraria.',
@@ -111,14 +111,14 @@ const REGIONS = [
         heading: 'Work Experience',
         items: [
           {
-            title: 'Software Developer Intern — MSISI',
+            title: 'Software Developer Intern | MSISI',
             date: 'Jun 2026 – Aug 2026',
             sub: 'Med/Surgical Information Services International, Inc. | Glastonbury, CT',
             desc: "Trained Delphi's Kai agentic AI model to identify and facility-match new records in ACFM instantly. Integrated Delphi MCP to automate the nonlinear data importing process, reducing the import bottleneck by 90%. Engineered the MailSISI and MailSISIBox file-tool workflow to automate hundreds of thousands of data downloads. Worked on automating the UOM standardization process for their Trace Rebate Correction (TRC) software.",
             poi: { id: 'msisi-26', kind: 'deadtree', at: [19, 14], label: 'MSISI | 2026' }
           },
           {
-            title: 'Software Engineering Intern — MSISI',
+            title: 'Software Engineering Intern | MSISI',
             date: 'Jun 2025 – Aug 2025',
             sub: 'Med/Surgical Information Services International, Inc. | Glastonbury, CT',
             desc: 'Researched and analyzed fuzzy-matching algorithms, testing multiple candidates to compare efficiency and yield. Improved the Address Correction Facility Matching (ACFM) software in Delphi by implementing Damerau-Levenshtein metrics for facility fuzzy matching and database filtering.',

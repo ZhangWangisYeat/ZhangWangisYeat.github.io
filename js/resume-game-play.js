@@ -28,13 +28,16 @@ const TIER_ORDER = ['wood', 'gold', 'stone', 'marble', 'iron', 'emerald', 'diamo
 
 // armor blocks a flat percentage of every hit. hide keeps the bear at 1 heart
 // a swipe, which is what it was tuned around. iron slows you down, gold shines.
+// dur is how many hits it soaks before breaking. the metals and gems borrow the
+// number from their tools so a gold chestplate is as flimsy as a gold pickaxe,
+// and wool and hide don't have tools so they get their own (hide sits with stone).
 const ARMORS = {
-  wool:    { name: 'Wool',    block: 0.2 },
-  gold:    { name: 'Gold',    block: 0.4, shine: true },
-  hide:    { name: 'Hide',    block: 0.6 },
-  iron:    { name: 'Iron',    block: 0.7, slow: 0.85 },
-  emerald: { name: 'Emerald', block: 0.8 },
-  diamond: { name: 'Diamond', block: 0.85 }
+  wool:    { name: 'Wool',    block: 0.2,  dur: 16 },
+  gold:    { name: 'Gold',    block: 0.4,  dur: TIERS.gold.dur, shine: true },
+  hide:    { name: 'Hide',    block: 0.6,  dur: 48 },
+  iron:    { name: 'Iron',    block: 0.7,  dur: TIERS.iron.dur, slow: 0.85 },
+  emerald: { name: 'Emerald', block: 0.8,  dur: TIERS.emerald.dur },
+  diamond: { name: 'Diamond', block: 0.85, dur: TIERS.diamond.dur }
 };
 
 // dmg is in hearts, cd is seconds between swings, reach is in tiles, dur is how
@@ -69,7 +72,7 @@ TIER_ORDER.forEach(m => {
   ITEMS[`${m}-axe`] = { name: `${t.name} Axe`, tool: 'axe', mat: m, dmg: t.axe, cd: 1.8, reach: 1.6, dur: t.dur, speed: t.speed };
 });
 Object.keys(ARMORS).forEach(m => {
-  ITEMS[`${m}-armor`] = { name: `${ARMORS[m].name} Armor`, armor: m, mat: m };
+  ITEMS[`${m}-armor`] = { name: `${ARMORS[m].name} Armor`, armor: m, mat: m, dur: ARMORS[m].dur };
 });
 // whatever you're holding that isn't a tool hits like a bare hand
 const FIST = { name: 'Bare hands', dmg: 0.25, cd: 0.45, reach: 1.4 };
@@ -740,6 +743,19 @@ function wearHeld(cost) {
   markDirty();
   renderHUD();
 }
+// every hit that lands costs the armor one point, whether it was a hyena nip or
+// a full bear swipe, same as a sword losing one per swing no matter what it hits
+function wearArmor() {
+  const s = inv.armor;
+  if (!s) return;
+  s.dur -= 1;
+  if (s.dur <= 0) {
+    inv.armor = null;
+    toast('Broken', ITEMS[s.id].name, 'Craft another at Base Camp');
+    sfx.snap();
+    burst(player.x, player.y - 20, '200,200,200', 14);
+  }
+}
 const rand = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
 // a recipe shows up in the book once you've held every kind of material it
@@ -994,6 +1010,7 @@ function afterArmor(dmg) {
 function hurtPlayer(raw, fromX, fromY) {
   if (player.dead || vitals.invuln > 0) return false;
   const dmg = afterArmor(raw);
+  wearArmor();
   vitals.hp = Math.max(0, Math.round((vitals.hp - dmg) * 100) / 100);
   vitals.invuln = 0.75;
   vitals.sinceHit = 0;

@@ -109,7 +109,7 @@ const CREATURES = {
     drops: [['marble', 5, 10]]
   },
   bear: {
-    name: 'Grizzly', hp: 15, speed: 74, aggro: 5, leash: 13, range: 2.8,
+    name: 'Grizzly', hp: 15, speed: 74, aggro: 5, leash: 22, range: 2.8,
     windup: 0.55, lunge: { speed: 270, time: 0.28 }, cooldown: 1.7, dmg: 2.5,
     knock: 18, h: 36, box: { w: 36, h: 20 }, rest: 'sleep',
     // every so often, if there's water within a few tiles, it wades in and
@@ -807,7 +807,11 @@ function updateCreature(c, dt) {
   const homeD = Math.hypot(c.hx - c.x, c.hy - c.y);
   const alive = !player.dead;
   c.moving = false;
+  // water drags everything down, so a bear that wades in to make a wave is
+  // also slower to come back out after you
+  const wet = inWater(c) ? 0.6 : 1;
   const walk = (tx, ty, speed) => {
+    speed *= wet;
     const vx = tx - c.x, vy = ty - c.y, l = Math.hypot(vx, vy);
     if (l < 2) return;
     moveBody(c, (vx / l) * speed * dt, (vy / l) * speed * dt);
@@ -856,7 +860,7 @@ function updateCreature(c, dt) {
       break;
     case 'lunge':
       c.t += dt;
-      moveBody(c, c.lx * def.lunge.speed * dt, c.ly * def.lunge.speed * dt);
+      moveBody(c, c.lx * def.lunge.speed * wet * dt, c.ly * def.lunge.speed * wet * dt);
       c.moving = true;
       if (c.t >= def.lunge.time) { c.state = 'recover'; c.t = 0; c.cd = def.cooldown; }
       break;
@@ -889,7 +893,8 @@ function updateCreature(c, dt) {
       walk(c.hx, c.hy, def.speed * 0.8);
       c.hp = Math.min(def.hp, c.hp + dt * 2);
       if (homeD < 6) { c.state = def.rest; c.hp = def.hp; }
-      else if (alive && d < def.aggro * TILE * 0.7 && homeD < def.leash * TILE * 0.6) c.state = 'chase';
+      // come back within range while it's heading home and it turns round
+      else if (alive && d < def.aggro * TILE * 1.4 && homeD < def.leash * TILE * 0.8) c.state = 'chase';
       break;
   }
 

@@ -62,7 +62,7 @@ const CREATURES = {
   },
   bear: {
     name: 'Grizzly', hp: 15, speed: 60, aggro: 4.5, leash: 11, range: 1.7,
-    windup: 0.62, cooldown: 1.9, dmg: [1, 2.5], knock: 70, w: 50, h: 34, r: 14,
+    windup: 0.62, cooldown: 1.9, dmg: [1, 2.5], knock: 18, w: 50, h: 34, r: 14,
     rest: 'sleep', drops: [['hide', 15, 20], ['raw-meat', 10, 15]]
   }
 };
@@ -511,8 +511,12 @@ function attack() {
 function hurtCreature(c, dmg, a) {
   c.hp = Math.max(0, c.hp - dmg);
   c.hurtT = 0.16;
-  c.kx = Math.cos(a) * c.def.knock;
-  c.ky = Math.sin(a) * c.def.knock;
+  // once it's winding up it's committed: hits still land but don't push it
+  // back, otherwise you could juggle it out of range forever
+  if (c.state !== 'windup') {
+    c.kx = Math.cos(a) * c.def.knock;
+    c.ky = Math.sin(a) * c.def.knock;
+  }
   const cc = creatureCenter(c);
   floatText(`-${dmg}`, cc.x, cc.y - 10, '#ffd1d1');
   burst(cc.x, cc.y, c.kind === 'hyena' ? '236,232,224' : '123,74,41', 6);
@@ -805,17 +809,19 @@ function furnaceTick(dt) {
   const st = stations.find(s => s.kind === 'furnace');
   let changed = false;
   if (canCook) {
-    if (F.burn <= 0 && F.fuel) {
+    // tiny tolerance: 1 wood is exactly 2 meat, and float sums land at 0.9999
+    // otherwise, which left the second meat stuck one frame from done
+    if (F.burn <= 1e-6 && F.fuel) {
       F.burn += ITEMS[F.fuel.id].fuel;
       F.fuel.n--;
       if (!F.fuel.n) F.fuel = null;
       changed = true;
     }
-    if (F.burn > 0) {
+    if (F.burn > 1e-6) {
       const step = Math.min(dt * COOK_RATE, F.burn);
       F.prog += step;
       F.burn -= step;
-      if (F.prog >= 1) {
+      if (F.prog >= 1 - 1e-6) {
         F.prog = 0;
         F.input.n--;
         if (!F.input.n) F.input = null;
@@ -824,7 +830,7 @@ function furnaceTick(dt) {
       }
     }
   } else F.prog = 0;
-  const lit = canCook && F.burn > 0;
+  const lit = canCook && F.burn > 1e-6;
   st.frames = lit ? st.lit : st.unlit;
   st.glow.off = !lit;
   if (changed) { markDirty(); if (ui === 'furnace') renderUI(); }
@@ -1380,7 +1386,8 @@ function playRenderOverlay(toX, toY, t) {
   if (!quest.greatTree && Math.hypot(greatTree.x - player.x, greatTree.y - player.y) < TILE * 4) {
     const text = 'HOLD CLICK TO CHOP';
     const tw = ctx.measureText(text).width, pad = fs * 0.5;
-    const x = toX(greatTree.x), y = toY(greatTree.y + 10);
+    // sits above the landmark label so it never covers you
+    const x = toX(greatTree.x), y = toY(greatTree.y - greatTree.frames[0].height - 3) - fs * 3.4;
     ctx.fillStyle = 'rgba(12,12,16,0.85)';
     ctx.fillRect(x - tw / 2 - pad, y - fs * 0.8, tw + pad * 2, fs * 1.6);
     ctx.fillStyle = '#ffd23f';

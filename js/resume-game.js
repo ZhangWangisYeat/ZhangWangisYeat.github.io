@@ -519,6 +519,26 @@ function makeCrystal(kind) {
   return G.outline(n => (n.startsWith('#a3') || n.startsWith('#7d') || n.startsWith('#6a') ? '#343434' : P.out)).canvas();
 }
 
+// the corner badge: a timeline that splits three ways (the multiverse) under
+// the letters dm, drawn dark so it sits on whatever the region colour is
+function makeLogo() {
+  const G = pixelGrid(20, 20);
+  const ink = '#16100a';
+  const D = ['XXXX.', 'X...X', 'X...X', 'X...X', 'X...X', 'X...X', 'XXXX.'];
+  const M = ['X...X', 'XX.XX', 'X.X.X', 'X.X.X', 'X...X', 'X...X', 'X...X'];
+  [[D, 3], [M, 11]].forEach(([rows, ox]) => rows.forEach((row, y) => [...row].forEach((ch, x) => {
+    if (ch === 'X') G.set(ox + x, 2 + y, ink);
+  })));
+  for (let x = 2; x <= 16; x++) G.set(x, 14, ink);
+  for (let k = 1; k <= 3; k++) { G.set(7 + k, 14 - k, ink); G.set(7 + k, 14 + k, ink); }
+  for (let x = 10; x <= 16; x++) { G.set(x, 11, ink); G.set(x, 17, ink); }
+  [[1, 14], [17, 11], [17, 14], [17, 17]].forEach(([cx, cy]) => {
+    for (let y = cy - 1; y <= cy + 1; y++) for (let x = cx - 1; x <= cx + 1; x++) G.set(x, y, ink);
+    G.set(cx, cy, '#ffffff');
+  });
+  return G.canvas().toDataURL();
+}
+
 function makeTent() {
   const w = 34, h = 28, cx = 16.5, top = 3, base = 25;
   const G = pixelGrid(w, h);
@@ -1234,7 +1254,7 @@ function enterRegion(id, quiet) {
   renderJournal(id);
   const R = regionById[id];
   $('#mm-region').textContent = R.biome;
-  $('.brand-mark').style.background = R.accent;
+  $('.brand-mark').style.backgroundColor = R.accent;
   if (!quiet) { toast('Entering', R.biome, R.label); sfx.region(); }
   if (started) {
     try { history.replaceState(null, '', `#${id}`); } catch { /* file:// in some browsers */ }
@@ -1719,6 +1739,7 @@ renderTabs();
 resize();
 renderJournal('camp');
 updateFoundUI();
+$('.brand-mark').style.backgroundImage = `url(${makeLogo()})`;
 $('#biome-strip').innerHTML = ['meadows', 'dunes', 'mines', 'tundra'].map(id => `<span style="background-image:url(${SWATCH[id]})"></span>`).join('');
 Object.assign(cam, clampCam(camTarget()));
 

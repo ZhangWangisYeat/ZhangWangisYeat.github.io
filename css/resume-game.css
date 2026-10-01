@@ -987,6 +987,17 @@ body.is-title .hud-play { opacity: 0; pointer-events: none; }
 .rb-shape i { position: absolute; inset: 0; background-size: 100% 100%; image-rendering: pixelated; }
 
 .slot s, .hb-slot s { position: absolute; left: 5px; bottom: 4px; height: 3px; max-width: calc(100% - 10px); }
+.chest-grid { display: grid; grid-template-columns: repeat(6, 46px); gap: 4px; }
+.hud-time {
+  margin-left: 8px;
+  padding: 2px 6px;
+  font-family: var(--px);
+  font-size: 0.52rem;
+  text-transform: uppercase;
+  color: #2a2208;
+  background: #ffd23f;
+}
+.hud-time.is-night { color: #dfe6ff; background: #2b3566; }
 .hud-soaked {
   margin-left: 8px;
   padding: 2px 6px;
@@ -1028,6 +1039,7 @@ body.is-title .hud-play { opacity: 0; pointer-events: none; }
   .inv-bag, .inv-hot { grid-template-columns: repeat(6, 1fr); }
   .slot { width: auto; aspect-ratio: 1; height: auto; }
   .rb-list { grid-template-columns: 1fr; }
+  .chest-grid { grid-template-columns: repeat(6, 1fr); }
   .craft-grid { grid-template-columns: repeat(5, 34px); }
   .craft-grid .slot { width: 34px; height: 34px; }
 }

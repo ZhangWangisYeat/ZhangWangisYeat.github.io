@@ -836,6 +836,11 @@ function paintMinimap() {
 
 const sheet = new Image();
 sheet.src = 'img/player.png';
+// the in-game copy with the dagger erased from the swing frames, so the play
+// layer can draw whatever you're actually holding. the title screen keeps the
+// original, dagger and all.
+const sheetPlay = new Image();
+sheetPlay.src = 'img/player-swing.png';
 
 // rows on the sheet: idle, walk, swing, each facing down / side (right) / up
 const ROWS = { idle: { down: 0, side: 1, up: 2 }, walk: { down: 3, side: 4, up: 5 }, swing: { down: 6, side: 7, up: 8 } };
@@ -1499,6 +1504,17 @@ function render(t) {
     ctx.fillRect(0, 0, cw, ch);
   }
 
+  const night = typeof playNight === 'function' ? playNight() : 0;
+  if (night > 0.01) {
+    const px = toX(player.x), py = toY(player.y - 12);
+    const g = ctx.createRadialGradient(px, py, TILE * S * 1.5, px, py, TILE * S * 7);
+    g.addColorStop(0, `rgba(10,14,40,${0.45 * night})`);
+    g.addColorStop(1, `rgba(5,7,22,${0.8 * night})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, cw, ch);
+  }
+  const lit = Math.max(dark, night);
+
   // light sources, added on top so they punch through the dark
   ctx.globalCompositeOperation = 'lighter';
   for (const gl of glows) {
@@ -1506,7 +1522,7 @@ function render(t) {
     const gx = toX(gl.x), gy = toY(gl.y);
     const rad = gl.rad * TILE * S * (gl.flicker ? 0.94 + Math.sin(t / 90 + gl.x) * 0.04 + Math.random() * 0.03 : 1);
     if (gx < -rad || gy < -rad || gx > cw + rad || gy > ch + rad) continue;
-    const strength = gl.always ? 0.16 + 0.3 * dark : gl.mine ? 0.1 + 0.4 * dark : 0.1;
+    const strength = gl.always ? 0.16 + 0.3 * lit : gl.mine ? 0.1 + 0.4 * dark : 0.1 + 0.15 * night;
     const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, rad);
     g.addColorStop(0, `rgba(${gl.rgb},${strength})`);
     g.addColorStop(1, `rgba(${gl.rgb},0)`);
@@ -1553,16 +1569,19 @@ function drawPlayer(toX, toY, t) {
   const sink = wading ? 3 : 0;
   const srcH = wading ? CELL - 8 : CELL;
   const dx = toX(player.x - 24), dy = toY(player.y - 42 + sink);
+  const img = sheetPlay.complete && sheetPlay.naturalWidth ? sheetPlay : sheet;
+  if (typeof playDrawHeld === 'function') playDrawHeld(dx, dy, row, col, false);
   ctx.save();
   if (player.blink) ctx.globalAlpha = 0.4;
   if (player.flip) {
     ctx.translate(dx + CELL * S, dy);
     ctx.scale(-1, 1);
-    ctx.drawImage(sheet, col * CELL, row * CELL, CELL, srcH, 0, 0, CELL * S, srcH * S);
+    ctx.drawImage(img, col * CELL, row * CELL, CELL, srcH, 0, 0, CELL * S, srcH * S);
   } else {
-    ctx.drawImage(sheet, col * CELL, row * CELL, CELL, srcH, dx, dy, CELL * S, srcH * S);
+    ctx.drawImage(img, col * CELL, row * CELL, CELL, srcH, dx, dy, CELL * S, srcH * S);
   }
   ctx.restore();
+  if (typeof playDrawHeld === 'function') playDrawHeld(dx, dy, row, col, true);
   if (wading) {
     const w = 8 + (Math.floor(t / 250) % 2) * 3;
     ctx.fillStyle = 'rgba(230,244,255,0.8)';

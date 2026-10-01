@@ -79,7 +79,7 @@ const REGIONS = [
             title: 'Glastonbury High School',
             date: 'Aug 2021 – Jun 2025',
             sub: 'High School Diploma, Summa Cum Laude · Glastonbury, CT · GPA 4.80 / 4.00',
-            poi: { id: 'ghs', kind: 'tree', at: [43, 63], label: 'Glastonbury HS' }
+            poi: { id: 'ghs', kind: 'hyena', at: [33, 62], label: 'Glastonbury HS' }
           }
         ]
       },
@@ -93,7 +93,7 @@ const REGIONS = [
             date: 'Jan 2026 – Present',
             sub: 'Association for Computing Machinery at UCLA · Ex-React & Next.js Lead (North Hollywood HS) · Unity Lead (Walt Whitman HS)',
             desc: 'Planned curriculum and ran weekly hands-on workshops where students built dynamic websites in React and Next.js and 2D games in Unity, including their own versions of Flappy Bird, Street Fighter, and Terraria.',
-            poi: { id: 'teachla-lead', kind: 'den', at: [15, 73], label: 'ACM TeachLA' }
+            poi: { id: 'teachla-lead', kind: 'bear', at: [16, 75], label: 'ACM TeachLA' }
           }
         ]
       }
@@ -697,17 +697,24 @@ function generate() {
   // ore veins: sprinkled along exposed cave walls, and clustered around each
   // project so the landmark looks like it's being mined out of the rock
   const r = mulberry32(SEED + 404);
-  const ores = [T.GOLD, T.DIAMOND, T.RUBY, T.IRON, T.IRON];
+  const ORE_WEIGHTS = [[T.IRON, 46], [T.GOLD, 22], [T.RUBY, 14], [T.DIAMOND, 10], [T.EMERALD, 8]];
+  const pickOre = () => {
+    let roll = r() * 100;
+    for (const [t, w] of ORE_WEIGHTS) { roll -= w; if (roll < 0) return t; }
+    return T.IRON;
+  };
+  const CLUSTER = { iron: 0.5, gold: 0.4, ruby: 0.35, diamond: 0.18, emerald: 0.14 };
   const exposed = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inside(x + dx, y + dy) && !solidTile(x + dx, y + dy));
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = idx(x, y);
     if (tiles[i] !== T.WALL || !exposed(x, y)) continue;
     const nearPoi = POIS.find(p => p.region === 'mines' && Math.hypot(p.at[0] - x, p.at[1] - y) < 6.5);
-    if (nearPoi && r() < 0.55) tiles[i] = { gold: T.GOLD, diamond: T.DIAMOND, ruby: T.RUBY, emerald: T.EMERALD, iron: T.IRON }[nearPoi.kind];
-    else if (r() < 0.07) tiles[i] = ores[(r() * ores.length) | 0];
+    if (nearPoi && r() < CLUSTER[nearPoi.kind]) tiles[i] = { gold: T.GOLD, diamond: T.DIAMOND, ruby: T.RUBY, emerald: T.EMERALD, iron: T.IRON }[nearPoi.kind];
+    else if (r() < 0.08) tiles[i] = pickOre();
   }
 }
 
+const CREATURE_POIS = new Set(['hyena', 'bear']);
 const things = [];   // everything y-sorted with the player
 const glows = [];
 
@@ -751,6 +758,12 @@ function placeDecor() {
   things.push({ decor: true, x: (CAMP.x - 3) * TILE, y: (CAMP.y - 1) * TILE + 6, frames: SPRITE.tent });
 
   POIS.forEach(p => {
+    // creature landmarks get a stand-in here; the play layer swaps in the
+    // actual animal so the label and the "near" check follow it around
+    if (CREATURE_POIS.has(p.kind)) {
+      p.thing = { poi: p, x: p.at[0] * TILE + 8, y: p.at[1] * TILE + 14, gone: true, frames: [mk(1, 1)] };
+      return;
+    }
     const t = {
       poi: p, tx: p.at[0], ty: p.at[1],
       x: p.at[0] * TILE + 8, y: p.at[1] * TILE + 14,
@@ -1322,7 +1335,7 @@ function update(dt, t) {
 
   const tileUnder = tiles[idx(clamp(Math.floor(player.x / TILE), 0, W - 1), clamp(Math.floor((player.y - 1) / TILE), 0, H - 1))];
   const wading = tileUnder === T.WATER;
-  const speed = SPEED * (wading ? 0.6 : 1);
+  const speed = SPEED * (wading ? 0.6 : 1) * (typeof playSpeedMult === 'function' ? playSpeedMult() : 1);
 
   if (!ix && !iy && player.path && player.path.length) {
     const wp = player.path[0];
@@ -1380,6 +1393,7 @@ function update(dt, t) {
   // nearest landmark within a few tiles lights up its journal entry
   let near = null, nearD = TILE * 3.4;
   POIS.forEach(p => {
+    if (p.thing.gone) return;
     const d = Math.hypot(p.thing.x - player.x, p.thing.y - player.y);
     if (d < nearD) { near = p; nearD = d; }
   });
@@ -1564,7 +1578,8 @@ function drawLabels(toX, toY, t) {
   const bob = reduceMotion ? 0 : Math.floor(t / 400) % 2;
   for (const p of POIS) {
     const o = p.thing;
-    const x = toX(o.x), topY = toY(o.y - o.frames[0].height - 3);
+    if (o.gone) continue;
+    const x = toX(o.x), topY = toY(o.y - (o.labelH || o.frames[0].height) - 3);
     if (x < -200 || x > canvas.width + 200 || topY < -60 || topY > canvas.height + 60) continue;
     const near = p === nearPoi, got = found.has(p.id);
     const text = known(p) ? p.label.toUpperCase() : '? ? ?';

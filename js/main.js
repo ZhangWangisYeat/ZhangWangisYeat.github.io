@@ -155,7 +155,10 @@ requestAnimationFrame(() => {
 // everything after it arrives normally. to switch providers later just change
 // CONTACT_ENDPOINT, nothing else cares.
 const CONTACT_ENDPOINT = 'https://formsubmit.co/ajax/zalex9111@gmail.com';
-const CONTACT_MAILTO = 'zalex9111@gmail.com';
+// the fallback mailto uses the address the site displays (the ucla one), while
+// the form itself keeps delivering to gmail since that's the inbox formsubmit
+// is set up for. if you move the form over, it needs a fresh activation click.
+const CONTACT_MAILTO = 'azhang25@g.ucla.edu';
 
 const contactForm = document.getElementById('contact-form');
 

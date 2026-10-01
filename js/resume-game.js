@@ -1326,11 +1326,41 @@ function warpToRegion(id) {
   warpTo(first.at[0], first.at[1] + 2);
 }
 
+// the first ten seconds after you join: journal (with a note on what it's
+// for), controls and map all stay up, then they tuck themselves away. j, k and
+// m bring each back. anything you toggle yourself in that window is left alone.
+let introTimer = null;
+const introTouched = {};
+function startIntro() {
+  document.body.classList.remove('journal-closed', 'keys-closed', 'map-closed');
+  $('#journal-toggle').setAttribute('aria-expanded', 'true');
+  $('#j-intro').hidden = false;
+  updateFocus();
+  introTimer = setTimeout(endIntro, 10000);
+}
+function endIntro() {
+  introTimer = null;
+  const tuck = () => {
+    $('#j-intro').hidden = true;
+    if (!introTouched.journal && !document.body.classList.contains('journal-closed')) toggleJournal(true);
+    if (!introTouched.keys) document.body.classList.add('keys-closed');
+    if (!introTouched.map) document.body.classList.add('map-closed');
+  };
+  // still reading the journal? wait until the mouse leaves it
+  if (journal.matches(':hover')) journal.addEventListener('mouseleave', () => setTimeout(tuck, 1200), { once: true });
+  else tuck();
+}
+function togglePanel(name) {
+  if (introTimer) introTouched[name] = true;
+  document.body.classList.toggle(`${name}-closed`);
+}
+
 function openJournal() {
   if (!document.body.classList.contains('journal-closed')) return;
   toggleJournal();
 }
-function toggleJournal() {
+function toggleJournal(auto) {
+  if (introTimer && auto !== true) introTouched.journal = true;
   const closed = document.body.classList.toggle('journal-closed');
   $('#journal-toggle').setAttribute('aria-expanded', String(!closed));
   updateFocus();
@@ -1699,6 +1729,7 @@ function start(regionId) {
   store.write('dm-started', true, 'sessionStorage');
   updateFocus();
   sfx.region();
+  startIntro();
   if (regionId && regionId !== 'camp') {
     warpToRegion(regionId);
     enterRegion(regionId, true);
@@ -1753,6 +1784,8 @@ document.addEventListener('keydown', e => {
   if (typeof playKey === 'function' && playKey(e, onControl)) return;
   if (MOVE_KEYS[e.key]) { e.preventDefault(); keys.add(e.key); return; }
   if (e.key === 'j' || e.key === 'J') { toggleJournal(); return; }
+  if (e.key === 'k' || e.key === 'K') { togglePanel('keys'); return; }
+  if (e.key === 'm' || e.key === 'M') { togglePanel('map'); return; }
 });
 document.addEventListener('keyup', e => keys.delete(e.key));
 window.addEventListener('blur', () => keys.clear());
@@ -1808,4 +1841,8 @@ document.addEventListener('click', e => {
   }
 });
 
-$('#journal-toggle').addEventListener('click', toggleJournal);
+$('#journal-toggle').addEventListener('click', () => toggleJournal());
+document.querySelectorAll('[data-panel]').forEach(b => b.addEventListener('click', e => {
+  togglePanel(b.dataset.panel);
+  if (e.detail) b.blur();
+}));

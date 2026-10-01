@@ -37,20 +37,47 @@
       <span class="j-toggle-icon" aria-hidden="true">▸</span>
       <span class="j-toggle-text">Journal</span>
     </button>
+    <div class="j-intro" id="j-intro" hidden>
+      <p><strong>This is your journal.</strong> It holds my résumé: every landmark you find
+      out in the world unlocks its section here. It'll tuck away in a moment.
+      Press <kbd>J</kbd> any time to bring it back.</p>
+      <i class="j-intro-bar" aria-hidden="true"></i>
+    </div>
     <nav class="regions" id="regions" aria-label="Regions"><!-- rendered by js --></nav>
     <div class="j-scroll" id="journal-body" tabindex="-1"><!-- rendered by js --></div>
   </aside>
 
-  <div class="minimap px" id="minimap-wrap">
-    <p class="mm-eyebrow">Map <span>click a found <i class="mm-key"></i> to travel</span></p>
-    <div class="mm-frame" id="mm-frame">
-      <canvas id="minimap" aria-label="World map. Click a spot to travel there." role="img"></canvas>
-      <span class="mm-marker" id="mm-marker" aria-hidden="true"><span></span></span>
+  <div class="hud-left" id="hud-left">
+    <aside class="keys px" id="keys" aria-label="Controls">
+      <p class="keys-title">Controls <span>K to hide</span></p>
+      <dl class="keys-list">
+        <div><dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Move</dd></div>
+        <div><dt><kbd>Click</kbd></dt><dd>Attack</dd></div>
+        <div><dt><kbd>Hold</kbd></dt><dd>Mine / chop</dd></div>
+        <div><dt><kbd>R-click</kbd></dt><dd>Eat / use</dd></div>
+        <div><dt><kbd>E</kbd></dt><dd>Bag</dd></div>
+        <div><dt><kbd>1</kbd>–<kbd>6</kbd></dt><dd>Hotbar</dd></div>
+        <div><dt><kbd>J</kbd></dt><dd>Journal</dd></div>
+        <div><dt><kbd>M</kbd></dt><dd>Map</dd></div>
+      </dl>
+    </aside>
+
+    <div class="minimap px" id="minimap-wrap">
+      <p class="mm-eyebrow">Map <span>click a found <i class="mm-key"></i> to travel</span></p>
+      <div class="mm-frame" id="mm-frame">
+        <canvas id="minimap" aria-label="World map. Click a spot to travel there." role="img"></canvas>
+        <span class="mm-marker" id="mm-marker" aria-hidden="true"><span></span></span>
+      </div>
+      <p class="mm-foot">
+        <span id="mm-region">Base Camp</span>
+        <span id="mm-found">0 / 0 found</span>
+      </p>
     </div>
-    <p class="mm-foot">
-      <span id="mm-region">Base Camp</span>
-      <span id="mm-found">0 / 0 found</span>
-    </p>
+
+    <div class="hud-chips">
+      <button type="button" class="chip px" data-panel="map"><kbd>M</kbd> Map</button>
+      <button type="button" class="chip px" data-panel="keys"><kbd>K</kbd> Controls</button>
+    </div>
   </div>
 
   <div class="quest px" id="quest" aria-live="polite">
@@ -73,14 +100,6 @@
     <p class="toast-sub" id="toast-sub"></p>
   </div>
 
-  <footer class="keyhints" id="keyhints" aria-hidden="true">
-    <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</span>
-    <span><kbd>Click</kbd> attack / mine</span>
-    <span><kbd>R-click</kbd> eat / use</span>
-    <span><kbd>E</kbd> bag</span>
-    <span><kbd>1</kbd>–<kbd>6</kbd> hotbar</span>
-    <span><kbd>J</kbd> journal</span>
-  </footer>
 
   <div class="warp" id="warp" aria-hidden="true"></div>
 

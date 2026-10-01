@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Alex Zhang — Desperate Measures</title>
+  <title>Alex Zhang | Desperate Measures</title>
   <meta name="description" content="Alex Zhang's résumé as a walkable overworld from Desperate Measures, the 2D co-op sandbox Alex is building." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -19,10 +19,9 @@
 
   <header class="hud-top">
     <a href="index.html" class="brand px" aria-label="Back to alexzhang.site">
-      <span class="brand-mark" aria-hidden="true">DM</span>
+      <span class="brand-mark" aria-hidden="true"></span>
       <span class="brand-text">
         <strong>Desperate Measures</strong>
-        <small>Alex Zhang · interactive résumé</small>
       </span>
     </a>
     <nav class="hud-actions" aria-label="Page">
@@ -83,10 +82,13 @@
   <div class="quest px" id="quest" aria-live="polite">
     <p class="quest-step" id="quest-step"></p>
     <p class="quest-title" id="quest-title"></p>
-    <p class="quest-sub" id="quest-sub"></p>
   </div>
   <div class="hud-play" id="hud-play">
-    <div class="hearts" id="hearts" role="img"></div>
+    <div class="hud-status" id="hud-status"></div>
+    <div class="vitals-row">
+      <div class="hearts" id="hearts" role="img"></div>
+      <div class="hunger" id="hunger" role="img"></div>
+    </div>
     <div class="hotbar" id="hotbar"></div>
     <p class="held-name" id="held-name"></p>
   </div>
@@ -124,7 +126,7 @@
         <a href="resume.html" class="px-btn px">Classic résumé</a>
       </div>
       <p class="title-controls">
-        <kbd>WASD</kbd> move &nbsp;·&nbsp; <kbd>Click</kbd> attack / mine &nbsp;·&nbsp; <kbd>E</kbd> inventory
+        <kbd>WASD</kbd> move &nbsp;|&nbsp; <kbd>Click</kbd> attack / mine &nbsp;|&nbsp; <kbd>E</kbd> inventory
       </p>
     </div>
     <div class="title-hero" aria-hidden="true">

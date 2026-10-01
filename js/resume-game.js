@@ -72,13 +72,13 @@ const REGIONS = [
           {
             title: 'University of California, Los Angeles',
             date: 'Sep 2025 – Present',
-            sub: 'B.S. Computer Science & Engineering · Henry Samueli College of Engineering · Los Angeles, CA · Expected Jun 2029',
+            sub: 'B.S. Computer Science & Engineering | Henry Samueli College of Engineering | Los Angeles, CA | Expected Jun 2029',
             poi: { id: 'ucla', kind: 'bigtree', at: [21, 54], label: 'UCLA' }
           },
           {
             title: 'Glastonbury High School',
             date: 'Aug 2021 – Jun 2025',
-            sub: 'High School Diploma, Summa Cum Laude · Glastonbury, CT · GPA 4.80 / 4.00',
+            sub: 'High School Diploma, Summa Cum Laude | Glastonbury, CT | GPA 4.80 / 4.00',
             poi: { id: 'ghs', kind: 'hyena', at: [33, 62], label: 'Glastonbury HS' }
           }
         ]
@@ -89,9 +89,9 @@ const REGIONS = [
         blurb: 'Teaching the next party how to play.',
         items: [
           {
-            title: 'School Team Lead — ACM TeachLA',
+            title: 'School Team Lead | ACM TeachLA',
             date: 'Jan 2026 – Present',
-            sub: 'Association for Computing Machinery at UCLA · Ex-React & Next.js Lead (North Hollywood HS) · Unity Lead (Walt Whitman HS)',
+            sub: 'Association for Computing Machinery at UCLA | Ex-React & Next.js Lead (North Hollywood HS) | Unity Lead (Walt Whitman HS)',
             desc: 'Planned curriculum and ran weekly hands-on workshops where students built dynamic websites in React and Next.js and 2D games in Unity, including their own versions of Flappy Bird, Street Fighter, and Terraria.',
             poi: { id: 'teachla-lead', kind: 'bear', at: [16, 75], label: 'ACM TeachLA' }
           }
@@ -111,18 +111,18 @@ const REGIONS = [
         heading: 'Work Experience',
         items: [
           {
-            title: 'Software Developer Intern — MSISI',
+            title: 'Software Developer Intern | MSISI',
             date: 'Jun 2026 – Aug 2026',
-            sub: 'Med/Surgical Information Services International, Inc. · Glastonbury, CT',
+            sub: 'Med/Surgical Information Services International, Inc. | Glastonbury, CT',
             desc: "Trained Delphi's Kai agentic AI model to identify and facility-match new records in ACFM instantly. Integrated Delphi MCP to automate the nonlinear data importing process, reducing the import bottleneck by 90%. Engineered the MailSISI and MailSISIBox file-tool workflow to automate hundreds of thousands of data downloads. Worked on automating the UOM standardization process for their Trace Rebate Correction (TRC) software.",
-            poi: { id: 'msisi-26', kind: 'deadtree', at: [19, 14], label: 'MSISI · 2026' }
+            poi: { id: 'msisi-26', kind: 'deadtree', at: [19, 14], label: 'MSISI | 2026' }
           },
           {
-            title: 'Software Engineering Intern — MSISI',
+            title: 'Software Engineering Intern | MSISI',
             date: 'Jun 2025 – Aug 2025',
-            sub: 'Med/Surgical Information Services International, Inc. · Glastonbury, CT',
+            sub: 'Med/Surgical Information Services International, Inc. | Glastonbury, CT',
             desc: 'Researched and analyzed fuzzy-matching algorithms, testing multiple candidates to compare efficiency and yield. Improved the Address Correction Facility Matching (ACFM) software in Delphi by implementing Damerau-Levenshtein metrics for facility fuzzy matching and database filtering.',
-            poi: { id: 'msisi-25', kind: 'deadtree', at: [41, 27], label: 'MSISI · 2025' }
+            poi: { id: 'msisi-25', kind: 'deadtree', at: [41, 27], label: 'MSISI | 2025' }
           }
         ]
       }
@@ -519,6 +519,77 @@ function makeCrystal(kind) {
   return G.outline(n => (n.startsWith('#a3') || n.startsWith('#7d') || n.startsWith('#6a') ? '#343434' : P.out)).canvas();
 }
 
+// the corner badge: the sacred timeline coming in from the left, hitting a
+// white hot core and fraying into dozens of branching timelines, with dm on
+// top. drawn smooth at 160px with additive light so the strands glow, then
+// shown at 40px so it stays crisp on high density screens.
+function makeLogo() {
+  const N = 160, c = mk(N, N), g = c.getContext('2d');
+  const r = mulberry32(SEED + 31);
+  const cx = N * 0.42, cy = N * 0.42;
+  const bez = (t, a, b, c2, d) => (1 - t) ** 3 * a + 3 * (1 - t) ** 2 * t * b + 3 * (1 - t) * t * t * c2 + t ** 3 * d;
+  g.fillStyle = '#07060b';
+  g.fillRect(0, 0, N, N);
+  g.globalCompositeOperation = 'lighter';
+  let gr = g.createRadialGradient(cx, cy, 0, cx, cy, N * 0.55);
+  gr.addColorStop(0, 'rgba(255,190,110,0.5)');
+  gr.addColorStop(0.35, 'rgba(255,110,40,0.16)');
+  gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, N, N);
+  for (let k = 0; k < 3; k++) {
+    g.strokeStyle = `rgba(255,${210 + k * 20},${150 + k * 40},${0.55 - k * 0.15})`;
+    g.lineWidth = 3.2 - k;
+    g.beginPath();
+    g.moveTo(-4, cy + (k - 1) * 0.7);
+    g.lineTo(cx, cy);
+    g.stroke();
+  }
+  const colours = ['255,214,120', '255,160,70', '255,110,60', '255,236,190', '120,215,255', '190,140,255', '255,120,190'];
+  for (let i = 0; i < 90; i++) {
+    const right = r() < 0.82;
+    const spread = (r() - 0.5) * N * (right ? 1.35 : 0.9);
+    const ex = right ? N + 6 : -6 + r() * N * 0.18, ey = cy + spread;
+    const c1x = cx + (ex - cx) * (0.2 + r() * 0.2), c1y = cy + (r() - 0.5) * 10;
+    const c2x = cx + (ex - cx) * (0.55 + r() * 0.25), c2y = ey - spread * (0.25 + r() * 0.35);
+    const col = colours[(r() * colours.length) | 0];
+    g.strokeStyle = `rgba(${col},${0.14 + r() * 0.34})`;
+    g.lineWidth = 0.5 + r() * 1.5;
+    g.beginPath();
+    g.moveTo(cx, cy);
+    g.bezierCurveTo(c1x, c1y, c2x, c2y, ex, ey);
+    g.stroke();
+    // a thinner timeline peeling off part way along
+    if (r() < 0.5) {
+      const t0 = 0.3 + r() * 0.35;
+      const sx = bez(t0, cx, c1x, c2x, ex), sy = bez(t0, cy, c1y, c2y, ey);
+      const fx = sx + (ex - cx) * (0.4 + r() * 0.4), fy = sy + (r() - 0.5) * N * 0.5;
+      g.strokeStyle = `rgba(${col},${0.1 + r() * 0.25})`;
+      g.lineWidth = 0.4 + r() * 0.8;
+      g.beginPath();
+      g.moveTo(sx, sy);
+      g.quadraticCurveTo(sx + (fx - sx) * 0.5, sy, fx, fy);
+      g.stroke();
+    }
+  }
+  gr = g.createRadialGradient(cx, cy, 0, cx, cy, N * 0.1);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.5, 'rgba(255,230,180,0.7)');
+  gr.addColorStop(1, 'rgba(255,200,120,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, N, N);
+  g.globalCompositeOperation = 'source-over';
+  g.font = `700 ${Math.round(N * 0.3)}px Silkscreen, monospace`;
+  g.textBaseline = 'alphabetic';
+  g.lineJoin = 'round';
+  g.lineWidth = N * 0.05;
+  g.strokeStyle = 'rgba(7,6,11,0.92)';
+  g.strokeText('DM', N * 0.07, N * 0.88);
+  g.fillStyle = '#fff4e2';
+  g.fillText('DM', N * 0.07, N * 0.88);
+  return c.toDataURL();
+}
+
 function makeTent() {
   const w = 34, h = 28, cx = 16.5, top = 3, base = 25;
   const G = pixelGrid(w, h);
@@ -778,7 +849,7 @@ function placeDecor() {
   });
 }
 
-let worldCanvas, miniCanvas;
+let worldCanvas, miniCanvas, shadeCanvas;
 // one tile plus its depth shading. cheap depth: solid blocks get a darker cliff
 // face on their bottom edge and cast a short shadow on the tile below, water
 // gets a foam line up top. the shading only looks at the tiles directly above
@@ -996,7 +1067,7 @@ function lockedCard(poi, skill) {
           <h4 class="entry-title">? ? ?</h4>
           <span class="entry-date">???</span>
         </div>
-        <p class="entry-sub">Undiscovered. Somewhere in ${esc(where)}.</p>
+        <p class="entry-sub">${typeof playLandmarkLocked === 'function' && playLandmarkLocked(poiById[poi.id]) ? 'Sealed until the Meadows are complete.' : `Undiscovered. Somewhere in ${esc(where)}.`}</p>
         <div class="redacted" aria-hidden="true">${bars}</div>
         <div class="entry-foot"><span></span>${gotoHTML(poi)}</div>
       </article>`;
@@ -1112,7 +1183,7 @@ function renderJournal(id) {
   document.documentElement.style.setProperty('--accent', R.accent);
   journalBody.innerHTML = `
     <header class="j-head" style="background-image:url(${SWATCH[id]})">
-      <p class="eyebrow"><span class="dot"></span>Region 0${n + 1} · ${esc(R.biome)}</p>
+      <p class="eyebrow"><span class="dot"></span>Region 0${n + 1} | ${esc(R.biome)}</p>
       <h2 class="j-title">${esc(R.label)}</h2>
       <p class="j-blurb">${esc(R.blurb)}</p>
     </header>
@@ -1234,7 +1305,7 @@ function enterRegion(id, quiet) {
   renderJournal(id);
   const R = regionById[id];
   $('#mm-region').textContent = R.biome;
-  $('.brand-mark').style.background = R.accent;
+  $('.brand-mark').style.backgroundColor = R.accent;
   if (!quiet) { toast('Entering', R.biome, R.label); sfx.region(); }
   if (started) {
     try { history.replaceState(null, '', `#${id}`); } catch { /* file:// in some browsers */ }
@@ -1436,6 +1507,8 @@ function update(dt, t) {
     // a creature landmark only counts once you've beaten it, so walking past
     // a live one doesn't light it up
     if (p.thing.gone || (p.thing.creature && !found.has(p.id))) return;
+    // landmarks in biomes you haven't opened yet can't be found
+    if (!found.has(p.id) && typeof playLandmarkLocked === 'function' && playLandmarkLocked(p)) return;
     const d = Math.hypot(p.thing.x - player.x, p.thing.y - player.y);
     if (d < nearD) { near = p; nearD = d; }
   });
@@ -1528,25 +1601,36 @@ function render(t) {
   }
   ctx.globalAlpha = 1;
 
-  // mines: it's dark down there, you get a lantern radius
+  // darkness: the mines are dim and the night is pitch black. both are one
+  // layer of black with holes cut out for your own light and for every torch
+  // and fire, so in the dark you only see what something is lighting up.
   const dark = amb.mines;
-  if (dark > 0.01) {
-    const px = toX(player.x), py = toY(player.y - 12);
-    const g = ctx.createRadialGradient(px, py, TILE * S * 2.6, px, py, TILE * S * 8.5);
-    g.addColorStop(0, 'rgba(4,4,10,0)');
-    g.addColorStop(1, `rgba(4,4,10,${0.74 * dark})`);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, cw, ch);
-  }
-
   const night = typeof playNight === 'function' ? playNight() : 0;
-  if (night > 0.01) {
-    const px = toX(player.x), py = toY(player.y - 12);
-    const g = ctx.createRadialGradient(px, py, TILE * S * 1.5, px, py, TILE * S * 7);
-    g.addColorStop(0, `rgba(10,14,40,${0.45 * night})`);
-    g.addColorStop(1, `rgba(5,7,22,${0.8 * night})`);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, cw, ch);
+  const shade = Math.max(0.74 * dark, night);
+  if (shade > 0.01) {
+    if (!shadeCanvas || shadeCanvas.width !== cw || shadeCanvas.height !== ch) shadeCanvas = mk(cw, ch);
+    const sg = shadeCanvas.getContext('2d');
+    sg.globalCompositeOperation = 'source-over';
+    sg.clearRect(0, 0, cw, ch);
+    sg.fillStyle = `rgba(3,4,12,${shade})`;
+    sg.fillRect(0, 0, cw, ch);
+    sg.globalCompositeOperation = 'destination-out';
+    const hole = (x, y, inner, outer) => {
+      const g = sg.createRadialGradient(x, y, inner, x, y, outer);
+      g.addColorStop(0, 'rgba(0,0,0,1)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      sg.fillStyle = g;
+      sg.fillRect(x - outer, y - outer, outer * 2, outer * 2);
+    };
+    const tight = night > 0.5;
+    hole(toX(player.x), toY(player.y - 12), TILE * S * (tight ? 1.6 : 2.6), TILE * S * (tight ? 4.5 : 8.5));
+    for (const gl of glows) {
+      if (gl.off || !gl.flicker) continue;
+      const rad = gl.rad * TILE * S * 1.5, gx = toX(gl.x), gy = toY(gl.y);
+      if (gx < -rad || gy < -rad || gx > cw + rad || gy > ch + rad) continue;
+      hole(gx, gy, rad * 0.25, rad);
+    }
+    ctx.drawImage(shadeCanvas, 0, 0);
   }
   const lit = Math.max(dark, night);
 
@@ -1588,6 +1672,9 @@ function drawPlayer(toX, toY, t) {
   if (player.dead) {
     row = 9;
     col = Math.min(2, Math.floor(player.deadT / 0.22));
+  } else if (player.sleeping) {
+    row = 9;
+    col = 2;
   } else if (player.swing >= 0) {
     row = ROWS.swing[player.face];
     col = Math.min(3, Math.floor(player.swing / 0.075));
@@ -1603,7 +1690,9 @@ function drawPlayer(toX, toY, t) {
   // wading: sink the sprite a few pixels and cut the legs off at the waterline
   const sink = wading ? 3 : 0;
   const srcH = wading ? CELL - 8 : CELL;
-  const dx = toX(player.x - 24), dy = toY(player.y - 42 + sink);
+  // asleep, the lying-down frame sits a little right and low in its cell, so
+  // nudge it up and left onto the blanket
+  const dx = toX(player.x - 24 - (player.sleeping ? 4 : 0)), dy = toY(player.y - 42 + sink - (player.sleeping ? 8 : 0));
   const img = sheetPlay.complete && sheetPlay.naturalWidth ? sheetPlay : sheet;
   const armor = typeof playArmorIndex === 'function' ? playArmorIndex() : -1;
   const armorY = armor >= 0 && armorSheet.naturalWidth ? (armor * 10 + row) * CELL : -1;
@@ -1642,7 +1731,11 @@ function drawLabels(toX, toY, t) {
     const x = toX(o.x), topY = toY(o.y - (o.labelH || o.frames[0].height) - 3);
     if (x < -200 || x > canvas.width + 200 || topY < -60 || topY > canvas.height + 60) continue;
     const near = p === nearPoi, got = found.has(p.id);
-    const text = known(p) ? p.label.toUpperCase() : '? ? ?';
+    // at night a sign is only visible if you or a fire is lighting it
+    if (typeof playNight === 'function' && playNight() > 0.5 && Math.hypot(o.x - player.x, o.y - player.y) > TILE * 4.5
+      && !glows.some(gl => !gl.off && gl.flicker && Math.hypot(gl.x - o.x, gl.y - o.y) < gl.rad * TILE * 1.2)) continue;
+    const sealed = !got && typeof playLandmarkLocked === 'function' && playLandmarkLocked(p);
+    const text = sealed ? 'SEALED' : known(p) ? p.label.toUpperCase() : '? ? ?';
     const tw = ctx.measureText(text).width;
     const pad = Math.round(fs * 0.5), bh = Math.round(fs * 1.6);
     const bx = Math.round(x - tw / 2 - pad), by = Math.round(topY - bh);
@@ -1719,6 +1812,11 @@ renderTabs();
 resize();
 renderJournal('camp');
 updateFoundUI();
+// drawn once now and again when the pixel font has loaded, so the dm isn't in
+// a fallback font
+const paintLogo = () => { $('.brand-mark').style.backgroundImage = `url(${makeLogo()})`; };
+paintLogo();
+if (document.fonts) document.fonts.load('700 48px Silkscreen').then(paintLogo).catch(() => {});
 $('#biome-strip').innerHTML = ['meadows', 'dunes', 'mines', 'tundra'].map(id => `<span style="background-image:url(${SWATCH[id]})"></span>`).join('');
 Object.assign(cam, clampCam(camTarget()));
 

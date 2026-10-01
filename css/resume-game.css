@@ -120,16 +120,12 @@ kbd { font-family: var(--px); }
   text-decoration: none;
 }
 .brand-mark {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  font-family: var(--px);
-  font-weight: 700;
-  font-size: 0.82rem;
-  background: var(--accent);
-  color: #16100a;
-  transition: background 0.4s steps(4);
+  display: block;
+  width: 44px;
+  height: 44px;
+  background-color: #07060b;
+  background-size: 100% 100%;
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
 .brand-text strong {
@@ -885,7 +881,14 @@ body.is-title .toast { opacity: 0; pointer-events: none; }
   z-index: 13;
   pointer-events: none;
 }
-.hearts { display: flex; gap: 3px; align-self: flex-start; align-items: center; }
+.hud-status { display: flex; gap: 6px; align-self: flex-start; min-height: 16px; }
+.vitals-row { display: flex; justify-content: space-between; align-items: flex-end; align-self: stretch; gap: 12px; }
+.hearts { display: flex; gap: 3px; align-items: center; }
+.hunger { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.hunger-icons { display: flex; gap: 2px; }
+.hunger-icons i { display: block; width: 20px; height: 20px; background-size: 100% 100%; image-rendering: pixelated; }
+.sat-bar { display: block; width: 100%; height: 4px; background: rgba(10, 10, 13, 0.75); box-shadow: inset 0 0 0 1px #3b2f2a; }
+.sat-bar i { display: block; height: 100%; background: #ffd23f; }
 .hearts i, .hud-armor i { display: block; width: 22px; height: 20px; background-size: 100% 100%; image-rendering: pixelated; }
 .hud-armor { margin-left: 8px; padding: 2px; background: rgba(10, 10, 13, 0.7); }
 .hud-armor i { width: 20px; height: 20px; }
@@ -1030,7 +1033,6 @@ body.is-title .hud-play { opacity: 0; pointer-events: none; }
 .rb-out { position: relative; width: 34px; height: 34px; background: #1a1b21; }
 .rb-out i { position: absolute; inset: 5px; background-size: 100% 100%; image-rendering: pixelated; }
 .rb-name { font-size: 0.8rem; color: var(--ink); line-height: 1.25; }
-.rb-name small { display: block; font-size: 0.68rem; color: var(--muted); }
 .rb-shape { display: grid; gap: 1px; grid-auto-rows: 10px; }
 .rb-shape span { position: relative; width: 10px; height: 10px; background: #1a1b21; }
 .rb-shape i { position: absolute; inset: 0; background-size: 100% 100%; image-rendering: pixelated; }
@@ -1038,7 +1040,6 @@ body.is-title .hud-play { opacity: 0; pointer-events: none; }
 .slot s, .hb-slot s { position: absolute; left: 5px; bottom: 4px; height: 3px; max-width: calc(100% - 10px); }
 .chest-grid { display: grid; grid-template-columns: repeat(6, 46px); gap: 4px; }
 .hud-time {
-  margin-left: 8px;
   padding: 2px 6px;
   font-family: var(--px);
   font-size: 0.52rem;
@@ -1048,7 +1049,6 @@ body.is-title .hud-play { opacity: 0; pointer-events: none; }
 }
 .hud-time.is-night { color: #dfe6ff; background: #2b3566; }
 .hud-soaked {
-  margin-left: 8px;
   padding: 2px 6px;
   font-family: var(--px);
   font-size: 0.52rem;

@@ -28,14 +28,16 @@ const TIER_ORDER = ['wood', 'gold', 'stone', 'marble', 'iron', 'emerald', 'diamo
 
 // armor blocks a flat percentage of every hit. hide keeps the bear at 1 heart
 // a swipe, which is what it was tuned around. iron slows you down, gold shines.
+// dur is how many hits it soaks before breaking. the metals and gems borrow the
+// number from their tools so a gold chestplate is as flimsy as a gold pickaxe,
+// and wool and hide don't have tools so they get their own (hide sits with stone).
 const ARMORS = {
-  wool:    { name: 'Wool',    block: 0.2 },
-  gold:    { name: 'Gold',    block: 0.4, shine: true },
-  hide:    { name: 'Hide',    block: 0.6 },
-  marble:  { name: 'Marble',  block: 0.6 },
-  iron:    { name: 'Iron',    block: 0.7, slow: 0.85 },
-  emerald: { name: 'Emerald', block: 0.8 },
-  diamond: { name: 'Diamond', block: 0.85 }
+  wool:    { name: 'Wool',    block: 0.2,  dur: 16 },
+  gold:    { name: 'Gold',    block: 0.4,  dur: TIERS.gold.dur, shine: true },
+  hide:    { name: 'Hide',    block: 0.6,  dur: 48 },
+  iron:    { name: 'Iron',    block: 0.7,  dur: TIERS.iron.dur, slow: 0.85 },
+  emerald: { name: 'Emerald', block: 0.8,  dur: TIERS.emerald.dur },
+  diamond: { name: 'Diamond', block: 0.85, dur: TIERS.diamond.dur }
 };
 
 // dmg is in hearts, cd is seconds between swings, reach is in tiles, dur is how
@@ -46,18 +48,20 @@ const ITEMS = {
   stone:         { name: 'Stone' },
   marble:        { name: 'Marble' },
   hide:          { name: 'Hide' },
-  iron:          { name: 'Iron' },
-  gold:          { name: 'Gold' },
+  iron:          { name: 'Iron Ingot' },
+  gold:          { name: 'Gold Ingot' },
+  'iron-ore':    { name: 'Raw Iron', cooksTo: 'iron' },
+  'gold-ore':    { name: 'Raw Gold', cooksTo: 'gold' },
   ruby:          { name: 'Ruby' },
   emerald:       { name: 'Emerald' },
   diamond:       { name: 'Diamond' },
   wool:          { name: 'Wool' },
-  'raw-meat':    { name: 'Raw Meat', food: 0.5, cooksTo: 'cooked-meat' },
-  'cooked-meat': { name: 'Cooked Meat', food: 2 },
-  'raw-beef':    { name: 'Raw Beef', food: 0.5, cooksTo: 'cooked-beef' },
-  'cooked-beef': { name: 'Steak', food: 2.5 },
-  'raw-chicken': { name: 'Raw Chicken', food: 0.25, cooksTo: 'cooked-chicken' },
-  'cooked-chicken': { name: 'Cooked Chicken', food: 1.5 },
+  'raw-chicken':    { name: 'Raw Chicken', food: 0.5, sat: 0.3, cooksTo: 'cooked-chicken' },
+  'cooked-chicken': { name: 'Cooked Chicken', food: 1.5, sat: 1 },
+  'raw-mutton':     { name: 'Raw Mutton', food: 0.75, sat: 0.3, cooksTo: 'cooked-mutton' },
+  'cooked-mutton':  { name: 'Cooked Mutton', food: 2, sat: 1 },
+  'raw-beef':       { name: 'Raw Beef', food: 1, sat: 0.3, cooksTo: 'cooked-beef' },
+  'cooked-beef':    { name: 'Steak', food: 3, sat: 2 },
   bed:           { name: 'Bed', place: true },
   dagger:        { name: 'Dagger', tool: 'dagger', dmg: 0.5, cd: 0.45, reach: 1.5 }
 };
@@ -68,7 +72,7 @@ TIER_ORDER.forEach(m => {
   ITEMS[`${m}-axe`] = { name: `${t.name} Axe`, tool: 'axe', mat: m, dmg: t.axe, cd: 1.8, reach: 1.6, dur: t.dur, speed: t.speed };
 });
 Object.keys(ARMORS).forEach(m => {
-  ITEMS[`${m}-armor`] = { name: `${ARMORS[m].name} Armor`, armor: m, mat: m };
+  ITEMS[`${m}-armor`] = { name: `${ARMORS[m].name} Armor`, armor: m, mat: m, dur: ARMORS[m].dur };
 });
 // whatever you're holding that isn't a tool hits like a bare hand
 const FIST = { name: 'Bare hands', dmg: 0.25, cd: 0.45, reach: 1.4 };
@@ -80,8 +84,8 @@ const maxStack = id => (ITEMS[id].tool || ITEMS[id].armor || ITEMS[id].place ? 1
 const MINE_TIME = { wood: 2.4, stone: 5, ore: 8 };
 const NO_HARVEST_SLOW = 3;
 const REACH_TILES = 2.6;
-const ORE_ITEM = { [T.GOLD]: 'gold', [T.DIAMOND]: 'diamond', [T.RUBY]: 'ruby', [T.EMERALD]: 'emerald', [T.IRON]: 'iron' };
-const ORE_NEED = { iron: 1, gold: 2, ruby: 2, emerald: 2, diamond: 2 };
+const ORE_ITEM = { [T.GOLD]: 'gold-ore', [T.DIAMOND]: 'diamond', [T.RUBY]: 'ruby', [T.EMERALD]: 'emerald', [T.IRON]: 'iron-ore' };
+const ORE_NEED = { 'iron-ore': 1, 'gold-ore': 2, ruby: 2, emerald: 2, diamond: 2 };
 const STONE_TILES = new Set([T.STONE, T.PEAK, T.WALL, T.ICEROCK]);
 
 // shapes inside the 5x5 table. a shape can sit anywhere in the grid and can be
@@ -96,7 +100,7 @@ TIER_ORDER.forEach(m => {
   );
 });
 RECIPES.push({ out: 'hide-armor', shape: ['HH.HH', 'HHHHH', '.HHH.', '.HHH.'], key: { H: 'hide' } });
-['wool', 'gold', 'marble', 'iron', 'emerald', 'diamond'].forEach(m => {
+['wool', 'gold', 'iron', 'emerald', 'diamond'].forEach(m => {
   RECIPES.push({ out: `${m}-armor`, shape: ['M.M', 'MMM', 'MMM'], key: { M: m } });
 });
 RECIPES.push({ out: 'bed', shape: ['WWW', 'PPP'], key: { W: 'wool', P: 'wood' } });
@@ -121,20 +125,20 @@ const CREATURES = {
     windup: 0.55, lunge: { speed: 270, time: 0.28 }, cooldown: 1.7, dmg: 2.5,
     knock: 18, h: 36, box: { w: 36, h: 20 }, rest: 'sleep',
     regen: 0.12, chip: '123,74,41',
-    drops: [['hide', 15, 20], ['raw-meat', 10, 15]]
+    drops: [['hide', 15, 20]]
   },
   // passive livestock: wander, graze, and run when you hit them
   cow: {
     name: 'Cow', passive: true, hp: 3, speed: 20, flee: 64, h: 24, box: { w: 26, h: 12 },
-    knock: 90, regen: 0.05, chip: '244,241,234', count: 6, drops: [['hide', 1, 2], ['raw-beef', 1, 3]]
+    knock: 90, regen: 0.05, chip: '244,241,234', count: 3, drops: [['hide', 1, 2], ['raw-beef', 1, 3]]
   },
   sheep: {
     name: 'Sheep', passive: true, hp: 2.5, speed: 18, flee: 60, h: 22, box: { w: 22, h: 11 },
-    knock: 90, regen: 0.05, chip: '243,241,236', count: 6, drops: [['wool', 1, 3]]
+    knock: 90, regen: 0.05, chip: '243,241,236', count: 3, drops: [['wool', 1, 3], ['raw-mutton', 1, 2]]
   },
   chicken: {
     name: 'Chicken', passive: true, hp: 1, speed: 24, flee: 76, h: 15, box: { w: 12, h: 8 },
-    knock: 110, regen: 0.05, chip: '251,250,246', count: 8, drops: [['raw-chicken', 1, 1]]
+    knock: 110, regen: 0.05, chip: '251,250,246', count: 3, drops: [['raw-chicken', 1, 1]]
   }
 };
 
@@ -245,13 +249,13 @@ function makeIcon(id) {
         G.set(x, y, x > 4 && x < 11 && y > 5 && y < 11 ? '#a8744a' : '#80522e');
       }
       break;
-    case 'raw-meat':
-    case 'cooked-meat':
+    case 'raw-mutton':
+    case 'cooked-mutton':
     case 'raw-chicken':
     case 'cooked-chicken': {
-      // drumsticks: bear meat is deep red, chicken is pink, both brown up when cooked
+      // drumsticks: mutton is red, chicken is pink, both brown up when cooked
       const [hi, lo] = {
-        'raw-meat': ['#f39aa0', '#d0505b'], 'cooked-meat': ['#d18a4e', '#94562b'],
+        'raw-mutton': ['#ec9a95', '#c45c5c'], 'cooked-mutton': ['#c98552', '#7c4422'],
         'raw-chicken': ['#fbd0c6', '#eea596'], 'cooked-chicken': ['#f2c06a', '#c98a35']
       }[id];
       pxBlob(G, 9.5, 7, 4.5, 4, (dx, dy) => (dx + dy < -0.6 ? hi : lo));
@@ -284,6 +288,25 @@ function makeIcon(id) {
       pxLine(G, 5, 8, 8, 11, '#8a6a2e');
       pxLine(G, 3, 13, 6, 10, '#6b4422', 2);
       break;
+    case 'iron':
+    case 'gold': {
+      // an ingot: a little bar with a lit top face
+      const P = MAT_PAL[id];
+      for (let y = 6; y <= 11; y++) for (let x = 2; x <= 13; x++) {
+        if (y === 6 && (x < 4 || x > 11)) continue;
+        G.set(x, y, y <= 7 ? P[0] : x >= 12 || y === 11 ? P[2] : P[1]);
+      }
+      break;
+    }
+    case 'iron-ore':
+    case 'gold-ore':
+      // a lump of stone with the metal showing through
+      pxBlob(G, 8, 9, 5.5, 4.5, (dx, dy) => (dy > 0.3 ? '#767676' : '#959595'));
+      [[6, 8], [9, 7], [10, 10], [5, 11], [8, 11]].forEach(([x, y]) => {
+        G.set(x, y, id === 'gold-ore' ? '#f2c84b' : '#e0b896');
+        G.set(x + 1, y, id === 'gold-ore' ? '#a8800f' : '#b08a6e');
+      });
+      break;
     default:
       gemIcon(G, CRYSTAL_PAL[id] || CRYSTAL_PAL.crystal);
   }
@@ -305,6 +328,20 @@ function makeHeart(kind) {
   return G.outline(() => '#1a0a0c').canvas().toDataURL();
 }
 const HEART = { full: makeHeart('full'), half: makeHeart('half'), empty: makeHeart('empty') };
+
+// drumsticks for the hunger bar: full, half, empty
+function makeDrum(kind) {
+  const rows = ['....XXXX.', '...XXXXXX', '...XXXXXX', '...XXXXXX', '....XXXX.', '...BB....', '..BB.....', 'BBB......', '.B.......'];
+  const G = pixelGrid(11, 11);
+  rows.forEach((row, y) => [...row].forEach((ch, x) => {
+    if (ch === '.') return;
+    const filled = kind === 'full' || (kind === 'half' && x <= 5);
+    const col = ch === 'B' ? (filled ? '#f2ede0' : '#3b332e') : filled ? (y <= 1 ? '#e9a35e' : '#c8763c') : '#3b2f2a';
+    G.set(x + 1, y + 1, col);
+  }));
+  return G.outline(() => '#1a0f08').canvas().toDataURL();
+}
+const DRUM = { full: makeDrum('full'), half: makeDrum('half'), empty: makeDrum('empty') };
 
 function makeTable() {
   const G = pixelGrid(26, 21);
@@ -575,12 +612,27 @@ const inv = { slots: new Array(24).fill(null), armor: null, sel: 0 };   // slots
 const craftGrid = new Array(25).fill(null);
 const furnaceState = { input: null, fuel: null, output: null, burn: 0, prog: 0 };
 const quest = { greatTree: false, chopped: [], mined: [], killed: {}, seen: {}, crafted: {}, recipes: [], beds: [], spawnBed: null, day: 1 };
-const vitals = { hp: 5, max: 5, invuln: 0, sinceHit: 99, regenT: 0, kx: 0, ky: 0, atkCD: 0, eatCD: 0, slowT: 0 };
+// hunger works like minecraft's. saturation is a hidden buffer on top of a full
+// hunger bar: healing spends it, and it trickles away very slowly on its own (a
+// bit faster while you walk). once it's empty, walking starts eating into hunger,
+// and you only heal while hunger is completely full.
+const HUNGER_MAX = 5;
+const START_SAT = 2.5;
+const SAT_DECAY_IDLE = 0.004;
+const SAT_DECAY_MOVE = 0.012;
+const HUNGER_DECAY = 0.02;       // per second of walking, only once saturation is gone
+const REGEN_EVERY = 3;           // seconds per half heart while hunger is full
+const STARVE_EVERY = 4;          // seconds per half heart lost at zero hunger
+const STARVING_SLOW = 0.35;      // move speed at half a drumstick or less
+const vitals = { hp: 5, max: 5, hunger: HUNGER_MAX, sat: START_SAT, invuln: 0, sinceHit: 99, regenT: 0, starveT: 0, kx: 0, ky: 0, atkCD: 0, eatCD: 0, slowT: 0 };
 const creatures = [];
 const stations = [];
 const floats = [];
 const chestSlots = new Array(18).fill(null);
-const respawns = [];         // livestock waiting to wander back in
+// livestock spawns on its own every so often, out of sight, up to a cap
+const PASSIVE_CAP = 12;
+const SPAWN_WEIGHTS = [['cow', 0.35], ['sheep', 0.35], ['chicken', 0.3]];
+let spawnT = 30;
 // day and night: 4 minutes of light, 2 of dark. clock is seconds into the day.
 const DAY_LEN = 360;
 let clock = 30;
@@ -614,6 +666,8 @@ function loadSave() {
   if (data.quest) Object.assign(quest, data.quest);
   quest.recipes = Array.isArray(quest.recipes) ? quest.recipes.filter(id => ITEMS[id]) : [];
   if (typeof data.hp === 'number') vitals.hp = clamp(data.hp, 0.5, vitals.max);
+  if (typeof data.hunger === 'number') vitals.hunger = clamp(data.hunger, 0, HUNGER_MAX);
+  if (typeof data.sat === 'number') vitals.sat = clamp(data.sat, 0, vitals.hunger);
   if (Array.isArray(data.chest)) data.chest.slice(0, 18).forEach((st, i) => { chestSlots[i] = validStack(st); });
   if (typeof data.clock === 'number') clock = ((data.clock % DAY_LEN) + DAY_LEN) % DAY_LEN;
   quest.beds = Array.isArray(quest.beds) ? quest.beds : [];
@@ -624,7 +678,7 @@ function loadSave() {
 }
 function saveNow() {
   if (resetting) return;
-  store.write(SAVE_KEY, { v: 2, inv, quest, hp: vitals.hp, furnace: furnaceState, chest: chestSlots, clock });
+  store.write(SAVE_KEY, { v: 2, inv, quest, hp: vitals.hp, hunger: vitals.hunger, sat: vitals.sat, furnace: furnaceState, chest: chestSlots, clock });
   saveDirty = false;
   lastSave = performance.now();
 }
@@ -688,6 +742,19 @@ function wearHeld(cost) {
   }
   markDirty();
   renderHUD();
+}
+// every hit that lands costs the armor one point, whether it was a hyena nip or
+// a full bear swipe, same as a sword losing one per swing no matter what it hits
+function wearArmor() {
+  const s = inv.armor;
+  if (!s) return;
+  s.dur -= 1;
+  if (s.dur <= 0) {
+    inv.armor = null;
+    toast('Broken', ITEMS[s.id].name, 'Craft another at Base Camp');
+    sfx.snap();
+    burst(player.x, player.y - 20, '200,200,200', 14);
+  }
 }
 const rand = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
@@ -894,7 +961,7 @@ function hurtCreature(c, dmg, a) {
   burst(cc.x, cc.y, c.def.chip, 6);
   sfx.hit();
   // livestock just bolts; hunters turn on you
-  if (c.def.passive) { c.state = 'flee'; c.t = 0; }
+  if (c.def.passive) { c.state = 'flee'; c.t = 0; c.path = null; c.pathT = 0; }
   else if (!['windup', 'lunge', 'recover'].includes(c.state)) aggro(c);
   if (c.hp <= 0) killCreature(c);
 }
@@ -920,8 +987,6 @@ function killCreature(c) {
     c.def.drops.forEach(([id, a, b], line) => gain(id, rand(a, b), cc.x, cc.y - 10 - line * 10));
     creatures.splice(creatures.indexOf(c), 1);
     things.splice(things.indexOf(c), 1);
-    // another one wanders in somewhere else after a while
-    respawns.push({ kind: c.kind, t: 75 });
     return;
   }
   quest.killed[c.kind] = true;
@@ -931,7 +996,7 @@ function killCreature(c) {
   // beating it is what unlocks its journal entry. the landmark toast goes
   // first, then the "what you got" one once it's had a moment on screen.
   discover(c.poi);
-  setTimeout(() => toast('Defeated', c.def.name, c.kind === 'hyena' ? 'Marble makes tools at Base Camp' : 'Hide makes armor. Meat cooks in the furnace.'), 2300);
+  setTimeout(() => toast('Defeated', c.def.name, c.kind === 'hyena' ? 'Marble makes tools at Base Camp' : 'Hide makes armor at Base Camp'), 2300);
   markDirty();
 }
 
@@ -945,6 +1010,7 @@ function afterArmor(dmg) {
 function hurtPlayer(raw, fromX, fromY) {
   if (player.dead || vitals.invuln > 0) return false;
   const dmg = afterArmor(raw);
+  wearArmor();
   vitals.hp = Math.max(0, Math.round((vitals.hp - dmg) * 100) / 100);
   vitals.invuln = 0.75;
   vitals.sinceHit = 0;
@@ -976,6 +1042,8 @@ function respawn() {
   player.x = SPAWN.x * TILE + 8;
   player.y = SPAWN.y * TILE + 12;
   vitals.hp = vitals.max;
+  vitals.hunger = HUNGER_MAX;
+  vitals.sat = START_SAT;
   vitals.invuln = 1.5;
   vitals.kx = vitals.ky = 0;
   vitals.slowT = 0;
@@ -1011,6 +1079,7 @@ function updateCreature(c, dt) {
     c.kx *= Math.max(0, 1 - dt * 9);
     c.ky *= Math.max(0, 1 - dt * 9);
   }
+  c.pathT = (c.pathT || 0) - dt;
   if (def.passive) { updatePassive(c, dt); return; }
   const dx = player.x - c.x, dy = player.y - c.y, d = Math.hypot(dx, dy);
   const homeD = Math.hypot(c.hx - c.x, c.hy - c.y);
@@ -1026,6 +1095,16 @@ function updateCreature(c, dt) {
     c.flip = vx < 0;
     c.moving = true;
   };
+  // straight at the target when nothing's in the way, otherwise along a tile
+  // path around the rocks, re-planned a couple of times a second as you move
+  const steer = (tx, ty, speed) => {
+    if (clearLine(c.x, c.y, tx, ty)) { c.path = null; walk(tx, ty, speed); return; }
+    if (!c.path || !c.path.length || c.pathT <= 0) {
+      c.path = pathToward(c, Math.floor(tx / TILE), Math.floor((ty - 2) / TILE), 20);
+      c.pathT = 0.6;
+    }
+    followPath(c, walk, speed);
+  };
 
   switch (c.state) {
     case 'sleep':
@@ -1037,7 +1116,7 @@ function updateCreature(c, dt) {
         c.wander = { x: c.hx + (Math.random() - 0.5) * 6 * TILE, y: c.hy + (Math.random() - 0.5) * 4 * TILE };
         c.wanderT = 2 + Math.random() * 2.5;
       }
-      walk(c.wander.x, c.wander.y, def.speed * 0.35);
+      steer(c.wander.x, c.wander.y, def.speed * 0.35);
       if (alive && d < def.aggro * TILE) aggro(c);
       break;
     case 'chase':
@@ -1045,7 +1124,7 @@ function updateCreature(c, dt) {
       if (d <= def.range * TILE && c.cd <= 0) { c.state = 'windup'; c.t = 0; c.flip = dx < 0; break; }
       // close in, but stop just short of touching you. contact still hurts,
       // it just has to come from you walking into it or from a lunge.
-      if (d > def.box.w / 2 + 12) walk(player.x, player.y, def.speed);
+      if (d > def.box.w / 2 + 12) steer(player.x, player.y, def.speed);
       else c.flip = dx < 0;
       break;
     case 'windup':
@@ -1073,7 +1152,7 @@ function updateCreature(c, dt) {
       if (c.t > 0.4) c.state = alive ? 'chase' : 'return';
       break;
     case 'return':
-      walk(c.hx, c.hy, def.speed * 0.8);
+      steer(c.hx, c.hy, def.speed * 0.8);
       c.hp = Math.min(def.hp, c.hp + dt * 2);
       if (homeD < 6) { c.state = def.rest; c.hp = def.hp; }
       // come back within range while it's heading home and it turns round
@@ -1091,8 +1170,9 @@ function updateCreature(c, dt) {
 }
 
 const inWater = o => tiles[idx(clamp(Math.floor(o.x / TILE), 0, W - 1), clamp(Math.floor((o.y - 2) / TILE), 0, H - 1))] === T.WATER;
-// livestock: stand around, amble somewhere nearby, stand around again. hit
-// one and it runs directly away from you for a few seconds.
+// livestock: stand around, amble somewhere nearby, stand around again. hit one
+// and it runs for a few seconds, along a real path to whatever reachable spot is
+// farthest from you, so it goes around rocks instead of running into them.
 function updatePassive(c, dt) {
   const def = c.def;
   const wet = inWater(c) ? 0.6 : 1;
@@ -1100,34 +1180,114 @@ function updatePassive(c, dt) {
   c.t += dt;
   const go = (tx, ty, speed) => {
     const vx = tx - c.x, vy = ty - c.y, l = Math.hypot(vx, vy);
-    if (l < 2) return false;
+    if (l < 2) return;
     moveBody(c, (vx / l) * speed * wet * dt, (vy / l) * speed * wet * dt);
     c.flip = vx < 0;
     c.moving = true;
-    return true;
   };
+  const settle = pause => { c.state = 'graze'; c.t = 0; c.pause = pause; c.path = null; };
   if (c.state === 'flee') {
-    const dx = c.x - player.x, dy = c.y - player.y, l = Math.hypot(dx, dy) || 1;
-    go(c.x + (dx / l) * 40, c.y + (dy / l) * 40, def.flee);
-    if (c.t > 3) { c.state = 'graze'; c.t = 0; c.pause = 2 + Math.random() * 3; }
+    if (!c.path || !c.path.length || c.pathT <= 0) {
+      c.path = pathAway(c, player.x / TILE, player.y / TILE, 8);
+      c.pathT = 0.8;
+    }
+    followPath(c, go, def.flee);
+    if (c.t > 3) settle(2 + Math.random() * 3);
   } else if (c.state === 'roam') {
-    if (!go(c.wander.x, c.wander.y, def.speed) || c.t > 6) { c.state = 'graze'; c.t = 0; c.pause = 2 + Math.random() * 4; }
+    if (!followPath(c, go, def.speed) || c.t > 6) settle(2 + Math.random() * 4);
   } else if (c.t > c.pause) {
     c.state = 'roam';
     c.t = 0;
-    c.wander = { x: c.hx + (Math.random() - 0.5) * 7 * TILE, y: c.hy + (Math.random() - 0.5) * 5 * TILE };
+    c.path = pathRandom(c, 4);
   }
   if (c.moving) c.anim += dt;
 }
 
-function updateRespawns(dt) {
-  for (let i = respawns.length - 1; i >= 0; i--) {
-    respawns[i].t -= dt;
-    if (respawns[i].t > 0) continue;
-    // somewhere out of sight, so nothing pops in in front of you
-    if (spawnPassive(respawns[i].kind, Math.random, 14)) respawns.splice(i, 1);
-    else respawns[i].t = 10;
+// ground paths for creatures, using the same rules as the player's: 8 ways and
+// no cutting corners past solid blocks. the search is boxed in around the
+// creature (radius in tiles) so a long chase can't eat the frame.
+function creatureSearch(c, radius, visit) {
+  const sx = clamp(Math.floor(c.x / TILE), 0, W - 1), sy = clamp(Math.floor((c.y - 2) / TILE), 0, H - 1);
+  const x0 = sx - radius, y0 = sy - radius, size = radius * 2 + 1;
+  const prev = new Int32Array(size * size).fill(-1);
+  const start = (sy - y0) * size + (sx - x0);
+  const queue = [start];
+  prev[start] = start;
+  for (let head = 0; head < queue.length; head++) {
+    const i = queue[head], x = (i % size) + x0, y = ((i / size) | 0) + y0;
+    if (visit(x, y, i) === true) break;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const nx = x + dx, ny = y + dy;
+      if (nx < x0 || ny < y0 || nx >= x0 + size || ny >= y0 + size || solidTile(nx, ny)) continue;
+      if (dx && dy && (solidTile(x + dx, y) || solidTile(x, y + dy))) continue;
+      const n = (ny - y0) * size + (nx - x0);
+      if (prev[n] !== -1) continue;
+      prev[n] = i;
+      queue.push(n);
+    }
   }
+  return { prev, size, x0, y0, start };
+}
+function tracePath(r, end) {
+  const pts = [];
+  for (let i = end; i !== r.start; i = r.prev[i]) pts.push({ x: ((i % r.size) + r.x0) * TILE + 8, y: (((i / r.size) | 0) + r.y0) * TILE + 12 });
+  return pts.reverse();
+}
+// toward a tile, or as close to it as it can get
+function pathToward(c, tx, ty, radius) {
+  let best = null, bestD = Infinity;
+  const r = creatureSearch(c, radius, (x, y, i) => {
+    const d = (x - tx) ** 2 + (y - ty) ** 2;
+    if (d < bestD) { bestD = d; best = i; }
+    return d === 0;
+  });
+  return best === null ? [] : tracePath(r, best);
+}
+// to the reachable tile farthest from a point
+function pathAway(c, fx, fy, radius) {
+  let best = null, bestD = -1;
+  const r = creatureSearch(c, radius, (x, y, i) => {
+    const d = (x - fx) ** 2 + (y - fy) ** 2;
+    if (d > bestD) { bestD = d; best = i; }
+  });
+  return best === null ? [] : tracePath(r, best);
+}
+// somewhere random it can actually walk to, staying near its home patch
+function pathRandom(c, radius) {
+  const spots = [];
+  const r = creatureSearch(c, radius, (x, y, i) => {
+    if (tiles[idx(x, y)] !== T.WATER && Math.hypot(x - c.hx / TILE, y - c.hy / TILE) < 7) spots.push(i);
+  });
+  return spots.length ? tracePath(r, spots[(Math.random() * spots.length) | 0]) : [];
+}
+// walk the next leg of a creature's path. false once it's done.
+function followPath(c, walk, speed) {
+  if (!c.path || !c.path.length) return false;
+  if (Math.hypot(c.path[0].x - c.x, c.path[0].y - c.y) < 3) c.path.shift();
+  if (!c.path.length) return false;
+  walk(c.path[0].x, c.path[0].y, speed);
+  return true;
+}
+// can its feet get from a to b in a straight line?
+function clearLine(ax, ay, bx, by) {
+  const n = Math.ceil(Math.hypot(bx - ax, by - ay) / 6);
+  for (let i = 1; i <= n; i++) {
+    const t = i / n;
+    if (blocked(ax + (bx - ax) * t, ay + (by - ay) * t)) return false;
+  }
+  return true;
+}
+
+function updateSpawning(dt) {
+  spawnT -= dt;
+  if (spawnT > 0) return;
+  spawnT = 25 + Math.random() * 20;
+  if (creatures.filter(c => c.def.passive && !c.dead).length >= PASSIVE_CAP) return;
+  let roll = Math.random();
+  const kind = (SPAWN_WEIGHTS.find(([, w]) => (roll -= w) < 0) || SPAWN_WEIGHTS[0])[0];
+  // 14+ tiles away, so nothing pops into existence in front of you
+  spawnPassive(kind, Math.random, 14);
 }
 
 function drawCreature(c, toX, toY, t) {
@@ -1328,18 +1488,49 @@ function sleepIn(o) {
   const hunted = creatures.some(c => !c.def.passive && !c.dead && !c.dormant && ['chase', 'windup', 'lunge', 'recover'].includes(c.state));
   if (hunted) { toast('Can\'t sleep', 'Something is hunting you', 'Deal with it first'); sfx.deny(); return; }
   quest.spawnBed = o.id;
+  sleeping = { t: 0, bed: o, morning: false };
+  eating = null;
+  mining = null;
+  player.path = null;
+  player.sleeping = true;
+  player.x = o.x;
+  player.y = o.y + 1;   // just past the bed so you're drawn on top of the blanket
+  markDirty();
+}
+// lying in bed: z's drift up while the screen dims, it holds black for a beat,
+// the night is skipped, and it fades back in on the next morning
+let sleeping = null;
+const SLEEP_DIM = 2.2, SLEEP_HOLD = 1, SLEEP_WAKE = 1;
+function tickSleep(dt) {
+  if (!sleeping) return;
+  const s = sleeping;
+  s.t += dt;
   const w = $('#warp');
-  w.classList.add('is-on');
-  sfx.warp();
-  setTimeout(() => {
-    clock = 0;
-    quest.day = (quest.day || 1) + 1;
-    vitals.hp = vitals.max;
-    renderHUD();
-    w.classList.remove('is-on');
-    toast('Good morning', `Day ${quest.day}`, 'Fully rested. This bed is your respawn point now.');
-    markDirty();
-  }, 650);
+  w.style.transition = 'none';
+  if (!reduceMotion && Math.random() < dt * 2.2) floatText('z', player.x + 6 + Math.random() * 6, player.y - 18, '#cfd8ff');
+  if (s.t < SLEEP_DIM) {
+    w.style.opacity = String(s.t / SLEEP_DIM);
+  } else if (s.t < SLEEP_DIM + SLEEP_HOLD) {
+    w.style.opacity = '1';
+    if (!s.morning) {
+      s.morning = true;
+      clock = 0;
+      quest.day = (quest.day || 1) + 1;
+      vitals.hp = vitals.max;
+      renderHUD();
+      markDirty();
+    }
+  } else if (s.t < SLEEP_DIM + SLEEP_HOLD + SLEEP_WAKE) {
+    w.style.opacity = String(1 - (s.t - SLEEP_DIM - SLEEP_HOLD) / SLEEP_WAKE);
+  } else {
+    w.style.opacity = '';
+    w.style.transition = '';
+    sleeping = null;
+    player.sleeping = false;
+    // step off the foot of the bed
+    if (!blocked(player.x, s.bed.y + 14)) player.y = s.bed.y + 14;
+    toast('Good morning', `Day ${quest.day}`, 'This bed is your respawn point now');
+  }
 }
 // right-click: sleep in a bed you're pointing at, place a bed you're holding,
 // or eat whatever food is in your hand
@@ -1375,15 +1566,38 @@ function tickClock(dt) {
   }
 }
 
+// eating takes a second: you chew (crumbs, little crunches, a bar over your
+// head), walk at half speed, and the food only counts once it's finished.
+// switching slots or dying cancels it.
+const EAT_TIME = 1.1;
+let eating = null;
 function eat() {
   const s = heldItem();
-  if (!s || !ITEMS[s.id].food || vitals.eatCD > 0 || player.dead) return;
-  if (vitals.hp >= vitals.max) { floatText('Full', player.x, player.y - 34, '#cfcfcf'); return; }
-  vitals.hp = Math.min(vitals.max, vitals.hp + ITEMS[s.id].food);
-  vitals.eatCD = 0.6;
-  floatText(`+${ITEMS[s.id].food} ♥`, player.x, player.y - 34, '#ff8a8a');
+  const it = s && ITEMS[s.id];
+  if (!it || !it.food || eating || sleeping || player.dead) return;
+  if (vitals.hunger >= HUNGER_MAX) { floatText('Not hungry', player.x, player.y - 34, '#cfcfcf'); return; }
+  eating = { t: 0, slot: inv.sel, id: s.id };
+}
+function tickEating(dt) {
+  if (!eating) return;
+  const s = inv.slots[eating.slot];
+  if (!s || s.id !== eating.id || inv.sel !== eating.slot || player.dead) { eating = null; return; }
+  const before = eating.t;
+  eating.t += dt;
+  if (Math.floor(eating.t / 0.27) !== Math.floor(before / 0.27)) {
+    sfx.chew();
+    for (let i = 0; i < 3; i++) {
+      particles.push({ x: player.x + (Math.random() - 0.5) * 8, y: player.y - 22, vx: (Math.random() - 0.5) * 30, vy: -20 - Math.random() * 20, g: 140, life: 0.4, t: 0, col: '#c98552', size: 1 });
+    }
+  }
+  if (eating.t < EAT_TIME) return;
+  const it = ITEMS[s.id];
+  vitals.hunger = Math.min(HUNGER_MAX, vitals.hunger + it.food);
+  vitals.sat = Math.min(vitals.hunger, vitals.sat + it.sat);
+  floatText(`+${it.food} hunger`, player.x, player.y - 34, '#f2c06a');
   s.n--;
-  if (!s.n) inv.slots[inv.sel] = null;
+  if (!s.n) inv.slots[eating.slot] = null;
+  eating = null;
   sfx.eat();
   markDirty();
   renderHUD();
@@ -1467,7 +1681,7 @@ function takeCraft(toBag) {
   if (!quest.crafted[r.out]) {
     quest.crafted[r.out] = true;
     const it = ITEMS[r.out];
-    toast('Crafted', it.name, it.tool ? `${it.dmg} hearts a hit · lasts ${it.dur} uses` : it.armor ? `Blocks ${Math.round(ARMORS[it.armor].block * 100)}% of damage. Drop it in your armor slot (E).` : '');
+    toast('Crafted', it.name, it.armor ? 'Put it in your armor slot (E)' : '');
   }
   sfx.craft();
   markDirty();
@@ -1532,7 +1746,7 @@ function slotRefuses(ref, id) {
   const box = ref.split(':')[0], it = ITEMS[id];
   if (box === 'craft' && it.food) return 'Meat doesn\'t go on the crafting table';
   if (box === 'craft' && (it.tool || it.armor)) return 'Finished gear can\'t go back on the table';
-  if (box === 'input' && !it.cooksTo) return it.fuel ? 'That\'s fuel. It goes in the bottom slot.' : 'The furnace only cooks raw meat';
+  if (box === 'input' && !it.cooksTo) return it.fuel ? 'That\'s fuel. It goes in the bottom slot.' : 'The furnace only cooks raw food and smelts raw ore';
   if (box === 'fuel' && !it.fuel) return 'Only wood and sticks burn';
   if (box === 'armor' && !it.armor) return 'That isn\'t armor';
   if (box === 'output' || box === 'out') return 'You can only take from here';
@@ -1592,6 +1806,7 @@ function slotClick(ref, button, shift) {
 // (or between your bag and the armor slot)
 function quickMove(ref, cur) {
   const box = ref.split(':')[0];
+  if (box === 'inv' && ui === 'inv' && !ITEMS[cur.id].armor) { bagToHotbar(ref, cur); return; }
   if (box === 'inv') {
     let dest = null;
     if (ITEMS[cur.id].armor) dest = 'armor:0';
@@ -1622,6 +1837,24 @@ function quickMove(ref, cur) {
   afterInventoryChange();
 }
 
+// in the plain inventory, shift click sends things from the bag to the hotbar
+// and from the hotbar back to the bag. if there's no room it just doesn't move,
+// no message, since nothing went anywhere it shouldn't.
+function bagToHotbar(ref, cur) {
+  const from = +ref.split(':')[1];
+  const [lo, hi] = from < 6 ? [6, 24] : [0, 6];
+  const max = maxStack(cur.id);
+  for (let k = lo; k < hi && cur.n > 0; k++) {
+    const s = inv.slots[k];
+    if (s && s.id === cur.id && s.n < max) { const m = Math.min(max - s.n, cur.n); s.n += m; cur.n -= m; }
+  }
+  if (cur.n > 0) {
+    for (let k = lo; k < hi; k++) if (!inv.slots[k]) { inv.slots[k] = cur; inv.slots[from] = null; break; }
+  } else inv.slots[from] = null;
+  sfx.ui();
+  afterInventoryChange();
+}
+
 let hintTimer;
 function hint(text) {
   const el = $('#inv-hint');
@@ -1631,7 +1864,7 @@ function hint(text) {
   clearTimeout(hintTimer);
   hintTimer = setTimeout(() => { el.classList.remove('is-warn'); el.textContent = DEFAULT_HINT; }, 2200);
 }
-const DEFAULT_HINT = 'Click to pick up and drop · right-click splits a stack · shift-click moves it across';
+const DEFAULT_HINT = '';
 
 const invWrap = $('#inv-wrap');
 const heldEl = $('#held');
@@ -1644,7 +1877,7 @@ function durBar(stack) {
 }
 function slotHTML(ref, stack, extra = '') {
   const it = stack && ITEMS[stack.id];
-  const label = it ? `${it.name}${stack.n > 1 ? ` ×${stack.n}` : ''}${it.dur && stack.dur ? ` · ${stack.dur}/${it.dur}` : ''}` : 'Empty';
+  const label = it ? `${it.name}${stack.n > 1 ? ` ×${stack.n}` : ''}` : 'Empty';
   return `<button type="button" class="slot ${extra}" data-ref="${ref}" title="${label}" aria-label="${label}">
     ${it ? `<i style="background-image:url(${ICON[stack.id]})"></i>${stack.n > 1 ? `<b>${stack.n}</b>` : ''}${durBar(stack)}` : ''}
   </button>`;
@@ -1689,10 +1922,9 @@ function bookHTML() {
       cells.push(`<span style="grid-row:${y + 1};grid-column:${x + 1}">${ch === '.' ? '' : `<i style="background-image:url(${ICON[r.key[ch]]})"></i>`}</span>`);
     }
     const it = ITEMS[r.out];
-    const stat = it.tool ? `${it.dmg}♥ · ${it.dur} uses` : it.armor ? `blocks ${Math.round(ARMORS[it.armor].block * 100)}%` : `makes ${r.n}`;
     return `<li><button type="button" class="rb-item${ready ? ' is-ready' : ''}" data-fill="${RECIPES.indexOf(r)}">
       <span class="rb-out"><i style="background-image:url(${ICON[r.out]})"></i></span>
-      <span class="rb-name">${it.name}<small>${stat} · ${Object.entries(need).map(([id, n]) => `${n} ${ITEMS[id].name}`).join(', ')}</small></span>
+      <span class="rb-name">${it.name}${r.n > 1 ? ` ×${r.n}` : ''}</span>
       <span class="rb-shape" style="grid-template-columns:repeat(${w},10px)">${cells.join('')}</span>
     </button></li>`;
   }).join('')}</ul>`;
@@ -1710,7 +1942,7 @@ function stationHTML() {
           Recipe book<span>${quest.recipes.length}</span>
         </button>
       </div>
-      ${bookOpen ? `<div class="recipe-book"><p class="rb-title">Click a recipe to lay it out on the table</p>${bookHTML()}</div>` : ''}
+      ${bookOpen ? `<div class="recipe-book"><p class="rb-title">Recipes</p>${bookHTML()}</div>` : ''}
     </div>`;
   }
   if (ui === 'chest') {
@@ -1727,7 +1959,6 @@ function stationHTML() {
       </div>
       <span class="f-arrow" aria-hidden="true"><i id="f-arrow" style="width:${F.prog * 100}%"></i></span>
       ${slotHTML('output', F.output, 'slot-out')}
-      <p class="f-note">Raw meat, beef or chicken on top, fuel below.<br>1 wood cooks 2 meat · 1 stick cooks ½.<br>It keeps cooking after you walk away.</p>
     </div>`;
   }
   return '';
@@ -1735,29 +1966,19 @@ function stationHTML() {
 
 function renderUI() {
   if (!ui) return;
-  const tool = heldTool();
-  const held = heldItem();
-  const armor = inv.armor && ARMORS[ITEMS[inv.armor.id].armor];
   const title = { inv: 'Inventory', craft: 'Crafting Table', furnace: 'Furnace', chest: 'Chest' }[ui];
   const scroll = invWrap.querySelector('.rb-list')?.scrollTop || 0;
   invWrap.innerHTML = `
     <section class="inv px" role="dialog" aria-label="${title}">
       <header class="inv-head">
         <p class="inv-title">${title}</p>
-        <button type="button" class="inv-close" data-close>Close · E</button>
+        <button type="button" class="inv-close" data-close>Close | E</button>
       </header>
       ${ui !== 'inv' ? `<div class="inv-station">${stationHTML()}</div>` : ''}
       <div class="inv-body">
         <div class="inv-doll">
           <p class="inv-label">Armor</p>
           ${slotHTML('armor:0', inv.armor, 'slot-armor')}
-          <dl class="inv-stats">
-            <div><dt>Health</dt><dd>${vitals.hp} / ${vitals.max}</dd></div>
-            <div><dt>Holding</dt><dd>${tool.name}</dd></div>
-            <div><dt>Damage</dt><dd>${tool.dmg} ♥ / ${tool.cd}s</dd></div>
-            ${held && ITEMS[held.id].dur ? `<div><dt>Durability</dt><dd>${held.dur} / ${ITEMS[held.id].dur}</dd></div>` : ''}
-            <div><dt>Armor</dt><dd>${armor ? `${armor.name} · blocks ${Math.round(armor.block * 100)}%${armor.slow ? ' · heavy' : ''}` : 'None'}</dd></div>
-          </dl>
         </div>
         <div class="inv-slots">
           <p class="inv-label">Bag</p>
@@ -1781,17 +2002,32 @@ function paintHeld() {
   heldEl.style.top = `${mouse.y}px`;
 }
 
-function renderHUD() {
-  const hearts = [];
-  for (let i = 0; i < vitals.max; i++) {
-    const v = vitals.hp - i;
-    hearts.push(`<i style="background-image:url(${v >= 1 ? HEART.full : v >= 0.5 ? HEART.half : HEART.empty})"></i>`);
-  }
-  $('#hearts').innerHTML = hearts.join('')
-    + (inv.armor ? `<span class="hud-armor" title="${ITEMS[inv.armor.id].name}"><i style="background-image:url(${ICON[inv.armor.id]})"></i></span>` : '')
-    + (vitals.slowT > 0 ? '<span class="hud-soaked">Soaked</span>' : '')
-    + `<span class="hud-time${nightAmount() > 0.5 ? ' is-night' : ''}">${nightAmount() > 0.5 ? '☾ Night' : '☀ Day'} ${quest.day || 1}</span>`;
+let vitalsKey = '';
+function renderVitals() {
+  const key = `${vitals.hp}|${vitals.hunger.toFixed(2)}|${vitals.sat.toFixed(2)}|${inv.armor && inv.armor.id}|${vitals.slowT > 0}|${nightAmount() > 0.5}|${quest.day}`;
+  if (key === vitalsKey) return;
+  vitalsKey = key;
+  const row = (val, set) => {
+    const out = [];
+    for (let i = 0; i < 5; i++) {
+      const v = val - i;
+      out.push(`<i style="background-image:url(${v >= 1 ? set.full : v >= 0.5 ? set.half : set.empty})"></i>`);
+    }
+    return out.join('');
+  };
+  $('#hearts').innerHTML = row(vitals.hp, HEART)
+    + (inv.armor ? `<span class="hud-armor" title="${ITEMS[inv.armor.id].name}"><i style="background-image:url(${ICON[inv.armor.id]})"></i></span>` : '');
   $('#hearts').setAttribute('aria-label', `Health ${vitals.hp} of ${vitals.max}`);
+  $('#hunger').innerHTML = `<span class="hunger-icons">${row(vitals.hunger, DRUM)}</span>`
+    + `<span class="sat-bar" title="Saturation"><i style="width:${(vitals.sat / HUNGER_MAX) * 100}%"></i></span>`;
+  $('#hunger').setAttribute('aria-label', `Hunger ${vitals.hunger.toFixed(1)} of ${HUNGER_MAX}`);
+  $('#hud-status').innerHTML = (vitals.slowT > 0 ? '<span class="hud-soaked">Soaked</span>' : '')
+    + `<span class="hud-time${nightAmount() > 0.5 ? ' is-night' : ''}">${nightAmount() > 0.5 ? '☾ Night' : '☀ Day'} ${quest.day || 1}</span>`;
+}
+
+function renderHUD() {
+  vitalsKey = '';
+  renderVitals();
   $('#hotbar').innerHTML = inv.slots.slice(0, 6).map((s, i) => `
     <button type="button" class="hb-slot${i === inv.sel ? ' is-sel' : ''}" data-hotbar="${i}" title="${s ? ITEMS[s.id].name : 'Empty'}">
       <span class="hb-key">${i + 1}</span>
@@ -1799,7 +2035,7 @@ function renderHUD() {
     </button>`).join('');
   const s = heldItem();
   $('#held-name').textContent = s
-    ? `${ITEMS[s.id].name}${ITEMS[s.id].food ? ' · right-click to eat' : ''}${ITEMS[s.id].dur ? ` · ${s.dur}/${ITEMS[s.id].dur}` : ''}`
+    ? `${ITEMS[s.id].name}${ITEMS[s.id].food ? ' | right-click to eat' : ''}${ITEMS[s.id].dur ? ` | ${s.dur}/${ITEMS[s.id].dur}` : ''}`
     : 'Bare hands';
 }
 
@@ -1813,27 +2049,26 @@ function selectSlot(i) {
 const WEAPON_TIERS = ['stone', 'marble', 'iron', 'emerald', 'diamond'];
 const craftedWeapon = () => WEAPON_TIERS.some(m => ['sword', 'axe', 'pickaxe'].some(k => quest.crafted[`${m}-${k}`]));
 const QUEST_STEPS = [
-  { done: () => found.has('ucla'), title: 'Find the Great Tree', sub: 'It stands alone in the Meadows, west of Base Camp' },
-  { done: () => quest.greatTree, title: 'Fell the Great Tree', sub: 'Hold left-click on it with your dagger' },
-  { done: () => quest.killed.hyena, title: () => (quest.seen.hyena ? 'Defeat the marble hyena' : 'Find the next landmark'), sub: () => (quest.seen.hyena ? 'It crouches, then leaps. Sidestep and strike back.' : 'Every tree can be chopped now. Something prowls the grass...') },
-  { done: craftedWeapon, title: 'Craft a real weapon', sub: 'Marble or stone, at the crafting table in Base Camp' },
-  { done: () => quest.killed.bear, title: 'Slay the grizzly', sub: 'It sleeps by its den in the far southwest of the Meadows' },
-  { done: () => quest.crafted['hide-armor'], title: 'Craft hide armor', sub: 'Then cook the meat in the camp furnace' },
-  { done: () => false, title: 'Meadows cleared', sub: 'Mine deeper for better ores. More biomes open next patch.' }
+  { done: () => found.has('ucla'), title: 'Find the Great Tree' },
+  { done: () => quest.greatTree, title: 'Chop down the Great Tree' },
+  { done: () => quest.killed.hyena, title: () => (quest.seen.hyena ? 'Defeat the marble hyena' : 'Find the next landmark') },
+  { done: craftedWeapon, title: 'Craft a weapon' },
+  { done: () => quest.killed.bear, title: 'Defeat the grizzly' },
+  { done: () => quest.crafted['hide-armor'], title: 'Craft hide armor' },
+  { done: () => false, title: 'Meadows complete' }
 ];
+const meadowsComplete = () => QUEST_STEPS.slice(0, -1).every(q => q.done());
 let questKey = '';
 function renderQuest() {
   const step = QUEST_STEPS.find(q => !q.done());
   const n = QUEST_STEPS.indexOf(step);
   const title = typeof step.title === 'function' ? step.title() : step.title;
-  const sub = typeof step.sub === 'function' ? step.sub() : step.sub;
   const key = `${n}|${title}`;
   if (key === questKey) return;
   const first = questKey === '';
   questKey = key;
-  $('#quest-step').textContent = `Meadows · ${Math.min(n + 1, QUEST_STEPS.length - 1)} / ${QUEST_STEPS.length - 1}`;
+  $('#quest-step').textContent = 'The Meadows';
   $('#quest-title').textContent = title;
-  $('#quest-sub').textContent = sub;
   if (!first) {
     const q = $('#quest');
     q.classList.remove('is-new');
@@ -1865,6 +2100,7 @@ Object.assign(sfx, {
   hit:    () => { noiseBurst(0.08, 1800, 0.12); tone(140, 0.06, 'square', 0.03); },
   hurt:   () => { tone(220, 0.08, 'sawtooth', 0.05); tone(150, 0.12, 'sawtooth', 0.04, 0.06); },
   chip:   () => noiseBurst(0.04, 2600, 0.06),
+  chew:   () => noiseBurst(0.05, 1100, 0.07),
   crunch: () => { noiseBurst(0.18, 900, 0.14); tone(90, 0.12, 'triangle', 0.05); },
   snap:   () => { noiseBurst(0.12, 3000, 0.14); tone(300, 0.1, 'square', 0.04); tone(180, 0.15, 'square', 0.04, 0.08); },
   pickup: () => tone(980, 0.05, 'square', 0.025),
@@ -1894,7 +2130,7 @@ const REST_POSE = {
 // called by the engine just before (front false) and after (front true)
 // it draws your sprite, so things held behind your back get covered by you
 function playDrawHeld(dx, dy, row, col, front) {
-  if (!started || player.dead) return;
+  if (!started || player.dead || player.sleeping) return;
   const s = heldItem();
   if (!s) return;
   const face = ['down', 'side', 'up'][row % 3];
@@ -1918,7 +2154,69 @@ function playDrawHeld(dx, dy, row, col, front) {
   ctx.restore();
 }
 
-function playFrozen() { return ui !== null || player.dead; }
+function tickHunger(dt) {
+  const walking = player.moving;
+  if (vitals.sat > 0) vitals.sat = Math.max(0, vitals.sat - dt * (walking ? SAT_DECAY_MOVE : SAT_DECAY_IDLE));
+  else if (walking) vitals.hunger = Math.max(0, vitals.hunger - dt * HUNGER_DECAY);
+  if (vitals.hp < vitals.max && vitals.hunger >= HUNGER_MAX) {
+    vitals.regenT += dt;
+    if (vitals.regenT >= REGEN_EVERY) {
+      vitals.regenT = 0;
+      vitals.hp = Math.min(vitals.max, vitals.hp + 0.5);
+      // healing is paid for out of saturation first, then hunger itself, which
+      // knocks hunger below full and stops the healing until you eat
+      if (vitals.sat >= 0.5) vitals.sat -= 0.5;
+      else { vitals.hunger -= 0.5 - vitals.sat; vitals.sat = 0; }
+      markDirty();
+    }
+  } else vitals.regenT = 0;
+  // empty stomach: half a heart every few seconds until you eat something
+  if (vitals.hunger <= 0 && !player.dead) {
+    vitals.starveT += dt;
+    if (vitals.starveT >= STARVE_EVERY) {
+      vitals.starveT = 0;
+      vitals.hp = Math.max(0, vitals.hp - 0.5);
+      floatText('Starving', player.x, player.y - 34, '#ff6b6b');
+      sfx.hurt();
+      const flash = $('#hurt-flash');
+      flash.classList.remove('is-on');
+      void flash.offsetWidth;
+      flash.classList.add('is-on');
+      if (vitals.hp <= 0) die();
+      markDirty();
+    }
+  } else vitals.starveT = 0;
+  renderVitals();
+}
+
+// the biomes open one at a time. right now that's the meadows, then the rest
+// once the meadows quest is finished. base camp is always open.
+const OPEN_FIRST = ['camp', 'meadows'];
+function playLandmarkLocked(p) {
+  return !OPEN_FIRST.includes(p.region) && !meadowsComplete();
+}
+const sealHinted = new Set();
+let wasComplete = null;
+function checkSeals() {
+  const done = meadowsComplete();
+  if (wasComplete === false && done) {
+    toast('Meadows complete', 'New lands open', 'The other biomes\' landmarks can be found now');
+    sfx.found();
+    renderJournal(journalRegion);
+  }
+  wasComplete = done;
+  if (done) return;
+  POIS.forEach(p => {
+    if (sealHinted.has(p.id) || found.has(p.id) || !playLandmarkLocked(p) || p.thing.gone) return;
+    if (Math.hypot(p.thing.x - player.x, p.thing.y - player.y) < TILE * 3.4) {
+      sealHinted.add(p.id);
+      toast('Sealed', '? ? ?', 'Finish the Meadows first');
+      sfx.deny();
+    }
+  });
+}
+
+function playFrozen() { return ui !== null || player.dead || !!sleeping; }
 // which layer of img/player-armor.png to paint over you, or -1 for none
 const ARMOR_LAYERS = ['hide', 'wool', 'gold', 'marble', 'iron', 'emerald', 'diamond'];
 function playArmorIndex() {
@@ -1926,7 +2224,8 @@ function playArmorIndex() {
 }
 function playSpeedMult() {
   const armor = inv.armor && ARMORS[ITEMS[inv.armor.id].armor];
-  return (vitals.slowT > 0 ? 0.55 : 1) * (armor && armor.slow ? armor.slow : 1);
+  return (vitals.slowT > 0 ? 0.55 : 1) * (armor && armor.slow ? armor.slow : 1)
+    * (vitals.hunger <= 0.5 ? STARVING_SLOW : 1) * (eating ? 0.5 : 1);
 }
 
 let questT = 0, tipShown = false, wasSoaked = false;
@@ -1951,12 +2250,7 @@ function playUpdate(dt, t) {
       vitals.kx *= Math.max(0, 1 - dt * 10);
       vitals.ky *= Math.max(0, 1 - dt * 10);
     }
-    // slow regen once you've been out of a fight for a while, so the first
-    // bear attempt isn't hopeless before you have any meat
-    if (vitals.hp < vitals.max && vitals.sinceHit > 6) {
-      vitals.regenT += dt;
-      if (vitals.regenT >= 8) { vitals.regenT = 0; vitals.hp = Math.min(vitals.max, vitals.hp + 0.5); renderHUD(); markDirty(); }
-    } else vitals.regenT = 0;
+    tickHunger(dt);
     // soaked: drips off you while it lasts
     if (vitals.slowT > 0 && Math.random() < dt * 14) {
       particles.push({ x: player.x + (Math.random() - 0.5) * 12, y: player.y - 18, vx: 0, vy: 20, g: 80, life: 0.4, t: 0, col: '#7ec3ff', size: 1 });
@@ -1969,8 +2263,11 @@ function playUpdate(dt, t) {
   }
 
   creatures.forEach(c => updateCreature(c, dt));
-  updateRespawns(dt);
+  updateSpawning(dt);
   tickClock(dt);
+  tickEating(dt);
+  tickSleep(dt);
+  checkSeals();
   furnaceTick(dt);
 
   // holding the mouse: hit anything in the swing arc first, otherwise mine
@@ -2115,6 +2412,14 @@ function playRenderOverlay(toX, toY, t) {
     ctx.fillText(text, x, y + 1);
   }
 
+  if (eating) {
+    const bx = toX(player.x - 10), by = toY(player.y - 46);
+    ctx.fillStyle = 'rgba(10,10,14,0.85)';
+    ctx.fillRect(bx, by, 20 * S, 3 * S);
+    ctx.fillStyle = '#f2c06a';
+    ctx.fillRect(bx + S, by + S, Math.round(18 * S * Math.min(1, eating.t / EAT_TIME)), S);
+  }
+
   // floating numbers and pickups
   floats.forEach(f => {
     ctx.globalAlpha = Math.max(0, 1 - f.t / 1.2);
@@ -2182,9 +2487,17 @@ document.addEventListener('mousemove', e => {
   if (heldStack) { heldEl.style.left = `${e.clientX}px`; heldEl.style.top = `${e.clientY}px`; }
 });
 invWrap.addEventListener('contextmenu', e => e.preventDefault());
+// right drag: holding a stack, hold right click and sweep across slots to drop
+// one in each, like laying three diamonds across the top of a pickaxe
+let rightDrag = null;
 invWrap.addEventListener('mousedown', e => {
   const slot = e.target.closest('[data-ref]');
-  if (slot) { e.preventDefault(); slotClick(slot.dataset.ref, e.button, e.shiftKey); return; }
+  if (slot) {
+    e.preventDefault();
+    if (e.button === 2 && heldStack && !e.shiftKey) rightDrag = new Set([slot.dataset.ref]);
+    slotClick(slot.dataset.ref, e.button, e.shiftKey);
+    return;
+  }
   const fill = e.target.closest('[data-fill]');
   if (fill && e.button === 0) { e.preventDefault(); fillRecipe(RECIPES[+fill.dataset.fill]); return; }
   if (e.target.closest('[data-book]') && e.button === 0) { e.preventDefault(); bookOpen = !bookOpen; sfx.ui(); renderUI(); return; }
@@ -2192,6 +2505,16 @@ invWrap.addEventListener('mousedown', e => {
   // clicking the dim backdrop closes it too
   if (e.target === invWrap) closeUI();
 });
+invWrap.addEventListener('mouseover', e => {
+  if (!rightDrag) return;
+  if (!(e.buttons & 2) || !heldStack) { rightDrag = null; return; }
+  const slot = e.target.closest('[data-ref]');
+  if (!slot || rightDrag.has(slot.dataset.ref)) return;
+  rightDrag.add(slot.dataset.ref);
+  if (['out', 'output'].includes(slot.dataset.ref.split(':')[0])) return;
+  slotClick(slot.dataset.ref, 2, false);
+});
+window.addEventListener('mouseup', e => { if (e.button === 2) rightDrag = null; });
 $('#hotbar').addEventListener('click', e => {
   const b = e.target.closest('[data-hotbar]');
   if (b) { selectSlot(+b.dataset.hotbar); if (e.detail) b.blur(); }

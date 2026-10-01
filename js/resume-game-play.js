@@ -115,7 +115,7 @@ const CREATURES = {
     // every so often, if there's water within a few tiles, it wades in and
     // slams up a wave that rolls across the ground at you: half a heart and
     // a few seconds of being slowed
-    wave: { min: 2.5, max: 9, cd: 7, windup: 0.6, speed: 120, life: 1.7, dmg: 0.5, slow: 3, seek: 4 },
+    wave: { min: 2.5, max: 9, cd: 6, windup: 0.6, speed: 120, life: 1.7, dmg: 0.5, slow: 3, seek: 4 },
     drops: [['hide', 15, 20], ['raw-meat', 10, 15]]
   }
 };
@@ -834,11 +834,18 @@ function updateCreature(c, dt) {
       break;
     case 'chase':
       if (!alive || homeD > def.leash * TILE) { c.state = 'return'; break; }
-      if (def.wave && c.waveCD <= 0 && d > def.wave.min * TILE && d < def.wave.max * TILE) {
+      if (def.wave && c.waveCD <= 0 && d < def.wave.max * TILE) {
+        // already standing in water: slam a wave at any range, point blank
+        // included. this used to need you 2.5+ tiles away, and in a real
+        // fight the bear is always closer than that, so it never fired.
         if (inWater(c)) { c.state = 'surge'; c.t = 0; c.flip = dx < 0; break; }
-        c.wade = nearestWater(c, def.wave.seek);
-        if (c.wade) { c.state = 'wade'; c.t = 0; break; }
-        c.waveCD = 2;   // no water nearby, check again in a bit
+        // on land it only goes looking for water when you're keeping your
+        // distance, otherwise it'd wander off mid-fight
+        if (d > def.wave.min * TILE) {
+          c.wade = nearestWater(c, def.wave.seek);
+          if (c.wade) { c.state = 'wade'; c.t = 0; break; }
+          c.waveCD = 2;   // no water nearby, check again in a bit
+        }
       }
       if (d <= def.range * TILE && c.cd <= 0) { c.state = 'windup'; c.t = 0; c.flip = dx < 0; break; }
       // close in, but stop just short of touching you. contact still hurts,

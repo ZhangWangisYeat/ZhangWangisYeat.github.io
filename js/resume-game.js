@@ -841,6 +841,11 @@ sheet.src = 'img/player.png';
 // original, dagger and all.
 const sheetPlay = new Image();
 sheetPlay.src = 'img/player-swing.png';
+// armor layers to paint over the torso: seven sheets stacked top to bottom
+// (hide, wool, gold, marble, iron, emerald, diamond), each 10 rows of 48px
+// cells lined up with player-swing.png. only the chest pixels are filled in.
+const armorSheet = new Image();
+armorSheet.src = 'img/player-armor.png';
 
 // rows on the sheet: idle, walk, swing, each facing down / side (right) / up
 const ROWS = { idle: { down: 0, side: 1, up: 2 }, walk: { down: 3, side: 4, up: 5 }, swing: { down: 6, side: 7, up: 8 } };
@@ -1570,6 +1575,8 @@ function drawPlayer(toX, toY, t) {
   const srcH = wading ? CELL - 8 : CELL;
   const dx = toX(player.x - 24), dy = toY(player.y - 42 + sink);
   const img = sheetPlay.complete && sheetPlay.naturalWidth ? sheetPlay : sheet;
+  const armor = typeof playArmorIndex === 'function' ? playArmorIndex() : -1;
+  const armorY = armor >= 0 && armorSheet.naturalWidth ? (armor * 10 + row) * CELL : -1;
   if (typeof playDrawHeld === 'function') playDrawHeld(dx, dy, row, col, false);
   ctx.save();
   if (player.blink) ctx.globalAlpha = 0.4;
@@ -1577,8 +1584,10 @@ function drawPlayer(toX, toY, t) {
     ctx.translate(dx + CELL * S, dy);
     ctx.scale(-1, 1);
     ctx.drawImage(img, col * CELL, row * CELL, CELL, srcH, 0, 0, CELL * S, srcH * S);
+    if (armorY >= 0) ctx.drawImage(armorSheet, col * CELL, armorY, CELL, srcH, 0, 0, CELL * S, srcH * S);
   } else {
     ctx.drawImage(img, col * CELL, row * CELL, CELL, srcH, dx, dy, CELL * S, srcH * S);
+    if (armorY >= 0) ctx.drawImage(armorSheet, col * CELL, armorY, CELL, srcH, dx, dy, CELL * S, srcH * S);
   }
   ctx.restore();
   if (typeof playDrawHeld === 'function') playDrawHeld(dx, dy, row, col, true);

@@ -1919,6 +1919,11 @@ function playDrawHeld(dx, dy, row, col, front) {
 }
 
 function playFrozen() { return ui !== null || player.dead; }
+// which layer of img/player-armor.png to paint over you, or -1 for none
+const ARMOR_LAYERS = ['hide', 'wool', 'gold', 'marble', 'iron', 'emerald', 'diamond'];
+function playArmorIndex() {
+  return started && inv.armor ? ARMOR_LAYERS.indexOf(ITEMS[inv.armor.id].armor) : -1;
+}
 function playSpeedMult() {
   const armor = inv.armor && ARMORS[ITEMS[inv.armor.id].armor];
   return (vitals.slowT > 0 ? 0.55 : 1) * (armor && armor.slow ? armor.slow : 1);

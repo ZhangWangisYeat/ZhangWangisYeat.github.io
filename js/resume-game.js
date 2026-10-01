@@ -93,7 +93,7 @@ const REGIONS = [
             date: 'Jan 2026 – Present',
             sub: 'Association for Computing Machinery at UCLA · Ex-React & Next.js Lead (North Hollywood HS) · Unity Lead (Walt Whitman HS)',
             desc: 'Planned curriculum and ran weekly hands-on workshops where students built dynamic websites in React and Next.js and 2D games in Unity, including their own versions of Flappy Bird, Street Fighter, and Terraria.',
-            poi: { id: 'teachla-lead', kind: 'tree', at: [15, 73], label: 'ACM TeachLA' }
+            poi: { id: 'teachla-lead', kind: 'den', at: [15, 73], label: 'ACM TeachLA' }
           }
         ]
       }
@@ -538,6 +538,24 @@ function makeTent() {
   return G.outline(() => '#3a1a0c').canvas();
 }
 
+// the grizzly's den: a mossy dome of rock with a dark mouth at the bottom
+function makeDen() {
+  const w = 46, h = 32, cx = 23, ground = h - 2;
+  const G = pixelGrid(w, h);
+  for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
+    const dx = (x - cx) / 21, dy = (y - ground) / 27;
+    if (dx * dx + dy * dy > 1) continue;
+    const lit = -(dx * 0.6 + dy * 0.8) + (hash2(x, y, 41) - 0.5) * 0.5;
+    let col = lit > 0.55 ? '#a6a6a6' : lit > 0.15 ? '#8a8a8a' : lit > -0.25 ? '#727272' : '#5a5a5a';
+    if (hash2(x >> 2, y >> 1, 42) < 0.12) col = '#666666';
+    if (y < 7 + hash2(x, 0, 43) * 4 && hash2(x, y, 44) < 0.65) col = hash2(x, y, 45) < 0.5 ? '#3f8f3a' : '#2f7330';
+    const mx = (x - cx) / 8.5, my = (y - ground) / 13;
+    if (mx * mx + my * my <= 1) col = mx * mx + my * my > 0.7 ? '#2e241d' : '#140f0c';
+    G.set(x, y, col);
+  }
+  return G.outline(() => '#262626').canvas();
+}
+
 function makeFireFrames(count, small) {
   const frames = [];
   for (let f = 0; f < count; f++) {
@@ -589,7 +607,8 @@ const SPRITE = {
   emerald: [makeCrystal('emerald')],
   iron: [makeCrystal('iron')],
   fire: FIRE,
-  tent: [makeTent()]
+  tent: [makeTent()],
+  den: [makeDen()]
 };
 const DECOR = {
   tree: [makeTree(41, false), makeTree(57, false), makeTree(73, false)],
@@ -702,19 +721,19 @@ function placeDecor() {
     }
     return true;
   };
-  const scatter = (region, tileType, pool, count) => {
+  const scatter = (region, tileType, pool, count, kind) => {
     let placed = 0, tries = 0;
     while (placed < count && tries++ < 4000) {
       const x = 2 + ((r() * (W - 4)) | 0), y = 2 + ((r() * (H - 4)) | 0);
       if (QUADS[quad[idx(x, y)]] !== region || !openArea(x, y, tileType) || !farFromLandmarks(x, y, 5)) continue;
       if (things.some(t => t.decor && Math.hypot(t.tx - x, t.ty - y) < 3.5)) continue;
-      things.push({ decor: true, tx: x, ty: y, x: x * TILE + 8, y: y * TILE + 14, frames: [pool[(r() * pool.length) | 0]] });
+      things.push({ decor: true, tree: kind, id: `${region}-${placed}`, tx: x, ty: y, x: x * TILE + 8, y: y * TILE + 14, frames: [pool[(r() * pool.length) | 0]] });
       placed++;
     }
   };
-  scatter('meadows', T.GRASS, DECOR.tree, 22);
-  scatter('tundra', T.SNOW, DECOR.pine, 20);
-  scatter('dunes', T.SAND, DECOR.deadtree, 7);
+  scatter('meadows', T.GRASS, DECOR.tree, 22, 'tree');
+  scatter('tundra', T.SNOW, DECOR.pine, 20, 'pine');
+  scatter('dunes', T.SAND, DECOR.deadtree, 7, 'deadtree');
 
   // wall torches in the mines: floor tiles with rock directly above them
   let torches = 0, tries = 0;
@@ -747,28 +766,36 @@ function placeDecor() {
 }
 
 let worldCanvas, miniCanvas;
+// one tile plus its depth shading. cheap depth: solid blocks get a darker cliff
+// face on their bottom edge and cast a short shadow on the tile below, water
+// gets a foam line up top. the shading only looks at the tiles directly above
+// and below, which is why repainting a 3x3 block is enough after mining.
+function paintTile(g, x, y) {
+  const t = tiles[idx(x, y)], px = x * TILE, py = y * TILE;
+  g.drawImage(TEX[t][(hash2(x, y, SEED) * 4) | 0], px, py);
+  const below = y + 1 < H ? tiles[idx(x, y + 1)] : t;
+  const above = y > 0 ? tiles[idx(x, y - 1)] : t;
+  if (SOLID[t]) {
+    if (!SOLID[below]) { g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(px, py + 13, TILE, 3); }
+    if (!SOLID[above]) { g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(px, py, TILE, 1); }
+  } else {
+    if (SOLID[above]) { g.fillStyle = 'rgba(0,0,0,0.14)'; g.fillRect(px, py, TILE, 3); }
+    if ((t === T.WATER || t === T.ICE) && above !== t && !SOLID[above]) {
+      g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(px, py, TILE, 1);
+    }
+  }
+}
+function repaintAround(x, y) {
+  const g = worldCanvas.getContext('2d');
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (inside(x + dx, y + dy)) paintTile(g, x + dx, y + dy);
+  }
+}
+
 function paintWorld() {
   worldCanvas = mk(W * TILE, H * TILE);
   const g = worldCanvas.getContext('2d');
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    g.drawImage(TEX[tiles[idx(x, y)]][(hash2(x, y, SEED) * 4) | 0], x * TILE, y * TILE);
-  }
-  // cheap depth: solid blocks get a darker cliff face on their bottom edge and
-  // cast a short shadow on the tile below, water gets a foam line up top
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const t = tiles[idx(x, y)], px = x * TILE, py = y * TILE;
-    const below = y + 1 < H ? tiles[idx(x, y + 1)] : t;
-    const above = y > 0 ? tiles[idx(x, y - 1)] : t;
-    if (SOLID[t]) {
-      if (!SOLID[below]) { g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(px, py + 13, TILE, 3); }
-      if (!SOLID[above]) { g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(px, py, TILE, 1); }
-    } else {
-      if (SOLID[above]) { g.fillStyle = 'rgba(0,0,0,0.14)'; g.fillRect(px, py, TILE, 3); }
-      if ((t === T.WATER || t === T.ICE) && above !== t && !SOLID[above]) {
-        g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(px, py, TILE, 1);
-      }
-    }
-  }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) paintTile(g, x, y);
 
   miniCanvas = $('#minimap');
   miniCanvas.width = W;
@@ -1103,18 +1130,12 @@ function resetProgress(btn) {
   }
   clearTimeout(btn.timer);
   resetArmed = null;
-  found.clear();
   store.write('dm-found', []);
-  nearPoi = null;
-  // claim camp now so the region check doesn't also fire an "entering" banner
-  // over the reset one while the warp fade is still running
-  region = 'camp';
-  pendingRegion = null;
-  paintMinimap();
-  warpTo(SPAWN.x, SPAWN.y);
-  renderJournal('camp');
-  updateFoundUI();
-  toast('Progress reset', 'Fresh save', 'Every landmark is uncharted again');
+  store.write('dm-save', null);
+  if (typeof playResetting === 'function') playResetting();
+  store.write('dm-started', true, 'sessionStorage');
+  try { history.replaceState(null, '', location.pathname); } catch { /* file:// */ }
+  location.reload();
 }
 
 function updateFoundUI() {
@@ -1282,21 +1303,6 @@ function warpToRegion(id) {
   warpTo(first.at[0], first.at[1] + 2);
 }
 
-function swing() {
-  if (player.swing >= 0) return;
-  player.swing = 0;
-  player.path = null;
-  sfx.swing();
-  // swinging at a landmark counts as discovering it (and gives a little burst)
-  const hit = POIS.find(p => Math.hypot(p.thing.x - player.x, p.thing.y - player.y) < TILE * 2.6);
-  if (hit) {
-    if (found.has(hit.id)) burst(hit.thing.x, hit.thing.y - 12, GLOW[hit.kind] || GLOW.crystal, 10);
-    else discover(hit);
-    openJournal();
-    markNear(hit);
-  }
-}
-
 function openJournal() {
   if (!document.body.classList.contains('journal-closed')) return;
   toggleJournal();
@@ -1309,7 +1315,9 @@ function toggleJournal() {
 
 function update(dt, t) {
   let ix = 0, iy = 0;
-  if (started) keys.forEach(k => { const m = MOVE_KEYS[k]; if (m) { ix += m[0]; iy += m[1]; } });
+  const frozen = typeof playFrozen === 'function' && playFrozen();
+  if (started && !frozen) keys.forEach(k => { const m = MOVE_KEYS[k]; if (m) { ix += m[0]; iy += m[1]; } });
+  if (frozen) player.path = null;
   if (ix || iy) player.path = null;
 
   const tileUnder = tiles[idx(clamp(Math.floor(player.x / TILE), 0, W - 1), clamp(Math.floor((player.y - 1) / TILE), 0, H - 1))];
@@ -1326,7 +1334,7 @@ function update(dt, t) {
 
   const swinging = player.swing >= 0;
   const len = Math.hypot(ix, iy);
-  player.moving = len > 0.01 && !swinging;
+  player.moving = len > 0.01;
   if (player.moving) {
     const n = len > 1 ? len : 1;
     const vx = (ix / n) * speed, vy = (iy / n) * speed;
@@ -1334,8 +1342,11 @@ function update(dt, t) {
     const nx = player.x + vx * dt, ny = player.y + vy * dt;
     if (!blocked(nx, player.y)) player.x = nx;
     if (!blocked(player.x, ny)) player.y = ny;
-    if (Math.abs(ix) > Math.abs(iy) * 1.1) { player.face = 'side'; player.flip = ix < 0; }
-    else if (Math.abs(iy) > 0.01) player.face = iy < 0 ? 'up' : 'down';
+    // mid-swing you keep facing where you aimed, not where you're walking
+    if (!swinging) {
+      if (Math.abs(ix) > Math.abs(iy) * 1.1) { player.face = 'side'; player.flip = ix < 0; }
+      else if (Math.abs(iy) > 0.01) player.face = iy < 0 ? 'up' : 'down';
+    }
 
     // little puffs from your feet, coloured by whatever you're walking on
     player.dustT -= dt;
@@ -1353,6 +1364,7 @@ function update(dt, t) {
     player.swing += dt;
     if (player.swing > 0.3) player.swing = -1;
   }
+  if (typeof playUpdate === 'function') playUpdate(dt, t);
 
   // region, with a short hysteresis so wobbling on a border doesn't flicker
   const here = regionAt(player.x / TILE, player.y / TILE);
@@ -1435,18 +1447,21 @@ function render(t) {
 
   // y-sorted sprites
   const view = { l: cam.x - 48, r: cam.x + cw / S + 48, t: cam.y - 64, b: cam.y + ch / S + 64 };
-  const drawList = things.filter(o => o.x > view.l && o.x < view.r && o.y > view.t && o.y < view.b);
+  const drawList = things.filter(o => !o.gone && o.x > view.l && o.x < view.r && o.y > view.t && o.y < view.b);
   drawList.push({ isPlayer: true, y: player.y });
   drawList.sort((a, b) => a.y - b.y);
   for (const o of drawList) {
     if (o.isPlayer) { drawPlayer(toX, toY, t); continue; }
+    if (o.draw) { o.draw(o, toX, toY, t); continue; }
     const frame = o.frames.length > 1 ? o.frames[Math.floor((t / 1000) * (o.fps || 6) + (o.phase || 0)) % o.frames.length] : o.frames[0];
     const w = frame.width, h = frame.height;
     if (!o.torch) {
       ctx.fillStyle = 'rgba(0,0,0,0.22)';
       ctx.fillRect(toX(o.x - w * 0.3), toY(o.y - 1), Math.round(w * 0.6 * S), 2 * S);
     }
-    ctx.drawImage(frame, toX(o.x - Math.floor(w / 2)), toY(o.y - h + 1), w * S, h * S);
+    // anything being chopped wobbles a pixel either way
+    const shake = o.shake ? Math.round(Math.sin(t / 30) * o.shake) : 0;
+    ctx.drawImage(frame, toX(o.x - Math.floor(w / 2) + shake), toY(o.y - h + 1), w * S, h * S);
   }
 
   // particles
@@ -1471,6 +1486,7 @@ function render(t) {
   // light sources, added on top so they punch through the dark
   ctx.globalCompositeOperation = 'lighter';
   for (const gl of glows) {
+    if (gl.off) continue;
     const gx = toX(gl.x), gy = toY(gl.y);
     const rad = gl.rad * TILE * S * (gl.flicker ? 0.94 + Math.sin(t / 90 + gl.x) * 0.04 + Math.random() * 0.03 : 1);
     if (gx < -rad || gy < -rad || gx > cw + rad || gy > ch + rad) continue;
@@ -1496,12 +1512,16 @@ function render(t) {
   }
 
   drawLabels(toX, toY, t);
+  if (typeof playRenderOverlay === 'function') playRenderOverlay(toX, toY, t);
 }
 
 function drawPlayer(toX, toY, t) {
   if (!sheet.complete || !sheet.naturalWidth) return;
   let row, col;
-  if (player.swing >= 0) {
+  if (player.dead) {
+    row = 9;
+    col = Math.min(2, Math.floor(player.deadT / 0.22));
+  } else if (player.swing >= 0) {
     row = ROWS.swing[player.face];
     col = Math.min(3, Math.floor(player.swing / 0.075));
   } else if (player.moving) {
@@ -1518,6 +1538,7 @@ function drawPlayer(toX, toY, t) {
   const srcH = wading ? CELL - 8 : CELL;
   const dx = toX(player.x - 24), dy = toY(player.y - 42 + sink);
   ctx.save();
+  if (player.blink) ctx.globalAlpha = 0.4;
   if (player.flip) {
     ctx.translate(dx + CELL * S, dy);
     ctx.scale(-1, 1);
@@ -1684,11 +1705,9 @@ document.addEventListener('keydown', e => {
     return;
   }
 
+  if (typeof playKey === 'function' && playKey(e, onControl)) return;
   if (MOVE_KEYS[e.key]) { e.preventDefault(); keys.add(e.key); return; }
-  if ((e.key === ' ' || e.key === 'e' || e.key === 'E') && !onControl) { e.preventDefault(); swing(); return; }
   if (e.key === 'j' || e.key === 'J') { toggleJournal(); return; }
-  const n = Number(e.key);
-  if (n >= 1 && n <= REGIONS.length) viewRegion(REGIONS[n - 1].id);
 });
 document.addEventListener('keyup', e => keys.delete(e.key));
 window.addEventListener('blur', () => keys.clear());
@@ -1696,13 +1715,10 @@ window.addEventListener('blur', () => keys.clear());
 $('#start-btn').addEventListener('click', () => start());
 $('#title').addEventListener('click', e => { if (!e.target.closest('a, button')) start(); });
 
-// click / tap the world to walk there
-canvas.addEventListener('pointerdown', e => {
-  if (!started) { start(); return; }
-  const wx = cam.x + (e.clientX * dpr) / S, wy = cam.y + (e.clientY * dpr) / S;
-  const path = findPath(Math.floor(wx / TILE), Math.floor(wy / TILE));
-  player.path = path.length ? path : null;
-  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+// clicking the world is the play layer's job (attack, mine, open stations);
+// here it only needs to get you past the title screen
+canvas.addEventListener('pointerdown', () => {
+  if (!started) start();
 });
 
 $('#mm-frame').addEventListener('click', e => {

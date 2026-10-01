@@ -26,16 +26,15 @@ const TIERS = {
 };
 const TIER_ORDER = ['wood', 'gold', 'stone', 'marble', 'iron', 'emerald', 'diamond'];
 
-// armor: guard scales the "with armor" damage each creature does (hide is the
-// baseline the creature numbers were written for). iron slows you down, gold
-// shines.
+// armor blocks a flat percentage of every hit. hide keeps the bear at 1 heart
+// a swipe, which is what it was tuned around. iron slows you down, gold shines.
 const ARMORS = {
-  hide:    { name: 'Hide',    guard: 1 },
-  gold:    { name: 'Gold',    guard: 1,    shine: true },
-  marble:  { name: 'Marble',  guard: 0.8 },
-  iron:    { name: 'Iron',    guard: 0.6,  slow: 0.85 },
-  emerald: { name: 'Emerald', guard: 0.45 },
-  diamond: { name: 'Diamond', guard: 0.3 }
+  gold:    { name: 'Gold',    block: 0.4, shine: true },
+  hide:    { name: 'Hide',    block: 0.6 },
+  marble:  { name: 'Marble',  block: 0.6 },
+  iron:    { name: 'Iron',    block: 0.7, slow: 0.85 },
+  emerald: { name: 'Emerald', block: 0.8 },
+  diamond: { name: 'Diamond', block: 0.85 }
 };
 
 // dmg is in hearts, cd is seconds between swings, reach is in tiles, dur is how
@@ -53,13 +52,13 @@ const ITEMS = {
   diamond:       { name: 'Diamond' },
   'raw-meat':    { name: 'Raw Meat', food: 0.5 },
   'cooked-meat': { name: 'Cooked Meat', food: 2 },
-  dagger:        { name: 'Dagger', tool: 'dagger', dmg: 0.5, cd: 0.45, reach: 1.6 }
+  dagger:        { name: 'Dagger', tool: 'dagger', dmg: 0.5, cd: 0.45, reach: 1.5 }
 };
 TIER_ORDER.forEach(m => {
   const t = TIERS[m];
-  ITEMS[`${m}-sword`] = { name: `${t.name} Sword`, tool: 'sword', mat: m, dmg: t.sword, cd: 0.45, reach: 1.8, dur: t.dur };
-  ITEMS[`${m}-pickaxe`] = { name: `${t.name} Pickaxe`, tool: 'pickaxe', mat: m, dmg: t.pick, cd: 0.9, reach: 1.7, dur: t.dur, speed: t.speed, harvest: t.harvest };
-  ITEMS[`${m}-axe`] = { name: `${t.name} Axe`, tool: 'axe', mat: m, dmg: t.axe, cd: 1.8, reach: 1.7, dur: t.dur, speed: t.speed };
+  ITEMS[`${m}-sword`] = { name: `${t.name} Sword`, tool: 'sword', mat: m, dmg: t.sword, cd: 0.45, reach: 2.2, dur: t.dur };
+  ITEMS[`${m}-pickaxe`] = { name: `${t.name} Pickaxe`, tool: 'pickaxe', mat: m, dmg: t.pick, cd: 0.9, reach: 1.6, dur: t.dur, speed: t.speed, harvest: t.harvest };
+  ITEMS[`${m}-axe`] = { name: `${t.name} Axe`, tool: 'axe', mat: m, dmg: t.axe, cd: 1.8, reach: 1.6, dur: t.dur, speed: t.speed };
 });
 Object.keys(ARMORS).forEach(m => {
   ITEMS[`${m}-armor`] = { name: `${ARMORS[m].name} Armor`, armor: m, mat: m };
@@ -98,21 +97,25 @@ RECIPES.forEach(r => { r.n = r.n || 1; r.mats = [...new Set(Object.values(r.key)
 
 const COOK_RATE = 0.5;        // meat per second while the furnace has fuel
 
-// dmg is [with hide armor, without]. distances are in tiles. box is the body
-// hitbox in world px: touch it and you get hurt, lunge or not.
+// dmg is in hearts before armor. distances are in tiles. box is the body
+// hitbox in world px: touch it and you get hurt, lunge or not. windup is the
+// crouch before a lunge (your window to sidestep) and cooldown is the wait
+// before it can lunge again. the bear is still the quicker of the two.
 const CREATURES = {
   hyena: {
-    name: 'Marble Hyena', hp: 5, speed: 80, aggro: 7, leash: 16, range: 2.4,
-    windup: 0.34, lunge: { speed: 250, time: 0.22 }, cooldown: 1.1, dmg: [0.5, 1],
+    name: 'Marble Hyena', hp: 5, speed: 60, aggro: 7, leash: 16, range: 2.4,
+    windup: 0.6, lunge: { speed: 220, time: 0.24 }, cooldown: 1.9, dmg: 1,
     knock: 140, h: 28, box: { w: 26, h: 14 }, rest: 'prowl',
     drops: [['marble', 5, 10]]
   },
   bear: {
-    name: 'Grizzly', hp: 15, speed: 98, aggro: 5, leash: 13, range: 2.8,
-    windup: 0.42, lunge: { speed: 300, time: 0.26 }, cooldown: 1.3, dmg: [1, 2.5],
+    name: 'Grizzly', hp: 15, speed: 74, aggro: 5, leash: 13, range: 2.8,
+    windup: 0.55, lunge: { speed: 270, time: 0.28 }, cooldown: 1.7, dmg: 2.5,
     knock: 18, h: 36, box: { w: 36, h: 20 }, rest: 'sleep',
-    // from a few tiles out it scoops water at you instead, which slows you
-    splash: { min: 3.2, max: 7.5, cd: 4.5, windup: 0.4, speed: 200, slow: 3 },
+    // every so often, if there's water within a few tiles, it wades in and
+    // slams up a wave that rolls across the ground at you: half a heart and
+    // a few seconds of being slowed
+    wave: { min: 2.5, max: 9, cd: 7, windup: 0.6, speed: 120, life: 1.7, dmg: 0.5, slow: 3, seek: 4 },
     drops: [['hide', 15, 20], ['raw-meat', 10, 15]]
   }
 };
@@ -379,7 +382,8 @@ function makeHyena(frame, pose) {
 }
 
 // the grizzly: shoulder hump, pale muzzle, big pale claws. 'lunge' rears a
-// front paw, 'scoop' is the water toss, 'sleep' is lying down eyes shut.
+// front paw, 'scoop' is rearing up in the water to send a wave, 'sleep' is
+// lying down with its eyes shut.
 function makeBear(frame, pose) {
   const G = pixelGrid(54, 38);
   const C = { base: '#7b4a29', shade: '#5a3419', light: '#9b643a', muzzle: '#c89b6b', claw: '#ece4d4' };
@@ -433,7 +437,7 @@ const vitals = { hp: 5, max: 5, invuln: 0, sinceHit: 99, regenT: 0, kx: 0, ky: 0
 const creatures = [];
 const stations = [];
 const floats = [];
-const shots = [];            // the bear's thrown water
+const waves = [];            // the bear's water surges
 let ui = null;               // null, 'inv', 'craft' or 'furnace'
 let bookOpen = false;
 let heldStack = null;        // what's stuck to the cursor in the inventory
@@ -590,7 +594,7 @@ function spawnCreature(kind, poi, opts = {}) {
   const c = {
     kind, def, poi, frames: creatureFrames(kind), creature: true, labelH: def.h + 8,
     hx: x * TILE + 8, hy: y * TILE + 12, x: x * TILE + 8, y: y * TILE + 12,
-    hp: def.hp, state: def.rest, t: 0, cd: 0, splashCD: 1.5, anim: 0, flip: false, hurtT: 0, kx: 0, ky: 0,
+    hp: def.hp, state: def.rest, t: 0, cd: 0, waveCD: 3, wade: null, anim: 0, flip: false, hurtT: 0, kx: 0, ky: 0,
     lx: 0, ly: 0, moving: false, wander: null, wanderT: 0,
     dormant: !!opts.dormant, gone: !!opts.dormant, draw: drawCreature
   };
@@ -697,7 +701,7 @@ function hurtCreature(c, dmg, a) {
   floatText(`-${dmg}`, cc.x, cc.y - 12, '#ffd1d1');
   burst(cc.x, cc.y, c.kind === 'hyena' ? '242,238,231' : '123,74,41', 6);
   sfx.hit();
-  if (!['windup', 'lunge', 'recover', 'scoop'].includes(c.state)) aggro(c);
+  if (!['windup', 'lunge', 'recover', 'surge'].includes(c.state)) aggro(c);
   if (c.hp <= 0) killCreature(c);
 }
 
@@ -708,7 +712,7 @@ function aggro(c) {
   if (!quest.seen[c.kind]) {
     quest.seen[c.kind] = true;
     toast(c.kind === 'hyena' ? 'Ambush' : 'You woke it', c.def.name,
-      c.kind === 'hyena' ? 'It crouches before it leaps. Sidestep, then strike.' : 'Fast, and it throws water to slow you. 2.5 hearts a swipe.');
+      c.kind === 'hyena' ? 'It crouches before it leaps. Sidestep, then strike.' : '2.5 hearts a swipe. Keep it away from the water or it\'ll send a wave.');
     markDirty();
   }
 }
@@ -719,25 +723,28 @@ function killCreature(c) {
   quest.killed[c.kind] = true;
   const cc = creatureCenter(c);
   burst(cc.x, cc.y, c.kind === 'hyena' ? '242,238,231' : '123,74,41', 26);
-  sfx.found();
   c.def.drops.forEach(([id, a, b], line) => gain(id, rand(a, b), cc.x, cc.y - 14 - line * 10));
-  toast('Defeated', c.def.name, c.kind === 'hyena' ? 'Marble makes tools at Base Camp' : 'Hide makes armor. Meat cooks in the furnace.');
+  // beating it is what unlocks its journal entry. the landmark toast goes
+  // first, then the "what you got" one once it's had a moment on screen.
+  discover(c.poi);
+  setTimeout(() => toast('Defeated', c.def.name, c.kind === 'hyena' ? 'Marble makes tools at Base Camp' : 'Hide makes armor. Meat cooks in the furnace.'), 2300);
   markDirty();
 }
 
-function damageFrom(c) {
-  if (!inv.armor) return c.def.dmg[1];
-  // round to the nearest half heart so the hud can always show it
-  return Math.max(0.5, Math.round(c.def.dmg[0] * ARMORS[ITEMS[inv.armor.id].armor].guard * 2) / 2);
+// armor takes its percentage off the top. two decimals is plenty; the hearts
+// round it visually anyway.
+function afterArmor(dmg) {
+  const block = inv.armor ? ARMORS[ITEMS[inv.armor.id].armor].block : 0;
+  return Math.round(dmg * (1 - block) * 100) / 100;
 }
 
-function hurtPlayer(c) {
+function hurtPlayer(raw, fromX, fromY) {
   if (player.dead || vitals.invuln > 0) return false;
-  const dmg = damageFrom(c);
-  vitals.hp = Math.max(0, vitals.hp - dmg);
+  const dmg = afterArmor(raw);
+  vitals.hp = Math.max(0, Math.round((vitals.hp - dmg) * 100) / 100);
   vitals.invuln = 0.75;
   vitals.sinceHit = 0;
-  const a = Math.atan2(player.y - c.y, player.x - c.x);
+  const a = Math.atan2(player.y - fromY, player.x - fromX);
   vitals.kx = Math.cos(a) * 210;
   vitals.ky = Math.sin(a) * 210;
   floatText(`-${dmg}`, player.x, player.y - 30, '#ff6b6b');
@@ -768,7 +775,7 @@ function respawn() {
   vitals.invuln = 1.5;
   vitals.kx = vitals.ky = 0;
   vitals.slowT = 0;
-  shots.length = 0;
+  waves.length = 0;
   Object.assign(cam, clampCam(camTarget()));
   // anything still alive goes home and heals, like the fight never happened
   creatures.forEach(c => {
@@ -823,8 +830,11 @@ function updateCreature(c, dt) {
       break;
     case 'chase':
       if (!alive || homeD > def.leash * TILE) { c.state = 'return'; break; }
-      if (def.splash && c.splashCD <= 0 && d > def.splash.min * TILE && d < def.splash.max * TILE) {
-        c.state = 'scoop'; c.t = 0; c.flip = dx < 0; break;
+      if (def.wave && c.waveCD <= 0 && d > def.wave.min * TILE && d < def.wave.max * TILE) {
+        if (inWater(c)) { c.state = 'surge'; c.t = 0; c.flip = dx < 0; break; }
+        c.wade = nearestWater(c, def.wave.seek);
+        if (c.wade) { c.state = 'wade'; c.t = 0; break; }
+        c.waveCD = 2;   // no water nearby, check again in a bit
       }
       if (d <= def.range * TILE && c.cd <= 0) { c.state = 'windup'; c.t = 0; c.flip = dx < 0; break; }
       // close in, but stop just short of touching you. contact still hurts,
@@ -850,13 +860,21 @@ function updateCreature(c, dt) {
       c.moving = true;
       if (c.t >= def.lunge.time) { c.state = 'recover'; c.t = 0; c.cd = def.cooldown; }
       break;
-    case 'scoop':
+    case 'wade':
+      // heading for the water. if it can't get there quickly, forget it.
+      c.t += dt;
+      walk(c.wade.x, c.wade.y, def.speed);
+      if (inWater(c)) { c.state = 'surge'; c.t = 0; c.flip = dx < 0; }
+      else if (c.t > 2.5 || !alive) { c.state = alive ? 'chase' : 'return'; c.waveCD = 3; }
+      break;
+    case 'surge':
+      // rears up in the water (blue "~" tell), then slams a wave your way
       c.t += dt;
       c.flip = dx < 0;
-      if (c.t >= def.splash.windup) {
-        const l = d || 1, sp = def.splash.speed;
-        shots.push({ x: c.x + (c.flip ? -18 : 18), y: c.y - 20, vx: (dx / l) * sp, vy: (dy / l) * sp, t: 0, slow: def.splash.slow });
-        c.splashCD = def.splash.cd;
+      if (c.t >= def.wave.windup) {
+        const l = d || 1, w = def.wave;
+        waves.push({ x: c.x + (dx / l) * 14, y: c.y - 4, dx: dx / l, dy: dy / l, t: 0, speed: w.speed, life: w.life, dmg: w.dmg, slow: w.slow, hit: false });
+        c.waveCD = w.cd;
         c.state = 'chase';
         sfx.splash();
       }
@@ -879,28 +897,43 @@ function updateCreature(c, dt) {
   // wakes up swinging.
   if (alive && overlap(playerBox(), creatureBox(c))) {
     if (c.state === 'sleep' || c.state === 'prowl') aggro(c);
-    if (c.state !== 'return') hurtPlayer(c);
+    if (c.state !== 'return') hurtPlayer(def.dmg, c.x, c.y);
   }
   if (c.moving) c.anim += dt;
 }
 
-function updateShots(dt) {
-  for (let i = shots.length - 1; i >= 0; i--) {
-    const s = shots[i];
-    s.t += dt;
-    s.x += s.vx * dt;
-    s.y += s.vy * dt;
-    const pb = playerBox();
-    const hitPlayer = !player.dead && s.x > pb.x0 - 3 && s.x < pb.x1 + 3 && s.y > pb.y0 - 3 && s.y < pb.y1 + 3;
-    const hitWall = solidTile(Math.floor(s.x / TILE), Math.floor((s.y + 12) / TILE));
-    if (hitPlayer) {
-      vitals.slowT = s.slow;
-      floatText('Soaked!', player.x, player.y - 32, '#7ec3ff');
-      sfx.splash();
+const inWater = o => tiles[idx(clamp(Math.floor(o.x / TILE), 0, W - 1), clamp(Math.floor((o.y - 2) / TILE), 0, H - 1))] === T.WATER;
+function nearestWater(o, radius) {
+  const ox = Math.floor(o.x / TILE), oy = Math.floor(o.y / TILE);
+  let best = null, bestD = Infinity;
+  for (let y = oy - radius; y <= oy + radius; y++) for (let x = ox - radius; x <= ox + radius; x++) {
+    if (!inside(x, y) || tiles[idx(x, y)] !== T.WATER) continue;
+    const d = (x - ox) ** 2 + (y - oy) ** 2;
+    if (d < bestD) { bestD = d; best = { x: x * TILE + 8, y: y * TILE + 12 }; }
+  }
+  return best;
+}
+// how wide the wave front is right now: it fans out as it rolls
+const waveWidth = w => 30 + w.t * 30;
+
+function updateWaves(dt) {
+  for (let i = waves.length - 1; i >= 0; i--) {
+    const w = waves[i];
+    w.t += dt;
+    w.x += w.dx * w.speed * dt;
+    w.y += w.dy * w.speed * dt;
+    // where you are relative to the wave: along its travel, and across its front
+    const px = player.x - w.x, py = player.y - 6 - w.y;
+    const along = px * w.dx + py * w.dy, across = -px * w.dy + py * w.dx;
+    if (!w.hit && !player.dead && Math.abs(along) < 8 && Math.abs(across) < waveWidth(w) / 2) {
+      w.hit = true;
+      vitals.slowT = w.slow;
+      hurtPlayer(w.dmg, w.x - w.dx * 20, w.y - w.dy * 20);
+      floatText('Soaked!', player.x, player.y - 40, '#7ec3ff');
     }
-    if (hitPlayer || hitWall || s.t > 1.6) {
-      burst(s.x, s.y, '126,195,255', 10);
-      shots.splice(i, 1);
+    if (solidTile(Math.floor(w.x / TILE), Math.floor(w.y / TILE)) || w.t > w.life) {
+      burst(w.x, w.y, '160,210,255', 12);
+      waves.splice(i, 1);
     }
   }
 }
@@ -911,18 +944,25 @@ function drawCreature(c, toX, toY, t) {
   if (c.state === 'sleep') img = F.sleep;
   else if (c.state === 'windup') img = F.crouch;
   else if (c.state === 'lunge') img = F.lunge;
-  else if (c.state === 'scoop') img = F.scoop;
+  else if (c.state === 'surge') img = F.scoop;
   else if (c.moving) img = F.walk[Math.floor(c.anim * (c.kind === 'hyena' ? 10 : 9)) % 4];
   if (c.hurtT > 0) img = F.white.get(img) || img;
   const w = img.width, h = img.height;
   const shake = c.state === 'windup' ? Math.round(Math.sin(t / 18)) : 0;
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
   ctx.fillRect(toX(c.x - w * 0.3), toY(c.y - 1), Math.round(w * 0.6 * S), 2 * S);
-  const x = toX(c.x - Math.floor(w / 2) + shake), y = toY(c.y - h + 2);
+  // in water it sinks a little and the legs disappear under the surface
+  const wet = inWater(c), cut = wet ? 8 : 0, sink = wet ? 4 : 0;
+  const x = toX(c.x - Math.floor(w / 2) + shake), y = toY(c.y - h + 2 + sink);
   ctx.save();
-  if (c.flip) { ctx.translate(x + w * S, y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w * S, h * S); }
-  else ctx.drawImage(img, x, y, w * S, h * S);
+  if (c.flip) { ctx.translate(x + w * S, y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w, h - cut, 0, 0, w * S, (h - cut) * S); }
+  else ctx.drawImage(img, 0, 0, w, h - cut, x, y, w * S, (h - cut) * S);
   ctx.restore();
+  if (wet) {
+    const rw = w * 0.4 + (Math.floor(t / 250) % 2) * 3;
+    ctx.fillStyle = 'rgba(230,244,255,0.85)';
+    ctx.fillRect(toX(c.x - rw), toY(c.y - 3), Math.round(rw * 2 * S), S);
+  }
   // polished marble: little four-point glints that wander over the hyena
   if (c.kind === 'hyena' && c.hurtT <= 0 && !reduceMotion) {
     const cycle = Math.floor(t / 650);
@@ -1155,7 +1195,7 @@ function takeCraft(toBag) {
   if (!quest.crafted[r.out]) {
     quest.crafted[r.out] = true;
     const it = ITEMS[r.out];
-    toast('Crafted', it.name, it.tool ? `${it.dmg} hearts a hit · lasts ${it.dur} uses` : it.armor ? 'Drop it in your armor slot (E)' : '');
+    toast('Crafted', it.name, it.tool ? `${it.dmg} hearts a hit · lasts ${it.dur} uses` : it.armor ? `Blocks ${Math.round(ARMORS[it.armor].block * 100)}% of damage. Drop it in your armor slot (E).` : '');
   }
   sfx.craft();
   markDirty();
@@ -1370,7 +1410,7 @@ function bookHTML() {
       cells.push(`<span style="grid-row:${y + 1};grid-column:${x + 1}">${ch === '.' ? '' : `<i style="background-image:url(${ICON[r.key[ch]]})"></i>`}</span>`);
     }
     const it = ITEMS[r.out];
-    const stat = it.tool ? `${it.dmg}♥ · ${it.dur} uses` : it.armor ? 'armor' : `makes ${r.n}`;
+    const stat = it.tool ? `${it.dmg}♥ · ${it.dur} uses` : it.armor ? `blocks ${Math.round(ARMORS[it.armor].block * 100)}%` : `makes ${r.n}`;
     return `<li><button type="button" class="rb-item${ready ? ' is-ready' : ''}" data-fill="${RECIPES.indexOf(r)}">
       <span class="rb-out"><i style="background-image:url(${ICON[r.out]})"></i></span>
       <span class="rb-name">${it.name}<small>${stat} · ${Object.entries(need).map(([id, n]) => `${n} ${ITEMS[id].name}`).join(', ')}</small></span>
@@ -1433,7 +1473,7 @@ function renderUI() {
             <div><dt>Holding</dt><dd>${tool.name}</dd></div>
             <div><dt>Damage</dt><dd>${tool.dmg} ♥ / ${tool.cd}s</dd></div>
             ${held && ITEMS[held.id].dur ? `<div><dt>Durability</dt><dd>${held.dur} / ${ITEMS[held.id].dur}</dd></div>` : ''}
-            <div><dt>Armor</dt><dd>${armor ? `${armor.name}${armor.slow ? ' · heavy' : ''}${armor.shine ? ' · shiny' : ''}` : 'None'}</dd></div>
+            <div><dt>Armor</dt><dd>${armor ? `${armor.name} · blocks ${Math.round(armor.block * 100)}%${armor.slow ? ' · heavy' : ''}` : 'None'}</dd></div>
           </dl>
         </div>
         <div class="inv-slots">
@@ -1598,7 +1638,7 @@ function playUpdate(dt, t) {
   }
 
   creatures.forEach(c => updateCreature(c, dt));
-  updateShots(dt);
+  updateWaves(dt);
   furnaceTick(dt);
 
   // holding the mouse: hit anything in the swing arc first, otherwise mine
@@ -1658,13 +1698,28 @@ function playRenderOverlay(toX, toY, t) {
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  // thrown water
-  shots.forEach(s => {
-    ctx.fillStyle = '#bfe3ff';
-    ctx.fillRect(toX(s.x) - S, toY(s.y) - S, 3 * S, 3 * S);
-    ctx.fillStyle = '#5aa8ff';
-    ctx.fillRect(toX(s.x - s.vx * 0.02), toY(s.y - s.vy * 0.02), 2 * S, 2 * S);
-    ctx.fillRect(toX(s.x - s.vx * 0.045), toY(s.y - s.vy * 0.045), S, S);
+  // waves: a curled white crest over a few rows of darker water trailing
+  // behind it, bowed forward in the middle and fading near the end of its run
+  waves.forEach(w => {
+    const half = waveWidth(w) / 2;
+    const fade = Math.min(1, (w.life - w.t) / 0.4);
+    const rows = [[0, '#ffffff', 1], [3, '#bfe3ff', 1], [6, '#5aa8ff', 0.95], [10, '#2f7fd6', 0.75], [14, '#2f7fd6', 0.4]];
+    for (let k = -half; k <= half; k += 3) {
+      const bow = (1 - (k / half) ** 2) * 6;
+      const fx = w.x - w.dy * k + w.dx * bow, fy = w.y + w.dx * k + w.dy * bow;
+      rows.forEach(([back, col, a]) => {
+        ctx.globalAlpha = fade * a;
+        ctx.fillStyle = col;
+        ctx.fillRect(toX(fx - w.dx * back), toY(fy - w.dy * back - (back === 0 ? 2 : 0)), 3 * S, 3 * S);
+      });
+      // foam flecks spraying off the crest
+      if (hash2(Math.round(k), Math.floor(w.t * 12), 7) < 0.25) {
+        ctx.globalAlpha = fade;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(toX(fx + w.dx * 3), toY(fy + w.dy * 3 - 4), S, S);
+      }
+    }
+    ctx.globalAlpha = 1;
   });
 
   // target outline + mining progress
@@ -1719,19 +1774,19 @@ function playRenderOverlay(toX, toY, t) {
   creatures.forEach(c => {
     if (c.dead || c.gone) return;
     const top = c.y - c.def.h - 2;
-    if (c.hp < c.def.hp || ['chase', 'windup', 'lunge', 'recover', 'scoop'].includes(c.state)) {
+    if (c.hp < c.def.hp || ['chase', 'windup', 'lunge', 'recover', 'wade', 'surge'].includes(c.state)) {
       const bw = 26, bx = toX(c.x - bw / 2), by = toY(top);
       ctx.fillStyle = 'rgba(10,10,14,0.85)';
       ctx.fillRect(bx, by, bw * S, 3 * S);
       ctx.fillStyle = '#e8343a';
       ctx.fillRect(bx + S, by + S, Math.round((bw - 2) * S * (c.hp / c.def.hp)), S);
     }
-    if (c.state === 'windup' || c.state === 'scoop') {
+    if (c.state === 'windup' || c.state === 'surge') {
       const mw = Math.round(fs * 0.9), mx = toX(c.x + (c.flip ? -16 : 16)) - mw / 2, my = toY(top - 2) - mw;
-      ctx.fillStyle = c.state === 'scoop' ? '#3d8bff' : '#ff4d3d';
+      ctx.fillStyle = c.state === 'surge' ? '#3d8bff' : '#ff4d3d';
       ctx.fillRect(mx, my, mw, mw);
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(c.state === 'scoop' ? '~' : '!', mx + mw / 2, my + mw / 2 + 1);
+      ctx.fillText(c.state === 'surge' ? '~' : '!', mx + mw / 2, my + mw / 2 + 1);
     }
     if (c.state === 'sleep' && !reduceMotion) {
       const k = (t / 1000) % 2;

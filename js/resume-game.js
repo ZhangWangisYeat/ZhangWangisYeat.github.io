@@ -1393,7 +1393,9 @@ function update(dt, t) {
   // nearest landmark within a few tiles lights up its journal entry
   let near = null, nearD = TILE * 3.4;
   POIS.forEach(p => {
-    if (p.thing.gone) return;
+    // a creature landmark only counts once you've beaten it, so walking past
+    // a live one doesn't light it up
+    if (p.thing.gone || (p.thing.creature && !found.has(p.id))) return;
     const d = Math.hypot(p.thing.x - player.x, p.thing.y - player.y);
     if (d < nearD) { near = p; nearD = d; }
   });

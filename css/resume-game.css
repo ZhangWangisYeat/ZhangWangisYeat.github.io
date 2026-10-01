@@ -938,22 +938,64 @@ body.is-title .hud-play { opacity: 0; pointer-events: none; }
 .inv-hint.is-warn { color: #ff7b6b; }
 
 .inv-station { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 2px solid var(--edge); }
-.st-craft { display: grid; grid-template-columns: auto auto auto 1fr; align-items: center; gap: 14px; }
+.st-craft { display: grid; gap: 14px; }
+.craft-main { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .craft-grid { display: grid; grid-template-columns: repeat(5, 40px); gap: 3px; }
 .craft-grid .slot { width: 40px; height: 40px; }
 .craft-grid .slot i { inset: 6px; }
 .craft-arrow { font-size: 1.4rem; color: var(--muted); }
-.recipe-book { align-self: stretch; padding-left: 14px; border-left: 2px solid var(--edge); min-width: 0; }
+.rb-toggle {
+  --n: 2px;
+  margin-left: auto;
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  font-family: var(--px);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  color: #16100a;
+  background: var(--accent);
+}
+.rb-toggle span { padding: 1px 6px; background: rgba(0, 0, 0, 0.25); color: #fff; }
+.rb-toggle:hover, .rb-toggle.is-open { background: #fff; }
+.recipe-book { padding-top: 12px; border-top: 2px solid var(--edge); }
 .rb-title { font-family: var(--px); font-size: 0.56rem; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
-.recipe-book ul { display: grid; gap: 8px; list-style: none; }
-.rb-item { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 8px; }
-.rb-shape { display: grid; gap: 1px; grid-auto-rows: 12px; }
-.rb-shape span { width: 12px; height: 12px; background: #0e0f12; position: relative; }
+.rb-empty { font-size: 0.8rem; color: var(--muted); }
+.rb-list { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 6px; max-height: 236px; overflow-y: auto; padding-right: 4px; }
+.rb-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  text-align: left;
+  background: #0e0f12;
+  box-shadow: inset 0 0 0 1px var(--edge);
+  opacity: 0.55;
+}
+.rb-item.is-ready { opacity: 1; box-shadow: inset 0 0 0 1px #6fe07a; }
+.rb-item:hover { opacity: 1; box-shadow: inset 0 0 0 2px #fff; }
+.rb-out { position: relative; width: 34px; height: 34px; background: #1a1b21; }
+.rb-out i { position: absolute; inset: 5px; background-size: 100% 100%; image-rendering: pixelated; }
+.rb-name { font-size: 0.8rem; color: var(--ink); line-height: 1.25; }
+.rb-name small { display: block; font-size: 0.68rem; color: var(--muted); }
+.rb-shape { display: grid; gap: 1px; grid-auto-rows: 10px; }
+.rb-shape span { position: relative; width: 10px; height: 10px; background: #1a1b21; }
 .rb-shape i { position: absolute; inset: 0; background-size: 100% 100%; image-rendering: pixelated; }
-.rb-name { position: relative; padding-left: 22px; font-size: 0.76rem; color: var(--ink-2); line-height: 1.2; }
-.rb-name i { position: absolute; left: 0; width: 16px; height: 16px; top: 50%; margin-top: -8px; background-size: 100% 100%; image-rendering: pixelated; }
-.rb-fill { font-family: var(--px); font-size: 0.5rem; text-transform: uppercase; color: #16100a; background: var(--accent); padding: 4px 7px; }
-.rb-fill:hover { background: #fff; }
+
+.slot s, .hb-slot s { position: absolute; left: 5px; bottom: 4px; height: 3px; max-width: calc(100% - 10px); }
+.hud-soaked {
+  margin-left: 8px;
+  padding: 2px 6px;
+  font-family: var(--px);
+  font-size: 0.52rem;
+  text-transform: uppercase;
+  color: #0b2440;
+  background: #7ec3ff;
+}
 
 .st-furnace { display: flex; align-items: center; gap: 18px; }
 .f-col { display: grid; justify-items: center; gap: 6px; }
@@ -985,8 +1027,7 @@ body.is-title .hud-play { opacity: 0; pointer-events: none; }
   .inv-body { grid-template-columns: 1fr; }
   .inv-bag, .inv-hot { grid-template-columns: repeat(6, 1fr); }
   .slot { width: auto; aspect-ratio: 1; height: auto; }
-  .st-craft { grid-template-columns: auto auto auto; }
-  .recipe-book { grid-column: 1 / -1; border-left: 0; padding-left: 0; }
+  .rb-list { grid-template-columns: 1fr; }
   .craft-grid { grid-template-columns: repeat(5, 34px); }
   .craft-grid .slot { width: 34px; height: 34px; }
 }

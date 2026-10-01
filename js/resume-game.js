@@ -697,20 +697,20 @@ function generate() {
   // ore veins: sprinkled along exposed cave walls, and clustered around each
   // project so the landmark looks like it's being mined out of the rock
   const r = mulberry32(SEED + 404);
-  const ORE_WEIGHTS = [[T.IRON, 46], [T.GOLD, 22], [T.RUBY, 14], [T.DIAMOND, 10], [T.EMERALD, 8]];
+  const ORE_WEIGHTS = [[T.IRON, 50], [T.GOLD, 22], [T.RUBY, 16], [T.DIAMOND, 10], [T.EMERALD, 6]];
   const pickOre = () => {
     let roll = r() * 100;
     for (const [t, w] of ORE_WEIGHTS) { roll -= w; if (roll < 0) return t; }
     return T.IRON;
   };
-  const CLUSTER = { iron: 0.5, gold: 0.4, ruby: 0.35, diamond: 0.18, emerald: 0.14 };
+  const CLUSTER = { iron: 0.5, gold: 0.22, ruby: 0.18, diamond: 0.04, emerald: 0.03 };
   const exposed = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inside(x + dx, y + dy) && !solidTile(x + dx, y + dy));
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = idx(x, y);
     if (tiles[i] !== T.WALL || !exposed(x, y)) continue;
     const nearPoi = POIS.find(p => p.region === 'mines' && Math.hypot(p.at[0] - x, p.at[1] - y) < 6.5);
     if (nearPoi && r() < CLUSTER[nearPoi.kind]) tiles[i] = { gold: T.GOLD, diamond: T.DIAMOND, ruby: T.RUBY, emerald: T.EMERALD, iron: T.IRON }[nearPoi.kind];
-    else if (r() < 0.08) tiles[i] = pickOre();
+    else if (r() < 0.1) tiles[i] = pickOre();
   }
 }
 

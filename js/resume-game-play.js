@@ -827,7 +827,9 @@ function updateCreature(c, dt) {
         c.state = 'scoop'; c.t = 0; c.flip = dx < 0; break;
       }
       if (d <= def.range * TILE && c.cd <= 0) { c.state = 'windup'; c.t = 0; c.flip = dx < 0; break; }
-      if (d > TILE * 0.9) walk(player.x, player.y, def.speed);
+      // close in, but stop just short of touching you. contact still hurts,
+      // it just has to come from you walking into it or from a lunge.
+      if (d > def.box.w / 2 + 12) walk(player.x, player.y, def.speed);
       else c.flip = dx < 0;
       break;
     case 'windup':
@@ -860,7 +862,9 @@ function updateCreature(c, dt) {
       }
       break;
     case 'recover':
+      // hop back out of your space after a lunge so it doesn't sit inside you
       c.t += dt;
+      if (d < def.box.w / 2 + 18 && d > 0) moveBody(c, (-dx / d) * def.speed * 0.7 * dt, (-dy / d) * def.speed * 0.7 * dt);
       if (c.t > 0.4) c.state = alive ? 'chase' : 'return';
       break;
     case 'return':

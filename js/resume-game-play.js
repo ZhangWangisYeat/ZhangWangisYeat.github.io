@@ -619,7 +619,9 @@ const SAT_DECAY_IDLE = 0.004;
 const SAT_DECAY_MOVE = 0.012;
 const HUNGER_DECAY = 0.02;       // per second of walking, only once saturation is gone
 const REGEN_EVERY = 3;           // seconds per half heart while hunger is full
-const vitals = { hp: 5, max: 5, hunger: HUNGER_MAX, sat: START_SAT, invuln: 0, sinceHit: 99, regenT: 0, kx: 0, ky: 0, atkCD: 0, eatCD: 0, slowT: 0 };
+const STARVE_EVERY = 4;          // seconds per half heart lost at zero hunger
+const STARVING_SLOW = 0.35;      // move speed at half a drumstick or less
+const vitals = { hp: 5, max: 5, hunger: HUNGER_MAX, sat: START_SAT, invuln: 0, sinceHit: 99, regenT: 0, starveT: 0, kx: 0, ky: 0, atkCD: 0, eatCD: 0, slowT: 0 };
 const creatures = [];
 const stations = [];
 const floats = [];
@@ -1469,18 +1471,49 @@ function sleepIn(o) {
   const hunted = creatures.some(c => !c.def.passive && !c.dead && !c.dormant && ['chase', 'windup', 'lunge', 'recover'].includes(c.state));
   if (hunted) { toast('Can\'t sleep', 'Something is hunting you', 'Deal with it first'); sfx.deny(); return; }
   quest.spawnBed = o.id;
+  sleeping = { t: 0, bed: o, morning: false };
+  eating = null;
+  mining = null;
+  player.path = null;
+  player.sleeping = true;
+  player.x = o.x;
+  player.y = o.y + 1;   // just past the bed so you're drawn on top of the blanket
+  markDirty();
+}
+// lying in bed: z's drift up while the screen dims, it holds black for a beat,
+// the night is skipped, and it fades back in on the next morning
+let sleeping = null;
+const SLEEP_DIM = 2.2, SLEEP_HOLD = 1, SLEEP_WAKE = 1;
+function tickSleep(dt) {
+  if (!sleeping) return;
+  const s = sleeping;
+  s.t += dt;
   const w = $('#warp');
-  w.classList.add('is-on');
-  sfx.warp();
-  setTimeout(() => {
-    clock = 0;
-    quest.day = (quest.day || 1) + 1;
-    vitals.hp = vitals.max;
-    renderHUD();
-    w.classList.remove('is-on');
-    toast('Good morning', `Day ${quest.day}`, 'Fully rested. This bed is your respawn point now.');
-    markDirty();
-  }, 650);
+  w.style.transition = 'none';
+  if (!reduceMotion && Math.random() < dt * 2.2) floatText('z', player.x + 6 + Math.random() * 6, player.y - 18, '#cfd8ff');
+  if (s.t < SLEEP_DIM) {
+    w.style.opacity = String(s.t / SLEEP_DIM);
+  } else if (s.t < SLEEP_DIM + SLEEP_HOLD) {
+    w.style.opacity = '1';
+    if (!s.morning) {
+      s.morning = true;
+      clock = 0;
+      quest.day = (quest.day || 1) + 1;
+      vitals.hp = vitals.max;
+      renderHUD();
+      markDirty();
+    }
+  } else if (s.t < SLEEP_DIM + SLEEP_HOLD + SLEEP_WAKE) {
+    w.style.opacity = String(1 - (s.t - SLEEP_DIM - SLEEP_HOLD) / SLEEP_WAKE);
+  } else {
+    w.style.opacity = '';
+    w.style.transition = '';
+    sleeping = null;
+    player.sleeping = false;
+    // step off the foot of the bed
+    if (!blocked(player.x, s.bed.y + 14)) player.y = s.bed.y + 14;
+    toast('Good morning', `Day ${quest.day}`, 'This bed is your respawn point now');
+  }
 }
 // right-click: sleep in a bed you're pointing at, place a bed you're holding,
 // or eat whatever food is in your hand
@@ -1516,17 +1549,38 @@ function tickClock(dt) {
   }
 }
 
+// eating takes a second: you chew (crumbs, little crunches, a bar over your
+// head), walk at half speed, and the food only counts once it's finished.
+// switching slots or dying cancels it.
+const EAT_TIME = 1.1;
+let eating = null;
 function eat() {
   const s = heldItem();
   const it = s && ITEMS[s.id];
-  if (!it || !it.food || vitals.eatCD > 0 || player.dead) return;
+  if (!it || !it.food || eating || sleeping || player.dead) return;
   if (vitals.hunger >= HUNGER_MAX) { floatText('Not hungry', player.x, player.y - 34, '#cfcfcf'); return; }
+  eating = { t: 0, slot: inv.sel, id: s.id };
+}
+function tickEating(dt) {
+  if (!eating) return;
+  const s = inv.slots[eating.slot];
+  if (!s || s.id !== eating.id || inv.sel !== eating.slot || player.dead) { eating = null; return; }
+  const before = eating.t;
+  eating.t += dt;
+  if (Math.floor(eating.t / 0.27) !== Math.floor(before / 0.27)) {
+    sfx.chew();
+    for (let i = 0; i < 3; i++) {
+      particles.push({ x: player.x + (Math.random() - 0.5) * 8, y: player.y - 22, vx: (Math.random() - 0.5) * 30, vy: -20 - Math.random() * 20, g: 140, life: 0.4, t: 0, col: '#c98552', size: 1 });
+    }
+  }
+  if (eating.t < EAT_TIME) return;
+  const it = ITEMS[s.id];
   vitals.hunger = Math.min(HUNGER_MAX, vitals.hunger + it.food);
   vitals.sat = Math.min(vitals.hunger, vitals.sat + it.sat);
-  vitals.eatCD = 0.6;
   floatText(`+${it.food} hunger`, player.x, player.y - 34, '#f2c06a');
   s.n--;
-  if (!s.n) inv.slots[inv.sel] = null;
+  if (!s.n) inv.slots[eating.slot] = null;
+  eating = null;
   sfx.eat();
   markDirty();
   renderHUD();
@@ -1793,7 +1847,7 @@ function hint(text) {
   clearTimeout(hintTimer);
   hintTimer = setTimeout(() => { el.classList.remove('is-warn'); el.textContent = DEFAULT_HINT; }, 2200);
 }
-const DEFAULT_HINT = 'Click to pick up and drop · right-click splits a stack · shift-click moves it across';
+const DEFAULT_HINT = '';
 
 const invWrap = $('#inv-wrap');
 const heldEl = $('#held');
@@ -1806,7 +1860,7 @@ function durBar(stack) {
 }
 function slotHTML(ref, stack, extra = '') {
   const it = stack && ITEMS[stack.id];
-  const label = it ? `${it.name}${stack.n > 1 ? ` ×${stack.n}` : ''}${it.dur && stack.dur ? ` · ${stack.dur}/${it.dur}` : ''}` : 'Empty';
+  const label = it ? `${it.name}${stack.n > 1 ? ` ×${stack.n}` : ''}` : 'Empty';
   return `<button type="button" class="slot ${extra}" data-ref="${ref}" title="${label}" aria-label="${label}">
     ${it ? `<i style="background-image:url(${ICON[stack.id]})"></i>${stack.n > 1 ? `<b>${stack.n}</b>` : ''}${durBar(stack)}` : ''}
   </button>`;
@@ -1888,7 +1942,6 @@ function stationHTML() {
       </div>
       <span class="f-arrow" aria-hidden="true"><i id="f-arrow" style="width:${F.prog * 100}%"></i></span>
       ${slotHTML('output', F.output, 'slot-out')}
-      <p class="f-note">Raw food or ore on top, fuel below.<br>1 wood cooks 2 things, 1 stick cooks half of one.<br>It keeps going after you walk away.</p>
     </div>`;
   }
   return '';
@@ -1905,19 +1958,19 @@ function renderUI() {
     <section class="inv px" role="dialog" aria-label="${title}">
       <header class="inv-head">
         <p class="inv-title">${title}</p>
-        <button type="button" class="inv-close" data-close>Close · E</button>
+        <button type="button" class="inv-close" data-close>Close | E</button>
       </header>
       ${ui !== 'inv' ? `<div class="inv-station">${stationHTML()}</div>` : ''}
       <div class="inv-body">
         <div class="inv-doll">
           <p class="inv-label">Armor</p>
           ${slotHTML('armor:0', inv.armor, 'slot-armor')}
-          <dl class="inv-stats">
+          <dl class="inv-stats" hidden>
             <div><dt>Health</dt><dd>${vitals.hp} / ${vitals.max}</dd></div>
             <div><dt>Holding</dt><dd>${tool.name}</dd></div>
             <div><dt>Damage</dt><dd>${tool.dmg} ♥ / ${tool.cd}s</dd></div>
             ${held && ITEMS[held.id].dur ? `<div><dt>Durability</dt><dd>${held.dur} / ${ITEMS[held.id].dur}</dd></div>` : ''}
-            <div><dt>Armor</dt><dd>${armor ? `${armor.name} · blocks ${Math.round(armor.block * 100)}%${armor.slow ? ' · heavy' : ''}` : 'None'}</dd></div>
+            <div><dt>Armor</dt><dd>${armor ? `${armor.name} | blocks ${Math.round(armor.block * 100)}%${armor.slow ? ' | heavy' : ''}` : 'None'}</dd></div>
           </dl>
         </div>
         <div class="inv-slots">
@@ -1975,7 +2028,7 @@ function renderHUD() {
     </button>`).join('');
   const s = heldItem();
   $('#held-name').textContent = s
-    ? `${ITEMS[s.id].name}${ITEMS[s.id].food ? ' · right-click to eat' : ''}${ITEMS[s.id].dur ? ` · ${s.dur}/${ITEMS[s.id].dur}` : ''}`
+    ? `${ITEMS[s.id].name}${ITEMS[s.id].food ? ' | right-click to eat' : ''}${ITEMS[s.id].dur ? ` | ${s.dur}/${ITEMS[s.id].dur}` : ''}`
     : 'Bare hands';
 }
 
@@ -1989,27 +2042,26 @@ function selectSlot(i) {
 const WEAPON_TIERS = ['stone', 'marble', 'iron', 'emerald', 'diamond'];
 const craftedWeapon = () => WEAPON_TIERS.some(m => ['sword', 'axe', 'pickaxe'].some(k => quest.crafted[`${m}-${k}`]));
 const QUEST_STEPS = [
-  { done: () => found.has('ucla'), title: 'Find the Great Tree', sub: 'It stands alone in the Meadows, west of Base Camp' },
-  { done: () => quest.greatTree, title: 'Fell the Great Tree', sub: 'Hold left-click on it with your dagger' },
-  { done: () => quest.killed.hyena, title: () => (quest.seen.hyena ? 'Defeat the marble hyena' : 'Find the next landmark'), sub: () => (quest.seen.hyena ? 'It crouches, then leaps. Sidestep and strike back.' : 'Every tree can be chopped now. Something prowls the grass...') },
-  { done: craftedWeapon, title: 'Craft a real weapon', sub: 'Marble or stone, at the crafting table in Base Camp' },
-  { done: () => quest.killed.bear, title: 'Slay the grizzly', sub: 'It sleeps by its den in the far southwest of the Meadows' },
-  { done: () => quest.crafted['hide-armor'], title: 'Craft hide armor', sub: 'At the crafting table in Base Camp' },
-  { done: () => false, title: 'Meadows cleared', sub: 'Mine deeper for better ores. More biomes open next patch.' }
+  { done: () => found.has('ucla'), title: 'Find the Great Tree' },
+  { done: () => quest.greatTree, title: 'Chop down the Great Tree' },
+  { done: () => quest.killed.hyena, title: () => (quest.seen.hyena ? 'Defeat the marble hyena' : 'Find the next landmark') },
+  { done: craftedWeapon, title: 'Craft a weapon' },
+  { done: () => quest.killed.bear, title: 'Defeat the grizzly' },
+  { done: () => quest.crafted['hide-armor'], title: 'Craft hide armor' },
+  { done: () => false, title: 'Meadows complete' }
 ];
+const meadowsComplete = () => QUEST_STEPS.slice(0, -1).every(q => q.done());
 let questKey = '';
 function renderQuest() {
   const step = QUEST_STEPS.find(q => !q.done());
   const n = QUEST_STEPS.indexOf(step);
   const title = typeof step.title === 'function' ? step.title() : step.title;
-  const sub = typeof step.sub === 'function' ? step.sub() : step.sub;
   const key = `${n}|${title}`;
   if (key === questKey) return;
   const first = questKey === '';
   questKey = key;
-  $('#quest-step').textContent = `Meadows ${Math.min(n + 1, QUEST_STEPS.length - 1)} of ${QUEST_STEPS.length - 1}`;
+  $('#quest-step').textContent = 'The Meadows';
   $('#quest-title').textContent = title;
-  $('#quest-sub').textContent = sub;
   if (!first) {
     const q = $('#quest');
     q.classList.remove('is-new');
@@ -2041,6 +2093,7 @@ Object.assign(sfx, {
   hit:    () => { noiseBurst(0.08, 1800, 0.12); tone(140, 0.06, 'square', 0.03); },
   hurt:   () => { tone(220, 0.08, 'sawtooth', 0.05); tone(150, 0.12, 'sawtooth', 0.04, 0.06); },
   chip:   () => noiseBurst(0.04, 2600, 0.06),
+  chew:   () => noiseBurst(0.05, 1100, 0.07),
   crunch: () => { noiseBurst(0.18, 900, 0.14); tone(90, 0.12, 'triangle', 0.05); },
   snap:   () => { noiseBurst(0.12, 3000, 0.14); tone(300, 0.1, 'square', 0.04); tone(180, 0.15, 'square', 0.04, 0.08); },
   pickup: () => tone(980, 0.05, 'square', 0.025),
@@ -2070,7 +2123,7 @@ const REST_POSE = {
 // called by the engine just before (front false) and after (front true)
 // it draws your sprite, so things held behind your back get covered by you
 function playDrawHeld(dx, dy, row, col, front) {
-  if (!started || player.dead) return;
+  if (!started || player.dead || player.sleeping) return;
   const s = heldItem();
   if (!s) return;
   const face = ['down', 'side', 'up'][row % 3];
@@ -2110,10 +2163,53 @@ function tickHunger(dt) {
       markDirty();
     }
   } else vitals.regenT = 0;
+  // empty stomach: half a heart every few seconds until you eat something
+  if (vitals.hunger <= 0 && !player.dead) {
+    vitals.starveT += dt;
+    if (vitals.starveT >= STARVE_EVERY) {
+      vitals.starveT = 0;
+      vitals.hp = Math.max(0, vitals.hp - 0.5);
+      floatText('Starving', player.x, player.y - 34, '#ff6b6b');
+      sfx.hurt();
+      const flash = $('#hurt-flash');
+      flash.classList.remove('is-on');
+      void flash.offsetWidth;
+      flash.classList.add('is-on');
+      if (vitals.hp <= 0) die();
+      markDirty();
+    }
+  } else vitals.starveT = 0;
   renderVitals();
 }
 
-function playFrozen() { return ui !== null || player.dead; }
+// the biomes open one at a time. right now that's the meadows, then the rest
+// once the meadows quest is finished. base camp is always open.
+const OPEN_FIRST = ['camp', 'meadows'];
+function playLandmarkLocked(p) {
+  return !OPEN_FIRST.includes(p.region) && !meadowsComplete();
+}
+const sealHinted = new Set();
+let wasComplete = null;
+function checkSeals() {
+  const done = meadowsComplete();
+  if (wasComplete === false && done) {
+    toast('Meadows complete', 'New lands open', 'The other biomes\' landmarks can be found now');
+    sfx.found();
+    renderJournal(journalRegion);
+  }
+  wasComplete = done;
+  if (done) return;
+  POIS.forEach(p => {
+    if (sealHinted.has(p.id) || found.has(p.id) || !playLandmarkLocked(p) || p.thing.gone) return;
+    if (Math.hypot(p.thing.x - player.x, p.thing.y - player.y) < TILE * 3.4) {
+      sealHinted.add(p.id);
+      toast('Sealed', '? ? ?', 'Finish the Meadows first');
+      sfx.deny();
+    }
+  });
+}
+
+function playFrozen() { return ui !== null || player.dead || !!sleeping; }
 // which layer of img/player-armor.png to paint over you, or -1 for none
 const ARMOR_LAYERS = ['hide', 'wool', 'gold', 'marble', 'iron', 'emerald', 'diamond'];
 function playArmorIndex() {
@@ -2121,7 +2217,8 @@ function playArmorIndex() {
 }
 function playSpeedMult() {
   const armor = inv.armor && ARMORS[ITEMS[inv.armor.id].armor];
-  return (vitals.slowT > 0 ? 0.55 : 1) * (armor && armor.slow ? armor.slow : 1);
+  return (vitals.slowT > 0 ? 0.55 : 1) * (armor && armor.slow ? armor.slow : 1)
+    * (vitals.hunger <= 0.5 ? STARVING_SLOW : 1) * (eating ? 0.5 : 1);
 }
 
 let questT = 0, tipShown = false, wasSoaked = false;
@@ -2161,6 +2258,9 @@ function playUpdate(dt, t) {
   creatures.forEach(c => updateCreature(c, dt));
   updateSpawning(dt);
   tickClock(dt);
+  tickEating(dt);
+  tickSleep(dt);
+  checkSeals();
   furnaceTick(dt);
 
   // holding the mouse: hit anything in the swing arc first, otherwise mine
@@ -2303,6 +2403,14 @@ function playRenderOverlay(toX, toY, t) {
     ctx.fillRect(x - tw / 2 - pad, y - fs * 0.8, tw + pad * 2, fs * 1.6);
     ctx.fillStyle = '#ffd23f';
     ctx.fillText(text, x, y + 1);
+  }
+
+  if (eating) {
+    const bx = toX(player.x - 10), by = toY(player.y - 46);
+    ctx.fillStyle = 'rgba(10,10,14,0.85)';
+    ctx.fillRect(bx, by, 20 * S, 3 * S);
+    ctx.fillStyle = '#f2c06a';
+    ctx.fillRect(bx + S, by + S, Math.round(18 * S * Math.min(1, eating.t / EAT_TIME)), S);
   }
 
   // floating numbers and pickups

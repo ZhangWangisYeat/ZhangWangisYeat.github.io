@@ -38,11 +38,17 @@ const REGIONS = [
         heading: 'Credits',
         poi: { id: 'camp', kind: 'fire', at: [60, 41], label: 'Base Camp' },
         items: [
-          { key: 'Email', label: 'zalex9111@gmail.com', href: 'mailto:zalex9111@gmail.com' },
+          { key: 'Email', label: 'azhang25@g.ucla.edu', href: 'mailto:azhang25@g.ucla.edu' },
+          { key: 'Website', label: 'Portfolio', href: 'https://zhangwangisyeat.github.io' },
           { key: 'GitHub', label: 'ZhangWangisYeat', href: 'https://github.com/ZhangWangisYeat' },
-          { key: 'LinkedIn', label: 'Alex Zhang', href: 'https://www.linkedin.com/in/alex-zhang-23b386329/' },
+          { key: 'LinkedIn', label: 'Alex Zhang', href: 'https://www.linkedin.com/in/alexzhangwang' },
           { key: 'Based', label: 'Los Angeles, CA' }
         ]
+      },
+      {
+        type: 'chips',
+        heading: 'Interests',
+        items: ['Basketball', 'Golf', 'Football', 'Violin', 'Video Games', 'Poker', 'Reading', 'Game Development']
       },
       { type: 'guide', heading: 'World guide' },
       {
@@ -65,8 +71,8 @@ const REGIONS = [
         items: [
           {
             title: 'University of California, Los Angeles',
-            date: 'Expected Jun 2029',
-            sub: 'B.S. Computer Science & Engineering · Henry Samueli College of Engineering',
+            date: 'Sep 2025 – Present',
+            sub: 'B.S. Computer Science & Engineering · Henry Samueli College of Engineering · Los Angeles, CA · Expected Jun 2029',
             poi: { id: 'ucla', kind: 'bigtree', at: [21, 54], label: 'UCLA' }
           },
           {
@@ -83,10 +89,10 @@ const REGIONS = [
         blurb: 'Teaching the next party how to play.',
         items: [
           {
-            title: 'School Lead — ACM TeachLA at UCLA',
-            date: 'Jan 2026',
-            sub: 'Ex-React Lead (North Hollywood HS) · Unity Lead (Walt Whitman HS)',
-            desc: 'Planned curriculum, ran weekly hands-on workshops, and built games (Street Fighter, Terraria) with students.',
+            title: 'School Team Lead — ACM TeachLA',
+            date: 'Jan 2026 – Present',
+            sub: 'Association for Computing Machinery at UCLA · Ex-React & Next.js Lead (North Hollywood HS) · Unity Lead (Walt Whitman HS)',
+            desc: 'Planned curriculum and ran weekly hands-on workshops where students built dynamic websites in React and Next.js and 2D games in Unity, including their own versions of Flappy Bird, Street Fighter, and Terraria.',
             poi: { id: 'teachla-lead', kind: 'tree', at: [15, 73], label: 'ACM TeachLA' }
           }
         ]
@@ -105,17 +111,17 @@ const REGIONS = [
         heading: 'Work Experience',
         items: [
           {
-            title: 'SWE Intern — MSISI',
-            date: 'Jun 2026 – Present',
-            sub: 'Med/Surgical Information Services International, Inc.',
-            desc: "Training Delphi's Kai agentic AI model to identify and facility-match new records in ACFM at a glance. Automating the UOM standardization process for their Trace Rebate Correction (TRC) software.",
+            title: 'Software Developer Intern — MSISI',
+            date: 'Jun 2026 – Aug 2026',
+            sub: 'Med/Surgical Information Services International, Inc. · Glastonbury, CT',
+            desc: "Trained Delphi's Kai agentic AI model to identify and facility-match new records in ACFM instantly. Integrated Delphi MCP to automate the nonlinear data importing process, reducing the import bottleneck by 90%. Engineered the MailSISI and MailSISIBox file-tool workflow to automate hundreds of thousands of data downloads. Worked on automating the UOM standardization process for their Trace Rebate Correction (TRC) software.",
             poi: { id: 'msisi-26', kind: 'deadtree', at: [19, 14], label: 'MSISI · 2026' }
           },
           {
-            title: 'SWE Intern — MSISI',
+            title: 'Software Engineering Intern — MSISI',
             date: 'Jun 2025 – Aug 2025',
-            sub: 'Med/Surgical Information Services International, Inc.',
-            desc: 'Researched data-matching algorithms focused on yield rates. Improved the Address Correction Facility Matching (ACFM) software in Delphi by implementing Damerau-Levenshtein metrics for facility fuzzy matching and database filtering.',
+            sub: 'Med/Surgical Information Services International, Inc. · Glastonbury, CT',
+            desc: 'Researched and analyzed fuzzy-matching algorithms, testing multiple candidates to compare efficiency and yield. Improved the Address Correction Facility Matching (ACFM) software in Delphi by implementing Damerau-Levenshtein metrics for facility fuzzy matching and database filtering.',
             poi: { id: 'msisi-25', kind: 'deadtree', at: [41, 27], label: 'MSISI · 2025' }
           }
         ]
@@ -134,18 +140,32 @@ const REGIONS = [
         heading: 'Projects',
         items: [
           {
+            title: 'MailSISI',
+            date: 'Jun 2026 – Aug 2026',
+            desc: 'Desktop tool that instantly downloads and organizes hundreds of thousands of Excel attachments, replacing a manual monthly workflow with automated distributor and manufacturer classification. Whitelisted email monitoring, email threading, and SHA-256 hashing track attachments and their superseded versions.',
+            loot: ['Python', 'IMAP', 'SHA-256', 'SQLite', 'Tkinter'],
+            poi: { id: 'mailsisi', kind: 'emerald', at: [96, 49], label: 'MailSISI' }
+          },
+          {
+            title: 'MailSISIBox',
+            date: 'Jun 2026 – Aug 2026',
+            desc: "PowerShell tool that transfers files up to 100 GB between remote desktops. Picks the fastest available TCP connection, verifies every transfer end to end with SHA-256, and lets you copy and paste files through a remote desktop connection's clipboard.",
+            loot: ['PowerShell', 'TCP Sockets', 'SHA-256', '.NET', 'Clipboard IPC'],
+            poi: { id: 'mailsisibox', kind: 'iron', at: [108, 76], label: 'MailSISIBox' }
+          },
+          {
             title: 'BruinPop',
             date: 'Mar 2026 – Jun 2026',
             desc: 'Full-stack social platform for pop-ups around UCLA. Built an interactive, location-aware posting interface. Secured with NextAuth JWTs and bcrypt encryption. 100+ campus users.',
-            loot: ['React', 'Next.js', 'Tailwind', 'Leaflet', 'NextAuth'],
+            loot: ['React', 'Next.js', 'Tailwind CSS', 'Leaflet', 'NextAuth'],
             poi: { id: 'bruinpop', kind: 'diamond', at: [78, 55], label: 'BruinPop' }
           },
           {
             title: 'Desperate Measures',
-            date: 'Jul 2025',
+            date: 'Jul 2026 – Present',
             flag: 'This world',
-            desc: '2D co-op sandbox inspired by Minecraft and Terraria: explore, build, and fight across multiverses procedurally generated from a single seed. Alpha tested by 50+ users; beta releases Sep 2026.',
-            loot: ['Unity', 'C#', 'Lua', 'Procedural Gen'],
+            desc: '2D co-op sandbox inspired by Minecraft and Terraria: explore, build, and fight across an infinite multiverse procedurally generated from a single seed. Each seed follows a set plot with its own world generation and progression timing, and you can interact with other multiverses within a single playthrough. Alpha tested by 50+ users; beta releases Sep 2026.',
+            loot: ['Unity', 'C#', 'Lua', 'Procedural Gen', 'Physics', '2D Sandbox'],
             poi: { id: 'desperate', kind: 'gold', at: [101, 62], label: 'Desperate Measures' }
           },
           {
@@ -172,17 +192,17 @@ const REGIONS = [
         groups: [
           {
             title: 'Languages',
-            items: ['Python', 'PowerShell', 'JavaScript', 'Java', 'C++', 'PHP', 'Delphi', 'Lua', 'R', 'SQL', 'HTML', 'CSS3', 'Batch'],
+            items: ['C++', 'Java', 'Python', 'JavaScript', 'Delphi', 'PHP', 'C#', 'HTML', 'CSS3', 'Lua', 'R', 'PowerShell', 'SQL', 'Batch'],
             poi: { id: 'languages', kind: 'crystal', at: [76, 12], label: 'Languages' }
           },
           {
             title: 'Frameworks & Tools',
-            items: ['React', 'Next.js', 'PyTorch', 'TensorFlow', 'RLlib', 'MongoDB', 'MySQL', 'SQLite', 'Git', 'Unity', 'Azure', 'Claude Code', 'Codex', 'Tkinter', 'WinForms / .NET', 'PyInstaller', 'imap-tools', 'PyYAML'],
+            items: ['React', 'Next.js', 'PyTorch', 'TensorFlow', 'RLlib', 'MongoDB', 'MySQL', 'SQLite', 'Git', 'Unity', 'Azure', 'Claude Code', 'Codex', 'Kai', 'Tkinter', 'WinForms / .NET', 'PyInstaller', 'imap-tools', 'PyYAML'],
             poi: { id: 'frameworks', kind: 'crystal', at: [101, 19], label: 'Frameworks & Tools' }
           },
           {
             title: 'Concepts',
-            items: ['Data Structures & Algorithms', 'Distributed Systems', 'Data Processing & Analysis', 'Software Construction', 'Statistics', 'Physics Modeling', 'Assembly', 'TCP Sockets & Network Protocols', 'IMAP & MIME Parsing', 'Fuzzy String Matching', 'SHA-256 Hashing & Integrity', 'Chunked, Resumable Transfer', 'Constant-Memory Streaming', 'Base64 & Data Compression', 'SMB / UNC Redirection', 'Win32 P/Invoke Interop'],
+            items: ['Data Structures & Algorithms', 'Object-Oriented Programming', 'Software Construction Principles', 'Hardware Principles', 'Digital Design', 'Distributed Systems', 'Data Processing & Analysis', 'Statistics', 'Physics Modeling', 'Advanced Mathematics', 'Assembly', 'TCP Sockets & Network Protocols', 'IMAP & MIME Parsing', 'Fuzzy String Matching', 'SHA-256 Hashing & Integrity', 'Chunked, Resumable Transfer', 'Constant-Memory Streaming', 'Base64 & Data Compression', 'SMB / UNC Redirection', 'Win32 P/Invoke Interop'],
             poi: { id: 'concepts', kind: 'crystal', at: [86, 31], label: 'Concepts' }
           }
         ]
@@ -256,10 +276,10 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 const T = {
   SAND: 0, STONE: 1, PEAK: 2, WATER: 3, SNOW: 4, ICE: 5, ICEROCK: 6,
-  GRASS: 7, FLOOR: 8, WALL: 9, GOLD: 10, DIAMOND: 11, RUBY: 12, IRON: 13
+  GRASS: 7, FLOOR: 8, WALL: 9, GOLD: 10, DIAMOND: 11, RUBY: 12, IRON: 13, EMERALD: 14
 };
-const SOLID = new Uint8Array(14);
-[T.STONE, T.PEAK, T.ICEROCK, T.WALL, T.GOLD, T.DIAMOND, T.RUBY, T.IRON].forEach(t => { SOLID[t] = 1; });
+const SOLID = new Uint8Array(15);
+[T.STONE, T.PEAK, T.ICEROCK, T.WALL, T.GOLD, T.DIAMOND, T.RUBY, T.IRON, T.EMERALD].forEach(t => { SOLID[t] = 1; });
 
 // colours are pulled from the game's screenshots, then knocked down a notch so
 // four biomes side by side don't vibrate (the real grass is pure #09b509).
@@ -277,9 +297,10 @@ const PAL = {
   [T.GOLD]:    { base: '#858585', vein: ['#e6c541', '#9a7616'], style: 'ore' },
   [T.DIAMOND]: { base: '#858585', vein: ['#86f2e2', '#2b9c90'], style: 'ore' },
   [T.RUBY]:    { base: '#858585', vein: ['#e0473a', '#7d1a14'], style: 'ore' },
-  [T.IRON]:    { base: '#858585', vein: ['#e2ddd6', '#8f8a84'], style: 'ore' }
+  [T.IRON]:    { base: '#858585', vein: ['#e2ddd6', '#8f8a84'], style: 'ore' },
+  [T.EMERALD]: { base: '#858585', vein: ['#5fe08a', '#1f7a43'], style: 'ore' }
 };
-const MINI = { [T.GOLD]: '#e6c541', [T.DIAMOND]: '#86f2e2', [T.RUBY]: '#e0473a', [T.IRON]: '#cfcac3' };
+const MINI = { [T.GOLD]: '#e6c541', [T.DIAMOND]: '#86f2e2', [T.RUBY]: '#e0473a', [T.IRON]: '#cfcac3', [T.EMERALD]: '#5fe08a' };
 
 const BIOMES = {
   dunes:   { base: T.SAND,  rock: T.STONE,   cap: T.PEAK,    wet: T.WATER, rockAt: 0.6,  capAt: 0.69, wetAt: 0.67, scale: 8 },
@@ -462,7 +483,9 @@ const CRYSTAL_PAL = {
   crystal: { out: '#1c3350', dark: '#3f6ea3', mid: '#69a5dc', light: '#a8d7f4', hi: '#effaff' },
   gold:    { out: '#4a3408', dark: '#9a7412', mid: '#d9b73a', light: '#f3dc6b', hi: '#fff6c2' },
   diamond: { out: '#0e3d38', dark: '#1d8b82', mid: '#4ed6c6', light: '#9df4e8', hi: '#f0fffc' },
-  ruby:    { out: '#3c0c0c', dark: '#7c1c1c', mid: '#c4392b', light: '#ef6a5a', hi: '#ffd0c8' }
+  ruby:    { out: '#3c0c0c', dark: '#7c1c1c', mid: '#c4392b', light: '#ef6a5a', hi: '#ffd0c8' },
+  emerald: { out: '#0c3a1e', dark: '#1d7a40', mid: '#3fc46c', light: '#8eeaa9', hi: '#eafff0' },
+  iron:    { out: '#2e2e2e', dark: '#77726c', mid: '#b3ada6', light: '#dcd7d0', hi: '#ffffff' }
 };
 function makeCrystal(kind) {
   const P = CRYSTAL_PAL[kind];
@@ -563,6 +586,8 @@ const SPRITE = {
   gold: [makeCrystal('gold')],
   diamond: [makeCrystal('diamond')],
   ruby: [makeCrystal('ruby')],
+  emerald: [makeCrystal('emerald')],
+  iron: [makeCrystal('iron')],
   fire: FIRE,
   tent: [makeTent()]
 };
@@ -572,7 +597,7 @@ const DECOR = {
   deadtree: [makeDeadTree(17, false), makeDeadTree(29, false)]
 };
 const GLOW = {
-  fire: '255,140,50', gold: '255,210,80', diamond: '95,240,224', ruby: '255,90,74', crystal: '160,214,255', torch: '255,150,60'
+  fire: '255,140,50', gold: '255,210,80', diamond: '95,240,224', ruby: '255,90,74', emerald: '90,230,130', iron: '230,226,220', crystal: '160,214,255', torch: '255,150,60'
 };
 
 // the four biomes meet at a wobbly cross instead of a ruler-straight one
@@ -659,7 +684,7 @@ function generate() {
     const i = idx(x, y);
     if (tiles[i] !== T.WALL || !exposed(x, y)) continue;
     const nearPoi = POIS.find(p => p.region === 'mines' && Math.hypot(p.at[0] - x, p.at[1] - y) < 6.5);
-    if (nearPoi && r() < 0.55) tiles[i] = { gold: T.GOLD, diamond: T.DIAMOND, ruby: T.RUBY }[nearPoi.kind];
+    if (nearPoi && r() < 0.55) tiles[i] = { gold: T.GOLD, diamond: T.DIAMOND, ruby: T.RUBY, emerald: T.EMERALD, iron: T.IRON }[nearPoi.kind];
     else if (r() < 0.07) tiles[i] = ores[(r() * ores.length) | 0];
   }
 }
@@ -1003,6 +1028,10 @@ function blockHTML(block) {
       ? `<a class="contact-row px" href="${c.href}"${c.href.startsWith('http') ? ' target="_blank" rel="noopener"' : ''}><span class="ck">${esc(c.key)}</span><span class="cv">${esc(c.label)}</span></a>`
       : `<div class="contact-row px"><span class="ck">${esc(c.key)}</span><span class="cv">${esc(c.label)}</span></div>`
     ).join('')}</div></section>`;
+  }
+
+  if (block.type === 'chips') {
+    return `<section class="j-section">${head}<ul class="loot chips">${block.items.map(c => `<li>${esc(c)}</li>`).join('')}</ul></section>`;
   }
 
   if (block.type === 'guide') {

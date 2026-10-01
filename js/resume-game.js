@@ -584,9 +584,9 @@ function makeLogo() {
   g.lineJoin = 'round';
   g.lineWidth = N * 0.05;
   g.strokeStyle = 'rgba(7,6,11,0.92)';
-  g.strokeText('DM', N * 0.07, N * 0.93);
+  g.strokeText('DM', N * 0.07, N * 0.88);
   g.fillStyle = '#fff4e2';
-  g.fillText('DM', N * 0.07, N * 0.93);
+  g.fillText('DM', N * 0.07, N * 0.88);
   return c.toDataURL();
 }
 
@@ -1690,7 +1690,9 @@ function drawPlayer(toX, toY, t) {
   // wading: sink the sprite a few pixels and cut the legs off at the waterline
   const sink = wading ? 3 : 0;
   const srcH = wading ? CELL - 8 : CELL;
-  const dx = toX(player.x - 24), dy = toY(player.y - 42 + sink);
+  // asleep, the lying-down frame sits a little right and low in its cell, so
+  // nudge it up and left onto the blanket
+  const dx = toX(player.x - 24 - (player.sleeping ? 4 : 0)), dy = toY(player.y - 42 + sink - (player.sleeping ? 8 : 0));
   const img = sheetPlay.complete && sheetPlay.naturalWidth ? sheetPlay : sheet;
   const armor = typeof playArmorIndex === 'function' ? playArmorIndex() : -1;
   const armorY = armor >= 0 && armorSheet.naturalWidth ? (armor * 10 + row) * CELL : -1;

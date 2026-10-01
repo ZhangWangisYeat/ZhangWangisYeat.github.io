@@ -1949,9 +1949,6 @@ function stationHTML() {
 
 function renderUI() {
   if (!ui) return;
-  const tool = heldTool();
-  const held = heldItem();
-  const armor = inv.armor && ARMORS[ITEMS[inv.armor.id].armor];
   const title = { inv: 'Inventory', craft: 'Crafting Table', furnace: 'Furnace', chest: 'Chest' }[ui];
   const scroll = invWrap.querySelector('.rb-list')?.scrollTop || 0;
   invWrap.innerHTML = `
@@ -1965,13 +1962,6 @@ function renderUI() {
         <div class="inv-doll">
           <p class="inv-label">Armor</p>
           ${slotHTML('armor:0', inv.armor, 'slot-armor')}
-          <dl class="inv-stats" hidden>
-            <div><dt>Health</dt><dd>${vitals.hp} / ${vitals.max}</dd></div>
-            <div><dt>Holding</dt><dd>${tool.name}</dd></div>
-            <div><dt>Damage</dt><dd>${tool.dmg} ♥ / ${tool.cd}s</dd></div>
-            ${held && ITEMS[held.id].dur ? `<div><dt>Durability</dt><dd>${held.dur} / ${ITEMS[held.id].dur}</dd></div>` : ''}
-            <div><dt>Armor</dt><dd>${armor ? `${armor.name} | blocks ${Math.round(armor.block * 100)}%${armor.slow ? ' | heavy' : ''}` : 'None'}</dd></div>
-          </dl>
         </div>
         <div class="inv-slots">
           <p class="inv-label">Bag</p>

@@ -839,16 +839,21 @@ function loadSave() {
     ['input', 'fuel', 'output'].forEach(k => { furnaceState[k] = validStack(data.furnace[k]); });
     furnaceState.burn = +data.furnace.burn || 0;
   }
-  // saves from before v3 had the great tree as ucla and the hyena as
-  // glastonbury. the tree is glastonbury now and ucla is the guarded hut.
-  if ((data.v || 1) < 3) {
-    const tree = found.has('ucla');
-    found.delete('ucla');
-    found.delete('ghs');
-    if (tree) found.add('ghs');
-    if (quest.killed.hyena && quest.killed.bear) found.add('ucla');
-    store.write('dm-found', [...found]);
-  }
+}
+// older saves had the great tree as ucla. now the tree is glastonbury and ucla
+// is the hut, which can only be found once both guards are dead, so a ucla
+// without that is really the tree. checked every load rather than by save
+// version, because dm-found can outlive dm-save.
+function fixFoundIds() {
+  const before = [...found].join();
+  const both = quest.killed.hyena && quest.killed.bear;
+  if (found.has('ucla') && !both) { found.delete('ucla'); found.add('ghs'); }
+  if (quest.greatTree) found.add('ghs');
+  if (both) found.add('ucla');
+  if ([...found].join() === before) return;
+  store.write('dm-found', [...found]);
+  paintMinimap();
+  updateFoundUI();
 }
 function saveNow() {
   if (resetting) return;
@@ -993,6 +998,7 @@ function spawnCreature(kind, tx, ty, opts = {}) {
 }
 
 loadSave();
+fixFoundIds();
 
 // replay the saved world edits: mined blocks and chopped trees
 if (quest.mined.length) {

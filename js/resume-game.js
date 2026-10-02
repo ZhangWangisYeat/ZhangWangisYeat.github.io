@@ -1816,7 +1816,7 @@ function drawLabels(toX, toY, t) {
   for (const p of POIS) {
     const o = p.thing;
     if (o.gone) continue;
-    const x = toX(o.x), topY = toY(o.y - (o.labelH || o.frames[0].height) - 3);
+    const x = toX(o.x), topY = toY(o.y - o.frames[0].height - 3);
     if (x < -200 || x > canvas.width + 200 || topY < -60 || topY > canvas.height + 60) continue;
     const near = p === nearPoi, got = found.has(p.id);
     // at night a sign is only visible if you or a fire is lighting it
@@ -1932,7 +1932,10 @@ else if (store.read('dm-started', false, 'sessionStorage')) start();
 
 let last = performance.now();
 function frame(t) {
-  const dt = Math.min(0.05, (t - last) / 1000);
+  // the first frame's timestamp can land a hair before `last` was read, and a
+  // negative dt sent the animation clock below zero, which picks sprite column
+  // -1 and draws nothing
+  const dt = clamp((t - last) / 1000, 0, 0.05);
   last = t;
   update(dt, t);
   render(t);

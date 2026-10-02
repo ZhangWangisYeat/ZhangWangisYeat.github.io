@@ -725,43 +725,46 @@ function makeShrooms() {
   return G.outline(() => '#123a33').canvas();
 }
 
-// the inside of home, 11 x 8 tiles: log walls, a window and a shelf on the
-// back wall, a plank floor, a lantern, and the door gap at the bottom. the
-// workshop lines the back wall and the right side is left clear for a bed.
+// the inside of the tent, 11 x 8 tiles: canvas walls with the centre pole
+// holding the back up and a lantern hung off it, a dirt floor, and the flap at
+// the bottom. the workshop lines the back wall and the right side is left
+// clear for a bed.
 const HOME_COLS = 11, HOME_ROWS = 8, HOME_DOOR = 5;
 function paintHomeRoom() {
   const w = HOME_COLS * TILE, h = HOME_ROWS * TILE;
   const c = mk(w, h), g = c.getContext('2d');
   const r = mulberry32(SEED + 808);
   const px = (x, y, col, ww = 1, hh = 1) => { g.fillStyle = col; g.fillRect(x, y, ww, hh); };
-  for (let y = 0, row = 0; y < h; y += 6, row++) {
-    px(0, y, row % 2 ? '#916236' : '#9a6a3c', w, 6);
-    px(0, y, '#a8784a', w, 1);
-    px(0, y + 5, '#5e3b1c', w, 1);
-    for (let x = (row * 17) % 40; x < w; x += 40) px(x, y, '#5e3b1c', 1, 6);
-    for (let k = 0; k < 3; k++) px((r() * w) | 0, y + 2 + ((r() * 2) | 0), '#6e4524', 2, 1);
+  // packed dirt, same as the clearing outside, with the odd pebble
+  px(0, 0, '#9c7650', w, h);
+  const dots = ['#8a6644', '#ad865c', '#7d5b3b', '#a67f56'];
+  for (let i = 0; i < 900; i++) px((r() * w) | 0, (r() * h) | 0, dots[(r() * 4) | 0], r() < 0.3 ? 2 : 1, 1);
+  for (let i = 0; i < 14; i++) { const x = (r() * w) | 0, y = 36 + ((r() * (h - 52)) | 0); px(x, y, '#b8b8b8', 2, 1); px(x, y + 1, '#7a7a7a', 2, 1); }
+  // the back wall: canvas panels with seams, a lighter stripe, a darker hem
+  for (let y = 0; y < 32; y++) for (let x = 0; x < w; x++) {
+    let col = Math.floor(x / 22) % 2 ? '#d47636' : '#e0823f';
+    if (x % 22 === 0) col = '#b3572a';
+    if (y === 11 || y === 22) col = '#ec9a5c';
+    if (y < 5) col = '#b3572a';
+    if (y >= 29) col = '#8a3f1c';
+    px(x, y, col);
   }
-  for (let y = 0; y < 32; y += 4) {
-    px(0, y, '#7a4a26', w, 4);
-    px(0, y, '#94603a', w, 1);
-    px(0, y + 3, '#4e2f16', w, 1);
-  }
-  px(104, 8, '#3b2412', 26, 18);
-  px(106, 10, '#d6efff', 22, 7);
-  px(106, 17, '#a9d8ff', 22, 7);
-  px(116, 10, '#3b2412', 2, 14);
-  px(106, 16, '#3b2412', 22, 2);
-  px(87, 0, '#2b2b2b', 1, 9);
-  px(84, 9, '#2b2b2b', 7, 2);
-  px(85, 11, '#ffd77a', 5, 6);
-  px(84, 17, '#2b2b2b', 7, 2);
+  // the centre pole, with the lantern hung off a hook on it
+  px(86, 0, '#6b3a1e', 4, 35);
+  px(86, 0, '#8a4f2a', 1, 35);
+  px(90, 8, '#2b2b2b', 4, 1);
+  px(93, 8, '#2b2b2b', 1, 3);
+  px(90, 11, '#2b2b2b', 7, 2);
+  px(91, 13, '#ffd77a', 5, 6);
+  px(90, 19, '#2b2b2b', 7, 2);
   px(0, 32, 'rgba(0,0,0,0.3)', w, 3);
-  const wallTop = (x, y, ww, hh) => { px(x, y, '#2a190c', ww, hh); px(x + 2, y + 2, '#3b2412', ww - 4, hh - 4); };
+  // the canvas round the sides and front, seen from above
+  const wallTop = (x, y, ww, hh) => { px(x, y, '#8a3f1c', ww, hh); px(x + 2, y + 2, '#b3572a', ww - 4, hh - 4); };
   wallTop(0, 0, 16, h);
   wallTop(w - 16, 0, 16, h);
   wallTop(0, h - 16, HOME_DOOR * TILE + 2, 16);
   wallTop((HOME_DOOR + 1) * TILE - 2, h - 16, w - (HOME_DOOR + 1) * TILE + 2, 16);
-  px(0, 0, '#2a190c', w, 3);
+  px(0, 0, '#6e3014', w, 3);
   const gr = g.createLinearGradient(0, h, 0, h - 26);
   gr.addColorStop(0, 'rgba(255,240,200,0.4)');
   gr.addColorStop(1, 'rgba(255,240,200,0)');
@@ -1318,12 +1321,12 @@ caveRoom.things.push(
 const coreGlow = { x: ROCK_SPOT.x, y: ROCK_SPOT.y - 10, rgb: '150,120,255', rad: 2.2, flicker: true, strength: 0.3, off: !quest.cave.rock || !!quest.cave.part };
 caveRoom.glows.push(coreGlow);
 
-// home: the cabin at base camp. the crafting table, furnace and chest live in
+// home: the tent at base camp. the crafting table, furnace and chest live in
 // here along the back wall now, with a bookshelf, a plant and a rug, and the
 // right half of the floor is left clear so you can put a bed down. the
 // overworld (and everything hunting you) waits outside while you're in.
 const homeRoom = {
-  id: 'home', w: HOME_COLS * TILE, h: HOME_ROWS * TILE, dust: '#916236',
+  id: 'home', w: HOME_COLS * TILE, h: HOME_ROWS * TILE, dust: '#8a6644',
   canvas: paintHomeRoom(),
   outside: { x: campHouse.x, y: campHouse.y },
   exit: { x: campHouse.x, y: campHouse.y + 10 },
@@ -1334,12 +1337,12 @@ const homeRoom = {
     { x: 26, y: 106, frames: [makePlant()] },
     { x: 147, y: 47, frames: [makeBookshelf()] }
   ],
-  glows: [{ x: 87, y: 14, rgb: '255,190,110', rad: 4.5, flicker: true, strength: 0.25 }]
+  glows: [{ x: 93, y: 16, rgb: '255,190,110', rad: 4.5, flicker: true, strength: 0.25 }]
 };
 // a tile or so of floor between each, so they read as separate pieces
 addStation('craft', 34, 47, homeRoom);
 addStation('furnace', 66, 46, homeRoom);
-addStation('chest', 98, 46, homeRoom);
+addStation('chest', 108, 46, homeRoom);
 quest.beds.forEach(bedThing);
 
 // the buildings you can walk into. the cave opens once the grizzly is dead,

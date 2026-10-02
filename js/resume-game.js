@@ -210,11 +210,10 @@ const TILE = 16;
 const W = 120;
 const H = 84;
 const SEED = 20250701;
-// camp is a bit roomier than it used to be so the cabin, tent, fire and seats
-// each get their own space instead of sitting on top of each other
+// camp is a bit roomier than it used to be so the tent, fire and seats each
+// get their own space instead of sitting on top of each other
 const CAMP = { x: 60, y: 42, r: 9 };
-const HOUSE = { x: 60, y: 35 };     // the tile the cabin's door is on
-const TENT = { x: 53, y: 40 };
+const HOUSE = { x: 60, y: 35 };     // the tile the tent's flap is on
 const SPAWN = { x: 60, y: 45 };
 const QUADS = ['dunes', 'tundra', 'meadows', 'mines'];
 
@@ -624,61 +623,35 @@ function makeCave() {
   return G.outline(() => '#262626').canvas();
 }
 
-// home at base camp: a log cabin on a stone footing with a thatch roof, a
-// chimney and a warm window either side of the door. exactly three tiles
-// wide, same footprint rule as the cave.
-function makeHouse() {
-  const w = 48, h = 44, cx = 23.5, ground = h - 2;
-  const G = pixelGrid(w, h);
-  for (let y = 0; y <= 13; y++) for (let x = 32; x <= 37; x++) G.set(x, y, y === 0 ? '#bdbdbd' : (x + (y >> 1)) % 3 === 0 ? '#6e6e6e' : '#8a8a8a');
-  for (let y = 20; y <= ground; y++) for (let x = 5; x <= 42; x++) {
-    let col = (y - 20) % 4 === 3 ? '#4a2e14' : x < 12 ? '#9a6a3a' : (y - 20) % 4 === 0 ? '#8a5a2e' : '#74491f';
-    if (y >= ground - 2) col = hash2(x >> 1, y, 61) < 0.3 ? '#6e6e6e' : y === ground - 2 ? '#a3a3a3' : '#8a8a8a';
-    G.set(x, y, col);
-  }
-  for (let y = 1; y <= 23; y++) {
-    const half = 7 + (y - 1) * 0.86;
-    for (let x = 0; x < w; x++) {
-      const dx = x - cx;
-      if (Math.abs(dx) > half) continue;
-      const streak = hash2(x, y >> 2, 62);
-      let col = streak < 0.25 ? '#a37a2c' : streak < 0.6 ? '#c09640' : '#d9b45a';
-      if (dx < -half + 3) col = '#e6c674';
-      if (y >= 21) col = y === 23 ? '#6e4e1c' : '#8a6524';
-      G.set(x, y, col);
-    }
-  }
-  for (let x = Math.round(cx - 7); x <= Math.round(cx + 7); x++) G.set(x, 1, '#7a5520');
-  [[9, 27], [33, 27]].forEach(([wx, wy]) => {
-    for (let y = wy; y < wy + 7; y++) for (let x = wx; x < wx + 6; x++) {
-      const frame = x === wx || x === wx + 5 || y === wy || y === wy + 6 || x === wx + 2 || y === wy + 3;
-      G.set(x, y, frame ? '#3b2412' : y < wy + 3 ? '#ffe39a' : '#ffc45a');
-    }
-  });
-  for (let y = 27; y <= ground - 1; y++) for (let x = 19; x <= 28; x++) {
-    if (y === 27 && (x === 19 || x === 28)) continue;
-    const edge = x === 19 || x === 28 || y === 27;
-    G.set(x, y, edge ? '#3b2412' : x % 3 === 0 ? '#5a3818' : '#6b4020');
-  }
-  G.set(26, 35, '#ffd23f');
-  return G.outline(() => '#24160a').canvas();
-}
+// home at base camp: the camp tent, made big enough to live in. orange canvas
+// with lighter seams, the pole poking out the top, guy ropes pegged out either
+// side, and the flap tied open at the bottom. exactly three tiles wide, which
+// is what the solid footprint in placeDecor assumes.
 function makeTent() {
-  const w = 34, h = 28, cx = 16.5, top = 3, base = 25;
+  const w = 48, h = 42, cx = 23.5, top = 4, base = 39;
   const G = pixelGrid(w, h);
+  const line = (x0, y0, x1, y1, c) => {
+    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+    for (let i = 0; i <= n; i++) G.set(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, c);
+  };
+  line(10, 24, 1, 39, '#d9c8a0');
+  line(37, 24, 46, 39, '#d9c8a0');
   for (let y = top; y <= base; y++) {
-    const t = (y - top) / (base - top), half = 1 + t * 14;
+    const t = (y - top) / (base - top), half = 1 + t * 20.5;
+    const doorTop = base - 17, dw = (y - doorTop) * 0.34;
     for (let x = 0; x < w; x++) {
       const dx = x - cx;
       if (Math.abs(dx) > half) continue;
       let col = dx < 0 ? '#e0823f' : '#b3572a';
-      if ((y - top) % 6 === 5) col = dx < 0 ? '#ec9a5c' : '#c4683a';
-      const doorTop = base - 11;
-      if (y > doorTop && Math.abs(dx) <= (y - doorTop) * 0.5) col = y > doorTop + 3 ? '#2a150d' : '#4a2616';
+      if ((y - top) % 7 === 6) col = dx < 0 ? '#ec9a5c' : '#c4683a';
+      // the open flap: a dark doorway with the canvas folded back either side
+      if (y > doorTop && Math.abs(dx) <= dw) col = y > doorTop + 4 ? '#2a150d' : '#4a2616';
+      else if (y > doorTop && Math.abs(dx) <= dw + 1.5) col = dx < 0 ? '#f2b27a' : '#d98a52';
       G.set(x, y, col);
     }
   }
-  G.set(cx - 0.5, top - 1, '#6b3a1e'); G.set(cx - 0.5, top - 2, '#6b3a1e');
+  for (let y = 0; y < top; y++) { G.set(23, y, '#6b3a1e'); G.set(24, y, '#8a4f2a'); }
+  G.set(1, 40, '#6b3a1e'); G.set(46, 40, '#6b3a1e');
   return G.outline(() => '#3a1a0c').canvas();
 }
 // a log to sit on by the fire, end rings showing
@@ -829,7 +802,7 @@ function generate() {
   for (let y = CAMP.y - 8; y <= CAMP.y + 8; y++) for (let x = CAMP.x - 8; x <= CAMP.x + 8; x++) {
     if (inside(x, y) && regionAt(x + 0.5, y + 0.5) === 'camp') tiles[idx(x, y)] = T.DIRT;
   }
-  // and under the whole cabin, so the clearing's edge doesn't peek out round the roof
+  // and under the whole tent, so the clearing's edge doesn't peek out round it
   for (let y = HOUSE.y - 3; y <= HOUSE.y; y++) for (let x = HOUSE.x - 2; x <= HOUSE.x + 2; x++) tiles[idx(x, y)] = T.DIRT;
   // a single rock on its own with nothing next to it just looks like a
   // mistake (there was one sitting in the sand by the tent), so near camp
@@ -890,7 +863,7 @@ function generate() {
 }
 
 const things = [];   // everything y-sorted with the player
-const campHouse = { decor: true, house: true, frames: [makeHouse()] };
+const campHouse = { decor: true, house: true, frames: [makeTent()] };
 const glows = [];
 
 function placeDecor() {
@@ -929,10 +902,10 @@ function placeDecor() {
     torches++;
   }
 
-  // camp: home at the back with a stepping stone path down to the fire, a log
-  // to sit on either side of the fire, the old tent off to the west, and a
-  // torch either side of the door so the way home is lit at night. the cabin's walls are solid like the cave's,
-  // and the play layer handles going inside.
+  // camp: the tent is home, at the back with a stepping stone path down to the
+  // fire, a log to sit on either side of the fire, and a torch either side of
+  // the flap so the way home is lit at night. the tent is solid like the
+  // cave, and the play layer handles going inside.
   campHouse.x = HOUSE.x * TILE + 8;
   campHouse.y = HOUSE.y * TILE + 14;
   things.push(campHouse);
@@ -941,7 +914,6 @@ function placeDecor() {
   [1, 2, 3].forEach(k => things.push({ decor: true, flat: true, x: HOUSE.x * TILE + 8, y: (HOUSE.y + k) * TILE + 12, frames: [step] }));
   const seat = makeLogSeat();
   [-4, 4].forEach(k => things.push({ decor: true, x: (CAMP.x + k) * TILE + 8, y: (CAMP.y - 1) * TILE + 14, frames: [seat] }));
-  things.push({ decor: true, x: TENT.x * TILE + 8, y: TENT.y * TILE + 14, frames: [makeTent()] });
   [-2, 2].forEach(k => {
     const t = { decor: true, torch: true, x: (HOUSE.x + k) * TILE + 8, y: (HOUSE.y + 1) * TILE + 10, frames: TORCH, fps: 7, phase: k > 0 ? 1.5 : 0 };
     things.push(t);

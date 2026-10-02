@@ -148,33 +148,33 @@ const COOK_RATE = 0.5;        // meat per second while the furnace has fuel
 // before it can lunge again. the bear is still the quicker of the two.
 const CREATURES = {
   hyena: {
-    name: 'Marble Hyena', hp: 5, speed: 60, aggro: 7, leash: 16, range: 2.4,
+    name: 'Marble Hyena', hp: 5, speed: 60, aggro: 8, leash: 24, range: 2.4, roam: 5,
     windup: 0.6, lunge: { speed: 220, time: 0.24 }, cooldown: 1.9, dmg: 1,
-    knock: 140, h: 28, box: { w: 26, h: 14 }, rest: 'prowl', regen: 0.08, chip: '242,238,231',
+    knock: 140, h: 28, box: { w: 26, h: 14 }, rest: 'prowl', regen: 0.04, chip: '242,238,231',
     drops: [['marble', 5, 10]], intro: ['Ambush', 'It crouches before it leaps. Sidestep, then strike.']
   },
   bear: {
     name: 'Grizzly', hp: 15, speed: 74, aggro: 5, leash: 22, range: 2.8,
     windup: 0.55, lunge: { speed: 270, time: 0.28 }, cooldown: 1.7, dmg: 2.5,
     knock: 18, h: 36, box: { w: 36, h: 20 }, rest: 'sleep',
-    regen: 0.12, chip: '123,74,41',
+    regen: 0.06, chip: '123,74,41',
     drops: [['hide', 15, 20]], intro: ['You woke it', '2.5 hearts a swipe. Dodge the lunge, then make it pay.']
   },
-  // night only, and they don't count bosses toward the cap. both have a bit
-  // over half the hyena's health. zombies shamble at you and burn up in the
+  // night only, and they don't count bosses toward the cap. both have most
+  // of the hyena's health. zombies shamble at you and burn up in the
   // daylight; a burning one sets you alight if it touches you. forest
   // guardians keep their distance and throw poison tipped sticks.
   zombie: {
-    name: 'Zombie', hp: 3.5, speed: 40, aggro: 12, leash: 80, range: 1.6,
+    name: 'Zombie', hp: 4.5, speed: 40, aggro: 12, leash: 80, range: 1.6,
     windup: 0.45, lunge: { speed: 150, time: 0.18 }, cooldown: 1.3, dmg: 1,
     knock: 120, h: 30, box: { w: 14, h: 22 }, rest: 'prowl', regen: 0, chip: '111,174,90',
     nightly: true, burns: true, drops: [['poison-meat', 0, 2]],
     intro: ['Night', 'They burn up when the sun comes back. Don\'t let a burning one touch you.']
   },
   guardian: {
-    name: 'Forest Guardian', hp: 3, speed: 46, aggro: 11, leash: 80, dmg: 0.5,
-    knock: 110, h: 30, box: { w: 16, h: 22 }, rest: 'prowl', regen: 0, chip: '138,96,52',
-    nightly: true, shooter: { range: 7.5, keep: 4, cd: 2.4, speed: 150, dmg: 0.5, poison: 2 },
+    name: 'Forest Guardian', hp: 4, speed: 46, aggro: 11, leash: 80, dmg: 0.5,
+    knock: 110, h: 36, box: { w: 16, h: 26 }, rest: 'prowl', regen: 0, chip: '138,96,52',
+    nightly: true, shooter: { range: 7.5, keep: 4, cd: 2.4, speed: 190, dmg: 0.5, poison: 2 },
     drops: [['stick', 1, 3]], intro: ['Night', 'It keeps its distance and throws poison tipped sticks.']
   },
   // passive livestock: wander, graze, and run when you hit them
@@ -873,64 +873,87 @@ function makeChicken(frame) {
 }
 const PASSIVE_MAKERS = { cow: makeCow, sheep: makeSheep, chicken: makeChicken };
 
-// a zombie shambling right with its arms out: green skin, a torn teal shirt,
-// one sunken red eye. 'lunge' is the lean into a grab.
+// a zombie shambling right with its arms out: flat two-tone green skin, a teal
+// shirt with a ragged hem, dark trousers, and one sunken eye with a red pupil.
+// kept clean on purpose (no noise), so it reads at a glance. 'lunge' leans into
+// a grab.
 function makeZombie(frame, pose) {
   const G = pixelGrid(28, 32);
-  const C = { skin: '#7cb85f', skinD: '#5a9446', shirt: '#3c7d8c', shirtD: '#2a5c68', pants: '#3a3f6b', pantsD: '#2a2e52', eye: '#ff3b30', hair: '#2b3a22', shoe: '#2a2420' };
+  const C = { skin: '#8fc46a', skinD: '#6a9a4c', shirt: '#3f7d8f', shirtD: '#2c5d6b', pants: '#3b3f66', pantsD: '#2b2e4d', shoe: '#2a2420', hair: '#24301c', socket: '#1d2a14', eye: '#ff4a3a', mouth: '#2a1a12' };
   const ground = 30, lean = pose === 'lunge' ? 2 : 0;
-  [[10, 0, true], [13, 1, false]].forEach(([lx, grp, far]) => {
+  [[11, 0, true], [15, 1, false]].forEach(([lx, grp, far]) => {
     const off = pose === 'lunge' ? (far ? -2 : 2) : STEP[grp][frame % 4];
-    for (let y = 21; y < ground; y++) {
-      const x = lx + Math.round((off * (y - 21)) / 9);
+    for (let y = 22; y < ground; y++) {
+      const x = lx + Math.round((off * (y - 22)) / 8);
       G.set(x, y, far ? C.pantsD : C.pants);
       G.set(x + 1, y, far ? C.pantsD : C.pants);
     }
     [0, 1, 2].forEach(k => G.set(lx + off + k, ground, C.shoe));
   });
-  for (let y = 11; y <= 21; y++) for (let x = 9; x <= 16; x++) {
-    if (y === 21 && x % 3 === 0) continue;
-    G.set(x + (y < 16 ? lean : 0), y, hash2(x, y, 81) < 0.08 ? C.skinD : x < 11 ? C.shirtD : C.shirt);
+  for (let x = 15 + lean; x <= 24 + lean; x++) { G.set(x, 12, C.skinD); G.set(x, 13, C.skinD); }
+  for (let y = 12; y <= 22; y++) for (let x = 10; x <= 17; x++) {
+    if (y === 22 && (x === 11 || x === 14 || x === 16)) continue;
+    G.set(x + (y < 17 ? lean : 0), y, y === 12 ? C.shirtD : x < 12 ? C.shirtD : C.shirt);
   }
-  [[12, C.skinD], [14, C.skin]].forEach(([y, col]) => {
-    for (let x = 14 + lean; x <= 24 + lean; x++) { G.set(x, y, col); G.set(x, y + 1, col); }
-  });
-  for (let x = 14 + lean; x <= 16 + lean; x++) { G.set(x, 14, C.shirt); G.set(x, 15, C.shirt); }
-  for (let y = 2; y <= 10; y++) for (let x = 10; x <= 18; x++) G.set(x + lean, y, y <= 3 ? C.hair : x === 10 ? C.skinD : C.skin);
-  [[11, 4], [13, 4], [10, 5]].forEach(([x, y]) => G.set(x + lean, y, C.hair));
-  G.set(16 + lean, 6, '#1a1a1a');
-  G.set(17 + lean, 6, C.eye);
-  for (let x = 15; x <= 18; x++) G.set(x + lean, 9, '#3a2a20');
-  return G.outline(() => '#1f2a18').canvas();
+  for (let x = 15 + lean; x <= 25 + lean; x++) {
+    G.set(x, 14, x < 18 + lean ? C.shirt : C.skin);
+    G.set(x, 15, x < 18 + lean ? C.shirtD : C.skinD);
+  }
+  G.set(14 + lean, 11, C.skinD); G.set(15 + lean, 11, C.skinD);
+  for (let y = 2; y <= 10; y++) for (let x = 11; x <= 19; x++) {
+    let col = x === 11 ? C.skinD : C.skin;
+    if (y <= 3 || (x <= 12 && y <= 6)) col = C.hair;
+    G.set(x + lean, y, col);
+  }
+  [[17, 5], [18, 5], [17, 6], [18, 6]].forEach(([x, y]) => G.set(x + lean, y, C.socket));
+  G.set(18 + lean, 5, C.eye);
+  for (let x = 16; x <= 19; x++) G.set(x + lean, 9, C.mouth);
+  return G.outline(() => '#1a2414').canvas();
 }
-// a forest guardian: a walking stump with a leafy crown and two green eyes
-// glowing out of the bark. 'lunge' is its throw, branch arm up with a stick.
+// a forest guardian: a tall gnarled trunk on splayed roots, moss on its
+// shoulders, a knotted skull of a head with deep sockets and two burning green
+// eyes, a crown of antler branches, a glowing rune carved into its chest, and
+// a long spear of a stick in its hand. 'lunge' is the throw, arm up and back.
 function makeGuardian(frame, pose) {
-  const G = pixelGrid(28, 32);
-  const C = { bark: '#8a5a2e', barkD: '#5e3a1c', barkL: '#a8703f', leaf: '#3f8f3a', leafL: '#62b240', leafD: '#2d6b2a', eye: '#c8ff5a' };
-  const ground = 30;
-  [[10, 0], [15, 1]].forEach(([lx, grp]) => {
+  const G = pixelGrid(30, 38);
+  const C = { bark: '#7a4f2a', barkD: '#4e3018', barkL: '#9a6a3c', moss: '#4f8a3a', mossL: '#79b84f', eye: '#c8ff5a', rune: '#9dff6a', antler: '#c9b48a', antlerD: '#8a7656', socket: '#160d05', spear: '#c48a4f', tip: '#7be05a' };
+  const ground = 36, throwing = pose === 'lunge';
+  [[11, 0], [16, 1]].forEach(([lx, grp]) => {
     const off = STEP[grp][frame % 4];
-    for (let y = 22; y <= ground; y++) {
-      const x = lx + Math.round((off * (y - 22)) / 8);
+    for (let y = 27; y <= ground; y++) {
+      const x = lx + Math.round((off * (y - 27)) / 9);
       G.set(x, y, C.barkD); G.set(x + 1, y, C.bark); G.set(x + 2, y, C.barkD);
     }
+    G.set(lx + off - 1, ground, C.barkD); G.set(lx + off + 3, ground, C.barkD);
   });
-  for (let y = 10; y <= 22; y++) for (let x = 9; x <= 18; x++) {
-    G.set(x, y, x === 9 ? C.barkD : (x + y * 2) % 5 === 0 ? C.barkD : x < 12 ? C.barkL : C.bark);
+  pxLine(G, 10, 15, 6, 25, C.barkD);
+  G.set(5, 26, C.barkD); G.set(7, 26, C.barkD); G.set(6, 27, C.barkD);
+  for (let y = 12; y <= 27; y++) {
+    const half = y < 16 ? 6 : 5;
+    for (let x = 15 - half; x <= 14 + half; x++) G.set(x, y, (x * 3 + (y >> 1)) % 7 === 0 ? C.barkD : x < 12 ? C.barkL : C.bark);
   }
-  pxBlob(G, 14, 6, 7, 5, (dx, dy, x, y) => (hash2(x, y, 82) < 0.25 ? C.leafD : dy < -0.3 ? C.leafL : C.leaf));
-  G.set(15, 12, C.eye); G.set(17, 12, C.eye);
-  if (pose === 'lunge') {
-    pxLine(G, 18, 14, 23, 9, C.bark);
-    pxLine(G, 22, 8, 26, 4, '#c48a4f');
-    G.set(27, 3, '#7be05a');
+  [[9, 12], [10, 12], [11, 11], [12, 12], [10, 13], [17, 12], [18, 11], [19, 12], [20, 12], [19, 13]].forEach(([x, y]) => G.set(x, y, (x + y) % 2 ? C.moss : C.mossL));
+  [[14, 17], [14, 18], [14, 19], [13, 18], [15, 18], [14, 21], [13, 22], [15, 22], [14, 23]].forEach(([x, y]) => G.set(x, y, C.rune));
+  // antlers first so the head sits in front of their roots
+  pxLine(G, 13, 5, 9, 0, C.antlerD); pxLine(G, 11, 2, 8, 3, C.antlerD); G.set(9, 0, C.antler); G.set(8, 3, C.antler);
+  pxLine(G, 17, 5, 21, 0, C.antler); pxLine(G, 19, 2, 23, 3, C.antler); G.set(21, 0, '#e6d6b0'); G.set(23, 3, '#e6d6b0');
+  pxBlob(G, 15, 7.5, 4.5, 4, (dx, dy) => (dy < -0.4 ? C.barkL : C.bark));
+  [[15, 7], [16, 7], [15, 8], [16, 8], [18, 7], [19, 7], [18, 8], [19, 8]].forEach(([x, y]) => G.set(x, y, C.socket));
+  G.set(16, 7, C.eye); G.set(19, 7, C.eye);
+  for (let x = 15; x <= 19; x++) G.set(x, 10, x % 2 ? C.socket : C.barkD);
+  if (throwing) {
+    pxLine(G, 18, 14, 24, 9, C.bark, 2);
+    pxLine(G, 20, 13, 29, 3, C.spear);
+    G.set(29, 2, C.tip);
   } else {
-    pxLine(G, 18, 14, 22, 20, C.bark);
-    G.set(23, 21, C.leaf);
+    pxLine(G, 18, 14, 22, 20, C.bark, 2);
+    pxLine(G, 23, 6, 23, 31, C.spear);
+    G.set(23, 5, C.tip); G.set(23, 4, C.tip);
   }
-  return G.outline(() => '#24160a').canvas();
+  return G.outline(() => '#1a0f06').canvas();
 }
+// where each night mob's eyes sit in its sprite, so they can glow in the dark
+const EYES = { zombie: [[18, 5]], guardian: [[16, 7], [19, 7]] };
 const HUNTER_MAKERS = { hyena: makeHyena, bear: makeBear, zombie: makeZombie, guardian: makeGuardian };
 
 function creatureFrames(kind) {
@@ -1256,7 +1279,7 @@ function spawnPassive(kind, r, minFromPlayer) {
 // grizzly sleeps right in front of the cave mouth.
 const cavePoi = POIS.find(p => p.kind === 'cave');
 const caveThing = cavePoi.thing;
-const hyena = spawnCreature('hyena', 33, 62, { dormant: !quest.greatTree || quest.killed.hyena });
+const hyena = spawnCreature('hyena', HYENA_HOME.x, HYENA_HOME.y, { dormant: !quest.greatTree || quest.killed.hyena });
 if (quest.killed.hyena) hyena.dead = true;
 const bear = spawnCreature('bear', cavePoi.at[0], cavePoi.at[1] + 2);
 if (quest.killed.bear) { bear.dead = true; bear.gone = true; }
@@ -1587,7 +1610,8 @@ function updateCreature(c, dt) {
     case 'prowl':
       c.wanderT -= dt;
       if (!c.wander || c.wanderT <= 0) {
-        c.wander = { x: c.hx + (Math.random() - 0.5) * 6 * TILE, y: c.hy + (Math.random() - 0.5) * 4 * TILE };
+        const roam = def.roam || 3;
+        c.wander = { x: c.hx + (Math.random() - 0.5) * 2 * roam * TILE, y: c.hy + (Math.random() - 0.5) * 1.4 * roam * TILE };
         c.wanderT = 2 + Math.random() * 2.5;
       }
       steer(c.wander.x, c.wander.y, def.speed * 0.35);
@@ -1627,9 +1651,10 @@ function updateCreature(c, dt) {
       if (c.t > 0.4) c.state = alive ? 'chase' : 'return';
       break;
     case 'return':
+      // walking home doesn't heal it any more. it gets its health back slowly
+      // through regen, so backing off for a breather doesn't reset the fight.
       steer(c.hx, c.hy, def.speed * 0.8);
-      c.hp = Math.min(def.hp, c.hp + dt * 2);
-      if (homeD < 6) { c.state = def.rest; c.hp = def.hp; }
+      if (homeD < 6) c.state = def.rest;
       // come back within range while it's heading home and it turns round
       else if (alive && d < def.aggro * TILE * 1.4 && homeD < def.leash * TILE * 0.8) c.state = 'chase';
       break;
@@ -2952,7 +2977,11 @@ function biomeOpen(id) {
 // fast travel works in a biome once it's cleared, and home with the meadows
 function playBiomeCleared(id) { return id === 'camp' ? CHAPTER_DONE.meadows() : !!CHAPTER_DONE[id] && CHAPTER_DONE[id](); }
 const prevBiome = id => regionById[CHAPTERS[CHAPTERS.indexOf(id) - 1]].biome;
-function playRegionNote(id) { return biomeOpen(id) ? '' : `Look around. Clear ${prevBiome(id)} to do anything here.`; }
+function playRegionNote(id) { return biomeOpen(id) ? '' : `Sealed. Clear ${prevBiome(id)} first.`; }
+// a landmark in a biome that isn't open yet is sealed: you can see it from a
+// distance but it can't be found until the biome before it is fully cleared
+function playSealNote(p) { return biomeOpen(p.region) ? '' : `Sealed. Clear ${prevBiome(p.region)} first.`; }
+const sealHinted = new Set();
 function lockedToast(id) {
   if (lockHintT > 0) return;
   lockHintT = 2.5;
@@ -2969,6 +2998,16 @@ function checkChapters() {
     paintMinimap();
   }
   wasComplete = done;
+  if (room) return;
+  // walking up to a sealed landmark tells you once why nothing happened
+  POIS.forEach(p => {
+    if (sealHinted.has(p.id) || found.has(p.id) || p.thing.gone || !playSealNote(p)) return;
+    if (Math.hypot(p.thing.x - player.x, p.thing.y - player.y) < TILE * 3.4) {
+      sealHinted.add(p.id);
+      toast('Sealed', '? ? ?', `Clear ${prevBiome(p.region)} first`);
+      sfx.deny();
+    }
+  });
 }
 
 // asleep you lie on your back in the bed: head on the pillow with your eyes
@@ -3039,7 +3078,7 @@ const buildingOpen = b => biomeOpen(regionAt(b.tile[0] + 0.5, b.tile[1] + 0.5));
 // walking up into an open doorway takes you in, same as clicking the building
 function checkDoors() {
   if (room || player.dead) return;
-  const pushing = keys.has('w') || keys.has('W') || keys.has('ArrowUp');
+  const pushing = keys.has('KeyW') || keys.has('ArrowUp');
   if (!pushing) return;
   for (const b of BUILDINGS) {
     const doorX = b.tile[0] * TILE + 8, doorY = b.tile[1] * TILE;
@@ -3244,6 +3283,34 @@ function playUpdate(dt, t) {
   }
 }
 
+// what you can actually see in the dark: everything by day, and at night (or in
+// the mines) only what's near you or near a flame, same idea as the signs
+function visibleInDark(x, y) {
+  const night = nightAmount() > 0.5, mine = amb.mines > 0.5;
+  if (!night && !mine) return true;
+  if (Math.hypot(x - player.x, y - player.y) < TILE * (night ? 3.6 : 6)) return true;
+  return glows.some(gl => !gl.off && gl.flicker && Math.hypot(gl.x - x, gl.y - y) < gl.rad * TILE * 1.2);
+}
+function drawEyes(c, toX, toY, t) {
+  const img = c.frames.walk[0], w = img.width, h = img.height;
+  const lean = c.kind === 'zombie' && c.state === 'lunge' ? 2 : 0;
+  const x0 = c.x - Math.floor(w / 2), y0 = c.y - h + 2 + (inWater(c) ? 4 : 0);
+  const col = c.kind === 'zombie' ? '255,74,58' : '200,255,90';
+  const pulse = reduceMotion ? 1 : 0.75 + Math.sin(t / 260 + c.x) * 0.25;
+  EYES[c.kind].forEach(([ex, ey]) => {
+    const px = c.flip ? x0 + (w - 1 - ex - lean) : x0 + ex + lean, py = y0 + ey;
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(toX(px + 0.5), toY(py + 0.5), 0, toX(px + 0.5), toY(py + 0.5), 4 * S);
+    g.addColorStop(0, `rgba(${col},${0.5 * pulse})`);
+    g.addColorStop(1, `rgba(${col},0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(toX(px - 4), toY(py - 4), 9 * S, 9 * S);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = `rgba(${col},${pulse})`;
+    ctx.fillRect(toX(px), toY(py), S, S);
+  });
+}
+
 function playRenderOverlay(toX, toY, t) {
   if (!started) return;
   const fs = Math.max(16, 8 * Math.round((S * 5.3) / 8));
@@ -3312,6 +3379,9 @@ function playRenderOverlay(toX, toY, t) {
   ctx.textBaseline = 'middle';
   creatures.forEach(c => {
     if (room || c.dead || c.gone) return;
+    // in the dark you only see what's lit, so no health bars or tells out
+    // there, just a night mob's eyes glinting back at you
+    if (!visibleInDark(c.x, c.y)) { if (EYES[c.kind]) drawEyes(c, toX, toY, t); return; }
     const top = c.y - c.def.h - 2;
     if (c.hp < c.def.hp || (!c.def.passive && ['chase', 'windup', 'lunge', 'recover'].includes(c.state))) {
       const bw = 26, bx = toX(c.x - bw / 2), by = toY(top);
@@ -3390,7 +3460,7 @@ function playKey(e, onControl) {
   const k = e.key.toLowerCase();
   if (k === 'e') { e.preventDefault(); if (ui) closeUI(); else openUI('inv'); return true; }
   if (k === 'escape' && ui) { closeUI(); return true; }
-  if (ui) return MOVE_KEYS[e.key] !== undefined;
+  if (ui) return MOVE_KEYS[e.code] !== undefined;
   if (/^[1-6]$/.test(k)) { selectSlot(Number(k) - 1); return true; }
   if (k === 'f' && !onControl) { eat(); return true; }
   return false;

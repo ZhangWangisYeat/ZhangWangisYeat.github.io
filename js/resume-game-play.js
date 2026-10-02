@@ -96,6 +96,10 @@ const MACHINE_PARTS = 4;
 const PART_NAMES = { 'exotic-core': '???' };
 function partsComplete() { return (quest.parts || []).length >= MACHINE_PARTS; }
 ITEMS['exotic-core'] = { part: true, get name() { return partsComplete() ? PART_NAMES['exotic-core'] : '???'; } };
+// the forest's heart is what powers the core. a forest guardian very rarely
+// has one, and you only ever get the one. unlike the core it has a name you
+// can see from the start, because that's what alex called it.
+ITEMS['forest-heart'] = { part: true, name: 'Forest\'s Heart' };
 // whatever you're holding that isn't a tool hits like a bare hand
 const FIST = { name: 'Bare hands', dmg: 0.25, cd: 0.45, reach: 1.4 };
 const STACK_MAX = 64;
@@ -175,7 +179,9 @@ const CREATURES = {
     name: 'Forest Guardian', hp: 4, speed: 46, aggro: 11, leash: 80, dmg: 0.5,
     knock: 110, h: 36, box: { w: 16, h: 26 }, rest: 'prowl', regen: 0, chip: '138,96,52',
     nightly: true, shooter: { range: 7.5, keep: 4, cd: 2.4, speed: 190, dmg: 0.5, poison: 2 },
-    drops: [['stick', 1, 3]], intro: ['Night', 'It keeps its distance and throws poison tipped sticks.']
+    // the fourth number is a drop chance: half a percent for the heart, and
+    // it stops dropping once you have it
+    drops: [['stick', 1, 3], ['forest-heart', 1, 1, 0.005]], intro: ['Night', 'It keeps its distance and throws poison tipped sticks.']
   },
   // passive livestock: wander, graze, and run when you hit them
   cow: {
@@ -379,6 +385,17 @@ function makeIcon(id) {
     case 'exotic-core':
       coreArt(G, 7.5, 7, 5.5, 6, true);
       break;
+    case 'forest-heart': {
+      // a heart of bark with a living green core and a sprout on top
+      const rows = ['.XX...XX.', 'XXXX.XXXX', 'XXXXXXXXX', 'XXXXXXXXX', '.XXXXXXX.', '..XXXXX..', '...XXX...', '....X....'];
+      rows.forEach((row, y) => [...row].forEach((ch, x) => {
+        if (ch !== 'X') return;
+        const dx = x - 4, dy = y - 3, d = Math.sqrt(dx * dx + dy * dy * 1.4);
+        G.set(x + 3, y + 5, d < 1.3 ? '#e6ff9a' : d < 2.4 ? '#9dff6a' : d < 3.2 ? '#3f8f3a' : (x + y) % 3 ? '#7a4f2a' : '#5e3a1c');
+      }));
+      G.set(8, 4, '#62b240'); G.set(9, 3, '#62b240'); G.set(10, 3, '#3f8f3a'); G.set(8, 3, '#2d6b2a');
+      break;
+    }
     case 'snowball':
       pxBlob(G, 8, 8.5, 5, 5, (dx, dy) => (dx + dy < -0.7 ? '#ffffff' : dx + dy > 0.6 ? '#b9cbe6' : '#eef3fb'));
       break;
@@ -1459,13 +1476,28 @@ function aggro(c) {
   }
 }
 
+// a creature's drop. a drop with a chance only sometimes happens, and a machine
+// part only ever drops once and never into a full bag (where it'd be lost).
+function dropLoot(id, n, chance, x, y) {
+  if (chance && Math.random() >= chance) return;
+  if (!ITEMS[id].part) { gain(id, n, x, y); return; }
+  if (quest.parts.includes(id)) return;
+  if (!inv.slots.some(st => !st)) { toast('Bag full', ITEMS[id].name, 'Something slipped through your fingers'); return; }
+  gain(id, 1, x, y);
+  quest.parts.push(id);
+  burst(x, y, '200,255,90', 30);
+  sfx.found();
+  setTimeout(() => toast('Found', ITEMS[id].name, `Part ${quest.parts.length} of ${MACHINE_PARTS}. ${countItem('exotic-core') ? 'The core in your bag starts to hum.' : 'It pulses like it wants to power something.'}`), 600);
+  markDirty();
+}
+
 function killCreature(c) {
   c.dead = true;
   c.gone = true;
   if (c.def.passive || c.def.nightly) {
     const cc = creatureCenter(c);
     burst(cc.x, cc.y, c.def.chip, 14);
-    c.def.drops.forEach(([id, a, b], line) => gain(id, rand(a, b), cc.x, cc.y - 10 - line * 10));
+    c.def.drops.forEach(([id, a, b, chance], line) => dropLoot(id, rand(a, b), chance, cc.x, cc.y - 10 - line * 10));
     creatures.splice(creatures.indexOf(c), 1);
     things.splice(things.indexOf(c), 1);
     return;
@@ -3110,8 +3142,10 @@ function tickSecretRock(dt) {
     return;
   }
   const m = mouseWorld(), f = secretRock.frames[0];
-  const over = m.x >= secretRock.x - f.width / 2 && m.x <= secretRock.x + f.width / 2 && m.y >= secretRock.y - f.height && m.y <= secretRock.y + 2;
-  const near = Math.hypot(secretRock.x - player.x, secretRock.y - 6 - (player.y - 8)) <= REACH_TILES * TILE;
+  // a few pixels of slack round the rock and a little extra reach, since it's
+  // small and there's nothing telling you you're on it
+  const over = m.x >= secretRock.x - f.width / 2 - 4 && m.x <= secretRock.x + f.width / 2 + 4 && m.y >= secretRock.y - f.height - 4 && m.y <= secretRock.y + 4;
+  const near = Math.hypot(secretRock.x - player.x, secretRock.y - 6 - (player.y - 8)) <= (REACH_TILES + 0.5) * TILE;
   rockT = room === caveRoom && mouse.down && !ui && !player.dead && over && near ? rockT + dt : 0;
   if (rockT >= ROCK_TIME) moveRock();
 }

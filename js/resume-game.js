@@ -214,6 +214,7 @@ const SEED = 20250701;
 // get their own space instead of sitting on top of each other
 const CAMP = { x: 60, y: 42, r: 9 };
 const HOUSE = { x: 60, y: 35 };     // the tile the tent's flap is on
+const HYENA_HOME = { x: 33, y: 62 };
 const SPAWN = { x: 60, y: 45 };
 const QUADS = ['dunes', 'tundra', 'meadows', 'mines'];
 
@@ -796,6 +797,9 @@ function generate() {
   });
   clear(CAMP.x, CAMP.y, CAMP.r + 0.5, true);
   clear(HOUSE.x, HOUSE.y - 1, 3, true);
+  // the hyena's patch of meadow was boxed in by rock and water, so it couldn't
+  // get round you to fight properly. this gives it open ground.
+  clear(HYENA_HOME.x, HYENA_HOME.y, 6, true);
   POIS.forEach(p => clear(p.at[0], p.at[1] + 1, 3.2, true));
   // camp sits on a clearing of packed earth, so it reads as one tidy place
   // instead of a patchwork of all four biomes' ground
@@ -1066,9 +1070,12 @@ function findPath(tx, ty) {
 }
 
 const keys = new Set();
+// movement is tracked by physical key (e.code), not by the character it types.
+// with e.key, holding w and then pressing shift (or flipping caps lock) made the
+// release come through as "W", so "w" never got cleared and you walked forever.
 const MOVE_KEYS = {
-  ArrowUp: [0, -1], w: [0, -1], W: [0, -1], ArrowDown: [0, 1], s: [0, 1], S: [0, 1],
-  ArrowLeft: [-1, 0], a: [-1, 0], A: [-1, 0], ArrowRight: [1, 0], d: [1, 0], D: [1, 0]
+  ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1],
+  ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0]
 };
 
 let audio;
@@ -1166,7 +1173,7 @@ function lockedCard(poi, skill) {
           <h4 class="entry-title">? ? ?</h4>
           <span class="entry-date">???</span>
         </div>
-        <p class="entry-sub">Undiscovered. Somewhere in ${esc(where)}.</p>
+        <p class="entry-sub">${(typeof playSealNote === 'function' && playSealNote(poiById[poi.id])) || `Undiscovered. Somewhere in ${esc(where)}.`}</p>
         <div class="redacted" aria-hidden="true">${bars}</div>
         <div class="entry-foot"><span></span>${gotoHTML(poi)}</div>
       </article>`;
@@ -1447,7 +1454,7 @@ function warpTo(tx, ty) {
   // nearest reachable tile to wherever you asked for
   let best = null, bestD = Infinity;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    if (!reach[idx(x, y)] || SOLID[tiles[idx(x, y)]]) continue;
+    if (!reach[idx(x, y)] || solidTile(x, y)) continue;
     const d = (x - tx) ** 2 + (y - ty) ** 2;
     if (d < bestD) { bestD = d; best = [x, y]; }
   }
@@ -1533,27 +1540,47 @@ function endIntro() {
   if (journal.matches(':hover')) journal.addEventListener('mouseleave', () => setTimeout(tuck, 1200), { once: true });
   else tuck();
 }
-// a new landmark pops the journal open on its entry for a few seconds and then
-// tucks it away again. if you open or close it yourself in the meantime it's
-// yours and stays how you left it, and if you're reading it, it waits.
+// a new landmark brings the journal in on its entry, holds it there for a
+// while with the new card glowing, then tucks it away again. it waits a beat
+// after the discovery toast and slides slower than a normal toggle so it
+// doesn't snap open in your face. if you open or close the journal yourself
+// in the meantime it's yours and stays how you left it, and if you're reading
+// it, it waits. if it was already open it just highlights the card.
+const PEEK_HOLD = 6000;
 let peekTimer = null;
+function highlightCard(poi) {
+  journalBody.querySelectorAll('.entry.is-peek').forEach(e => e.classList.remove('is-peek'));
+  const el = journalBody.querySelector(`[data-poi="${poi.id}"]`);
+  if (!el) return;
+  el.classList.remove('just-found');
+  void el.offsetWidth;
+  el.classList.add('just-found', 'is-peek');
+  el.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+}
+function endPeek() {
+  peekTimer = null;
+  journalBody.querySelectorAll('.entry.is-peek').forEach(e => e.classList.remove('is-peek'));
+  setTimeout(() => { if (!peekTimer) document.body.classList.remove('journal-peek'); }, 800);
+}
 function peekJournal(poi) {
   if (introTimer) return;
   const closed = document.body.classList.contains('journal-closed');
-  if (!closed && !peekTimer) return;
-  if (closed) toggleJournal(true);
-  const el = journalBody.querySelector(`[data-poi="${poi.id}"]`);
-  if (el) el.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
+  if (!closed && !peekTimer) { highlightCard(poi); setTimeout(() => journalBody.querySelector(`[data-poi="${poi.id}"]`)?.classList.remove('is-peek'), PEEK_HOLD); return; }
   clearTimeout(peekTimer);
+  document.body.classList.add('journal-peek');
   peekTimer = setTimeout(() => {
-    const tuck = () => {
-      if (!peekTimer) return;
-      peekTimer = null;
-      if (!document.body.classList.contains('journal-closed')) toggleJournal(true);
-    };
-    if (journal.matches(':hover')) journal.addEventListener('mouseleave', () => setTimeout(tuck, 1200), { once: true });
-    else tuck();
-  }, 5000);
+    if (document.body.classList.contains('journal-closed')) toggleJournal(true);
+    highlightCard(poi);
+    peekTimer = setTimeout(() => {
+      const tuck = () => {
+        if (!peekTimer) return;
+        if (!document.body.classList.contains('journal-closed')) toggleJournal(true);
+        endPeek();
+      };
+      if (journal.matches(':hover')) journal.addEventListener('mouseleave', () => setTimeout(tuck, 1200), { once: true });
+      else tuck();
+    }, PEEK_HOLD);
+  }, closed ? 700 : 0);
 }
 function togglePanel(name) {
   if (introTimer) introTouched[name] = true;
@@ -1566,13 +1593,30 @@ function openJournal() {
 }
 function toggleJournal(auto) {
   if (introTimer && auto !== true) introTouched.journal = true;
-  if (auto !== true && peekTimer) { clearTimeout(peekTimer); peekTimer = null; }
+  if (auto !== true && peekTimer) { clearTimeout(peekTimer); endPeek(); }
   const closed = document.body.classList.toggle('journal-closed');
   $('#journal-toggle').setAttribute('aria-expanded', String(!closed));
   updateFocus();
 }
 
+// if you ever end up inside something solid (a travel landing or a respawn on a
+// spot that's since become a wall), every step is blocked and you just walk on
+// the spot. this pops you out to the nearest open tile.
+function unstick() {
+  const tx = Math.floor(player.x / TILE), ty = Math.floor(player.y / TILE);
+  for (let r = 1; r < 12; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+    const x = tx + dx, y = ty + dy;
+    if (!inside(x, y) || solidTile(x, y)) continue;
+    if (blocked(x * TILE + 8, y * TILE + 12)) continue;
+    player.x = x * TILE + 8;
+    player.y = y * TILE + 12;
+    return;
+  }
+}
+
 function update(dt, t) {
+  if (started && !room && blocked(player.x, player.y)) unstick();
   let ix = 0, iy = 0;
   const frozen = typeof playFrozen === 'function' && playFrozen();
   if (started && !frozen) keys.forEach(k => { const m = MOVE_KEYS[k]; if (m) { ix += m[0]; iy += m[1]; } });
@@ -1641,6 +1685,8 @@ function update(dt, t) {
   let near = null, nearD = TILE * 3.4;
   POIS.forEach(p => {
     if (room || p.thing.gone) return;
+    // landmarks in a biome that isn't open yet can't be found
+    if (!found.has(p.id) && typeof playSealNote === 'function' && playSealNote(p)) return;
     // a guarded landmark only counts once its guards are dead, so walking past
     // it early doesn't give it away
     if (!found.has(p.id) && typeof playLandmarkGuarded === 'function' && playLandmarkGuarded(p)) return;
@@ -1906,7 +1952,8 @@ function drawLabels(toX, toY, t) {
     // at night a sign is only visible if you or a fire is lighting it
     if (typeof playNight === 'function' && playNight() > 0.5 && Math.hypot(o.x - player.x, o.y - player.y) > TILE * 4.5
       && !glows.some(gl => !gl.off && gl.flicker && Math.hypot(gl.x - o.x, gl.y - o.y) < gl.rad * TILE * 1.2)) continue;
-    const text = known(p) ? p.label.toUpperCase() : '? ? ?';
+    const sealed = !got && typeof playSealNote === 'function' && playSealNote(p);
+    const text = sealed ? 'SEALED' : known(p) ? p.label.toUpperCase() : '? ? ?';
     const tw = ctx.measureText(text).width;
     const pad = Math.round(fs * 0.5), bh = Math.round(fs * 1.6);
     const bx = Math.round(x - tw / 2 - pad), by = Math.round(topY - bh);
@@ -2046,7 +2093,7 @@ document.addEventListener('keydown', e => {
   const onControl = e.target.closest && e.target.closest('button, a');
 
   if (!started) {
-    if (e.key === 'Enter' || e.key === ' ' || MOVE_KEYS[e.key]) {
+    if (e.key === 'Enter' || e.key === ' ' || MOVE_KEYS[e.code]) {
       if (onControl && (e.key === 'Enter' || e.key === ' ') && e.target.id !== 'start-btn') return;
       e.preventDefault();
       start();
@@ -2055,13 +2102,18 @@ document.addEventListener('keydown', e => {
   }
 
   if (typeof playKey === 'function' && playKey(e, onControl)) return;
-  if (MOVE_KEYS[e.key]) { e.preventDefault(); keys.add(e.key); return; }
+  if (MOVE_KEYS[e.code]) { e.preventDefault(); keys.add(e.code); return; }
   if (e.key === 'j' || e.key === 'J') { toggleJournal(); return; }
   if (e.key === 'k' || e.key === 'K') { togglePanel('keys'); return; }
   if (e.key === 'm' || e.key === 'M') { togglePanel('map'); return; }
 });
-document.addEventListener('keyup', e => keys.delete(e.key));
+document.addEventListener('keyup', e => keys.delete(e.code));
+// anything that can swallow a key release (the window losing focus, the tab
+// being hidden, a browser right-click menu opening over the page) drops every
+// held key, so nothing can get stuck down
 window.addEventListener('blur', () => keys.clear());
+document.addEventListener('visibilitychange', () => keys.clear());
+document.addEventListener('contextmenu', () => keys.clear());
 
 $('#start-btn').addEventListener('click', () => start());
 $('#title').addEventListener('click', e => { if (!e.target.closest('a, button')) start(); });

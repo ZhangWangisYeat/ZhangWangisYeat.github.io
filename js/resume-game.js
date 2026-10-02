@@ -210,8 +210,11 @@ const TILE = 16;
 const W = 120;
 const H = 84;
 const SEED = 20250701;
-const CAMP = { x: 60, y: 42, r: 6.5 };
-const HOUSE = { x: 60, y: 37 };     // the tile the cabin's door is on
+// camp is a bit roomier than it used to be so the cabin, tent, fire and seats
+// each get their own space instead of sitting on top of each other
+const CAMP = { x: 60, y: 42, r: 9 };
+const HOUSE = { x: 60, y: 35 };     // the tile the cabin's door is on
+const TENT = { x: 53, y: 40 };
 const SPAWN = { x: 60, y: 45 };
 const QUADS = ['dunes', 'tundra', 'meadows', 'mines'];
 
@@ -660,6 +663,24 @@ function makeHouse() {
   G.set(26, 35, '#ffd23f');
   return G.outline(() => '#24160a').canvas();
 }
+function makeTent() {
+  const w = 34, h = 28, cx = 16.5, top = 3, base = 25;
+  const G = pixelGrid(w, h);
+  for (let y = top; y <= base; y++) {
+    const t = (y - top) / (base - top), half = 1 + t * 14;
+    for (let x = 0; x < w; x++) {
+      const dx = x - cx;
+      if (Math.abs(dx) > half) continue;
+      let col = dx < 0 ? '#e0823f' : '#b3572a';
+      if ((y - top) % 6 === 5) col = dx < 0 ? '#ec9a5c' : '#c4683a';
+      const doorTop = base - 11;
+      if (y > doorTop && Math.abs(dx) <= (y - doorTop) * 0.5) col = y > doorTop + 3 ? '#2a150d' : '#4a2616';
+      G.set(x, y, col);
+    }
+  }
+  G.set(cx - 0.5, top - 1, '#6b3a1e'); G.set(cx - 0.5, top - 2, '#6b3a1e');
+  return G.outline(() => '#3a1a0c').canvas();
+}
 // a log to sit on by the fire, end rings showing
 function makeLogSeat() {
   const G = pixelGrid(26, 10);
@@ -909,17 +930,18 @@ function placeDecor() {
   }
 
   // camp: home at the back with a stepping stone path down to the fire, a log
-  // to sit on either side of the fire, and a torch either side of the door so
-  // the way home is lit at night. the cabin's walls are solid like the cave's,
+  // to sit on either side of the fire, the old tent off to the west, and a
+  // torch either side of the door so the way home is lit at night. the cabin's walls are solid like the cave's,
   // and the play layer handles going inside.
   campHouse.x = HOUSE.x * TILE + 8;
   campHouse.y = HOUSE.y * TILE + 14;
   things.push(campHouse);
   [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0]].forEach(([dx, dy]) => extraSolid.add(idx(HOUSE.x + dx, HOUSE.y + dy)));
   const step = makeStep();
-  [1, 2].forEach(k => things.push({ decor: true, flat: true, x: HOUSE.x * TILE + 8, y: (HOUSE.y + k) * TILE + 12, frames: [step] }));
+  [1, 2, 3].forEach(k => things.push({ decor: true, flat: true, x: HOUSE.x * TILE + 8, y: (HOUSE.y + k) * TILE + 12, frames: [step] }));
   const seat = makeLogSeat();
-  [-3, 3].forEach(k => things.push({ decor: true, x: (CAMP.x + k) * TILE + 8, y: (CAMP.y - 1) * TILE + 14, frames: [seat] }));
+  [-4, 4].forEach(k => things.push({ decor: true, x: (CAMP.x + k) * TILE + 8, y: (CAMP.y - 1) * TILE + 14, frames: [seat] }));
+  things.push({ decor: true, x: TENT.x * TILE + 8, y: TENT.y * TILE + 14, frames: [makeTent()] });
   [-2, 2].forEach(k => {
     const t = { decor: true, torch: true, x: (HOUSE.x + k) * TILE + 8, y: (HOUSE.y + 1) * TILE + 10, frames: TORCH, fps: 7, phase: k > 0 ? 1.5 : 0 };
     things.push(t);

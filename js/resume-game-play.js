@@ -746,11 +746,11 @@ function paintHomeRoom() {
     px(0, y, '#94603a', w, 1);
     px(0, y + 3, '#4e2f16', w, 1);
   }
-  px(124, 8, '#3b2412', 26, 18);
-  px(126, 10, '#d6efff', 22, 7);
-  px(126, 17, '#a9d8ff', 22, 7);
-  px(136, 10, '#3b2412', 2, 14);
-  px(126, 16, '#3b2412', 22, 2);
+  px(104, 8, '#3b2412', 26, 18);
+  px(106, 10, '#d6efff', 22, 7);
+  px(106, 17, '#a9d8ff', 22, 7);
+  px(116, 10, '#3b2412', 2, 14);
+  px(106, 16, '#3b2412', 22, 2);
   px(87, 0, '#2b2b2b', 1, 9);
   px(84, 9, '#2b2b2b', 7, 2);
   px(85, 11, '#ffd77a', 5, 6);
@@ -1330,15 +1330,16 @@ const homeRoom = {
   door: HOME_DOOR,
   blocked: roomWalls(HOME_COLS, HOME_ROWS, HOME_DOOR),
   things: [
-    { flat: true, x: 72, y: 96, frames: [makeHomeRug()] },
-    { x: 24, y: 47, frames: [makePlant()] },
-    { x: 104, y: 47, frames: [makeBookshelf()] }
+    { flat: true, x: 66, y: 98, frames: [makeHomeRug()] },
+    { x: 26, y: 106, frames: [makePlant()] },
+    { x: 147, y: 47, frames: [makeBookshelf()] }
   ],
   glows: [{ x: 87, y: 14, rgb: '255,190,110', rad: 4.5, flicker: true, strength: 0.25 }]
 };
-addStation('craft', 44, 47, homeRoom);
-addStation('furnace', 64, 46, homeRoom);
-addStation('chest', 82, 46, homeRoom);
+// a tile or so of floor between each, so they read as separate pieces
+addStation('craft', 34, 47, homeRoom);
+addStation('furnace', 66, 46, homeRoom);
+addStation('chest', 98, 46, homeRoom);
 quest.beds.forEach(bedThing);
 
 // the buildings you can walk into. the cave opens once the grizzly is dead,

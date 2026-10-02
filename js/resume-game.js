@@ -73,27 +73,15 @@ const REGIONS = [
             title: 'University of California, Los Angeles',
             date: 'Sep 2025 – Present',
             sub: 'B.S. Computer Science & Engineering | Henry Samueli College of Engineering | Los Angeles, CA | Expected Jun 2029',
-            poi: { id: 'ghs', kind: 'bigtree', at: [21, 54], label: 'Glastonbury HS' }
+            // ucla is the hut out on the lake island. the hyena and the grizzly
+            // guard it, and it only counts as found once both of them are dead
+            poi: { id: 'ucla', kind: 'hut', at: [17, 69], label: 'UCLA', island: true }
           },
           {
             title: 'Glastonbury High School',
             date: 'Aug 2021 – Jun 2025',
             sub: 'High School Diploma, Summa Cum Laude | Glastonbury, CT | GPA 4.80 / 4.00',
-            poi: { id: 'ucla', kind: 'hyena', at: [33, 62], label: 'UCLA' }
-          }
-        ]
-      },
-      {
-        type: 'entries',
-        heading: 'Activities',
-        blurb: 'Teaching the next party how to play.',
-        items: [
-          {
-            title: 'School Team Lead | ACM TeachLA',
-            date: 'Jan 2026 – Present',
-            sub: 'Association for Computing Machinery at UCLA | Ex-React & Next.js Lead (North Hollywood HS) | Unity Lead (Walt Whitman HS)',
-            desc: 'Planned curriculum and ran weekly hands-on workshops where students built dynamic websites in React and Next.js and 2D games in Unity, including their own versions of Flappy Bird, Street Fighter, and Terraria.',
-            poi: { id: 'teachla-lead', kind: 'bear', at: [16, 75], label: 'ACM TeachLA' }
+            poi: { id: 'ghs', kind: 'bigtree', at: [21, 54], label: 'Glastonbury HS' }
           }
         ]
       }
@@ -102,13 +90,13 @@ const REGIONS = [
   {
     id: 'dunes',
     biome: 'The Dunes',
-    label: 'Work Experience',
+    label: 'Experience',
     accent: '#f0c93f',
     blurb: 'Shipping under real constraints, for people who are counting on it.',
     blocks: [
       {
         type: 'entries',
-        heading: 'Work Experience',
+        heading: 'Experience',
         items: [
           {
             title: 'Software Developer Intern | MSISI',
@@ -116,6 +104,13 @@ const REGIONS = [
             sub: 'Med/Surgical Information Services International, Inc. | Glastonbury, CT',
             desc: "Trained Delphi's Kai agentic AI model to identify and facility-match new records in ACFM instantly. Integrated Delphi MCP to automate the nonlinear data importing process, reducing the import bottleneck by 90%. Engineered the MailSISI and MailSISIBox file-tool workflow to automate hundreds of thousands of data downloads. Worked on automating the UOM standardization process for their Trace Rebate Correction (TRC) software.",
             poi: { id: 'msisi-26', kind: 'deadtree', at: [19, 14], label: 'MSISI | 2026' }
+          },
+          {
+            title: 'School Team Lead | ACM TeachLA',
+            date: 'Jan 2026 – Present',
+            sub: 'Association for Computing Machinery at UCLA | Ex-React & Next.js Lead (North Hollywood HS) | Unity Lead (Walt Whitman HS)',
+            desc: 'Planned curriculum and ran weekly hands-on workshops where students built dynamic websites in React and Next.js and 2D games in Unity, including their own versions of Flappy Bird, Street Fighter, and Terraria.',
+            poi: { id: 'teachla-lead', kind: 'deadtree', at: [12, 31], label: 'ACM TeachLA' }
           },
           {
             title: 'Software Engineering Intern | MSISI',
@@ -609,22 +604,64 @@ function makeTent() {
   return G.outline(() => '#3a1a0c').canvas();
 }
 
-// the grizzly's den: a mossy dome of rock with a dark mouth at the bottom
-function makeDen() {
-  const w = 46, h = 32, cx = 23, ground = h - 2;
+// the hut on the lake island: log walls on a stone footing, a mossy thatch roof
+// and two lit windows. it's exactly three tiles wide, which is what the solid
+// footprint in placeDecor assumes. the door is barred shut until the grizzly is
+// dead, then it hangs open (the play layer swaps the frame).
+function makeHut(open) {
+  const w = 48, h = 44, cx = 23.5, ground = h - 2;
   const G = pixelGrid(w, h);
-  for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
-    const dx = (x - cx) / 21, dy = (y - ground) / 27;
-    if (dx * dx + dy * dy > 1) continue;
-    const lit = -(dx * 0.6 + dy * 0.8) + (hash2(x, y, 41) - 0.5) * 0.5;
-    let col = lit > 0.55 ? '#a6a6a6' : lit > 0.15 ? '#8a8a8a' : lit > -0.25 ? '#727272' : '#5a5a5a';
-    if (hash2(x >> 2, y >> 1, 42) < 0.12) col = '#666666';
-    if (y < 7 + hash2(x, 0, 43) * 4 && hash2(x, y, 44) < 0.65) col = hash2(x, y, 45) < 0.5 ? '#3f8f3a' : '#2f7330';
-    const mx = (x - cx) / 8.5, my = (y - ground) / 13;
-    if (mx * mx + my * my <= 1) col = mx * mx + my * my > 0.7 ? '#2e241d' : '#140f0c';
+  for (let y = 20; y <= ground; y++) for (let x = 5; x <= 42; x++) {
+    let col = (y - 20) % 4 === 3 ? '#4a2e14' : x < 12 ? '#9a6a3a' : (y - 20) % 4 === 0 ? '#8a5a2e' : '#74491f';
+    if (y >= ground - 2) col = hash2(x >> 1, y, 61) < 0.3 ? '#6e6e6e' : y === ground - 2 ? '#a3a3a3' : '#8a8a8a';
     G.set(x, y, col);
   }
-  return G.outline(() => '#262626').canvas();
+  // roof: a wide trapezoid of straw with darker streaks and a few moss patches
+  for (let y = 1; y <= 23; y++) {
+    const half = 7 + (y - 1) * 0.86;
+    for (let x = 0; x < w; x++) {
+      const dx = x - cx;
+      if (Math.abs(dx) > half) continue;
+      const streak = hash2(x, y >> 2, 62);
+      let col = streak < 0.25 ? '#a37a2c' : streak < 0.6 ? '#c09640' : '#d9b45a';
+      if (dx < -half + 3) col = '#e6c674';
+      if (y >= 21) col = y === 23 ? '#6e4e1c' : '#8a6524';
+      if (hash2(x >> 2, y >> 1, 63) < 0.13 && y < 20) col = hash2(x, y, 64) < 0.5 ? '#5d8a3a' : '#4a7330';
+      G.set(x, y, col);
+    }
+  }
+  // ridge cap along the top
+  for (let x = Math.round(cx - 7); x <= Math.round(cx + 7); x++) G.set(x, 1, '#7a5520');
+  // windows, warm light behind a cross frame
+  [[9, 27], [33, 27]].forEach(([wx, wy]) => {
+    for (let y = wy; y < wy + 7; y++) for (let x = wx; x < wx + 6; x++) {
+      const frame = x === wx || x === wx + 5 || y === wy || y === wy + 6 || x === wx + 2 || y === wy + 3;
+      G.set(x, y, frame ? '#3b2412' : y < wy + 3 ? '#ffe39a' : '#ffc45a');
+    }
+  });
+  // door
+  for (let y = 27; y <= ground - 1; y++) for (let x = 19; x <= 28; x++) {
+    const arch = y === 27 && (x === 19 || x === 28);
+    if (arch) continue;
+    const edge = x === 19 || x === 28 || y === 27;
+    let col;
+    if (open) col = edge ? '#3b2412' : y < 31 ? '#1d120a' : '#120b06';
+    else col = edge ? '#3b2412' : y === 31 || y === 37 ? '#4a4a4a' : x % 3 === 0 ? '#5a3818' : '#6b4020';
+    G.set(x, y, col);
+  }
+  if (open) {
+    // the door swung inwards, so you see its edge against the frame
+    for (let y = 28; y <= ground - 1; y++) { G.set(20, y, '#6b4020'); G.set(21, y, '#5a3818'); }
+  } else {
+    // a plank nailed across it
+    pxLineG(G, 18, 30, 29, 38, '#8a5a2e');
+    pxLineG(G, 18, 31, 29, 39, '#5e3a1c');
+  }
+  return G.outline(() => '#24160a').canvas();
+}
+function pxLineG(G, x0, y0, x1, y1, c) {
+  const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
+  for (let i = 0; i <= n; i++) G.set(Math.round(x0 + ((x1 - x0) * i) / n), Math.round(y0 + ((y1 - y0) * i) / n), c);
 }
 
 function makeFireFrames(count, small) {
@@ -679,7 +716,7 @@ const SPRITE = {
   iron: [makeCrystal('iron')],
   fire: FIRE,
   tent: [makeTent()],
-  den: [makeDen()]
+  hut: [makeHut(false)]
 };
 const DECOR = {
   tree: [makeTree(41, false), makeTree(57, false), makeTree(73, false)],
@@ -687,7 +724,7 @@ const DECOR = {
   deadtree: [makeDeadTree(17, false), makeDeadTree(29, false)]
 };
 const GLOW = {
-  fire: '255,140,50', gold: '255,210,80', diamond: '95,240,224', ruby: '255,90,74', emerald: '90,230,130', iron: '230,226,220', crystal: '160,214,255', torch: '255,150,60'
+  fire: '255,140,50', hut: '255,196,110', gold: '255,210,80', diamond: '95,240,224', ruby: '255,90,74', emerald: '90,230,130', iron: '230,226,220', crystal: '160,214,255', torch: '255,150,60'
 };
 
 // the four biomes meet at a wobbly cross instead of a ruler-straight one
@@ -707,7 +744,10 @@ const quad = new Uint8Array(W * H);
 const reach = new Uint8Array(W * H);
 const idx = (x, y) => y * W + x;
 const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
-const solidTile = (x, y) => !inside(x, y) || SOLID[tiles[idx(x, y)]] === 1;
+// tiles that block you without being terrain, like the hut's walls. they keep
+// whatever ground is painted under them.
+const extraSolid = new Set();
+const solidTile = (x, y) => !inside(x, y) || SOLID[tiles[idx(x, y)]] === 1 || extraSolid.has(idx(x, y));
 const baseOf = i => BIOMES[QUADS[quad[i]]].base;
 
 function generate() {
@@ -748,6 +788,18 @@ function generate() {
   clear(CAMP.x, CAMP.y, CAMP.r + 0.5, true);
   POIS.forEach(p => clear(p.at[0], p.at[1] + 1, 3.2, true));
 
+  // an island landmark gets a round patch of ground with a ring of water all
+  // the way round it, so the only way over is wading
+  POIS.filter(p => p.island).forEach(p => {
+    const [cx, cy] = p.at;
+    for (let y = cy - 8; y <= cy + 8; y++) for (let x = cx - 8; x <= cx + 8; x++) {
+      if (!inside(x, y)) continue;
+      const d = Math.hypot(x - cx, (y - cy - 0.5) * 1.15);
+      if (d <= 4.6) tiles[idx(x, y)] = baseOf(idx(x, y));
+      else if (d <= 7) tiles[idx(x, y)] = BIOMES[QUADS[quad[idx(x, y)]]].wet;
+    }
+  });
+
   // flood fill from spawn, then fill anything unreachable with rock so the
   // map never shows you a meadow you can't actually get to
   const q = [idx(SPAWN.x, SPAWN.y)];
@@ -785,7 +837,6 @@ function generate() {
   }
 }
 
-const CREATURE_POIS = new Set(['hyena', 'bear']);
 const things = [];   // everything y-sorted with the player
 const glows = [];
 
@@ -829,11 +880,12 @@ function placeDecor() {
   things.push({ decor: true, x: (CAMP.x - 3) * TILE, y: (CAMP.y - 1) * TILE + 6, frames: SPRITE.tent });
 
   POIS.forEach(p => {
-    // creature landmarks get a stand-in here; the play layer swaps in the
-    // actual animal so the label and the "near" check follow it around
-    if (CREATURE_POIS.has(p.kind)) {
-      p.thing = { poi: p, x: p.at[0] * TILE + 8, y: p.at[1] * TILE + 14, gone: true, frames: [mk(1, 1)] };
-      return;
+    // the hut's walls are solid: the three tiles of the back row plus the two
+    // either side of the door. the door tile itself is left to the play layer,
+    // which keeps it shut until the grizzly is dead.
+    if (p.kind === 'hut') {
+      const [hx, hy] = p.at;
+      [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0]].forEach(([dx, dy]) => extraSolid.add(idx(hx + dx, hy + dy)));
     }
     const t = {
       poi: p, tx: p.at[0], ty: p.at[1],
@@ -930,7 +982,13 @@ const player = {
   heading: Math.PI / 2      // last walking direction in radians, starts facing down
 };
 
+// when you're inside somewhere (the play layer sets this), the room has its own
+// little map, its own furniture and its own walls, and the overworld is put on
+// hold until you walk back out the door
+let room = null;
+
 function blocked(x, y) {
+  if (room) return room.blocked(x, y);
   const hit = (px, py) => solidTile(Math.floor(px / TILE), Math.floor(py / TILE));
   return hit(x - 4, y - 3) || hit(x + 3, y - 3) || hit(x - 4, y) || hit(x + 3, y);
 }
@@ -1352,6 +1410,7 @@ function warpTo(tx, ty) {
   }
   if (!best) return;
   const land = () => {
+    if (room && typeof playLeaveRoom === 'function') playLeaveRoom(true);
     player.x = best[0] * TILE + 8;
     player.y = best[1] * TILE + 12;
     player.path = null;
@@ -1441,11 +1500,11 @@ function update(dt, t) {
   let ix = 0, iy = 0;
   const frozen = typeof playFrozen === 'function' && playFrozen();
   if (started && !frozen) keys.forEach(k => { const m = MOVE_KEYS[k]; if (m) { ix += m[0]; iy += m[1]; } });
-  if (frozen) player.path = null;
+  if (frozen || room) player.path = null;
   if (ix || iy) player.path = null;
 
   const tileUnder = tiles[idx(clamp(Math.floor(player.x / TILE), 0, W - 1), clamp(Math.floor((player.y - 1) / TILE), 0, H - 1))];
-  const wading = tileUnder === T.WATER;
+  const wading = !room && tileUnder === T.WATER;
   const speed = SPEED * (wading ? 0.6 : 1) * (typeof playSpeedMult === 'function' ? playSpeedMult() : 1);
 
   if (!ix && !iy && player.path && player.path.length) {
@@ -1476,7 +1535,7 @@ function update(dt, t) {
     player.dustT -= dt;
     if (player.dustT <= 0 && !reduceMotion) {
       player.dustT = wading ? 0.18 : 0.11;
-      const base = PAL[tileUnder] ? PAL[tileUnder].dots[0] : '#888';
+      const base = room ? room.dust : PAL[tileUnder] ? PAL[tileUnder].dots[0] : '#888';
       particles.push({
         x: player.x + (Math.random() - 0.5) * 6, y: player.y - 1, vx: (Math.random() - 0.5) * 16, vy: -10 - Math.random() * 12,
         g: 30, life: 0.35, t: 0, col: wading ? 'rgba(255,255,255,0.8)' : base, size: 1
@@ -1490,9 +1549,10 @@ function update(dt, t) {
   }
   if (typeof playUpdate === 'function') playUpdate(dt, t);
 
-  // region, with a short hysteresis so wobbling on a border doesn't flicker
-  const here = regionAt(player.x / TILE, player.y / TILE);
-  if (started) {
+  // region, with a short hysteresis so wobbling on a border doesn't flicker.
+  // indoors your coordinates are the room's, so you just stay where you were.
+  const here = room ? region : regionAt(player.x / TILE, player.y / TILE);
+  if (started && !room) {
     if (here !== region) {
       if (pendingRegion !== here) { pendingRegion = here; pendingT = 0; }
       pendingT += dt;
@@ -1504,9 +1564,10 @@ function update(dt, t) {
   // nearest landmark within a few tiles lights up its journal entry
   let near = null, nearD = TILE * 3.4;
   POIS.forEach(p => {
-    // a creature landmark only counts once you've beaten it, so walking past
-    // a live one doesn't light it up
-    if (p.thing.gone || (p.thing.creature && !found.has(p.id))) return;
+    if (room || p.thing.gone) return;
+    // a guarded landmark only counts once its guards are dead, so walking past
+    // it early doesn't give it away
+    if (!found.has(p.id) && typeof playLandmarkGuarded === 'function' && playLandmarkGuarded(p)) return;
     // landmarks in biomes you haven't opened yet can't be found
     if (!found.has(p.id) && typeof playLandmarkLocked === 'function' && playLandmarkLocked(p)) return;
     const d = Math.hypot(p.thing.x - player.x, p.thing.y - player.y);
@@ -1536,12 +1597,15 @@ function update(dt, t) {
 
   // camera: follow when playing, slow drift around camp on the title screen
   let target;
-  if (started) target = camTarget();
+  if (started && room) {
+    // rooms are small enough to just sit in the middle of the view
+    target = { x: room.w / 2 - focusX / S, y: room.h / 2 - focusY / S };
+  } else if (started) target = camTarget();
   else {
     const drift = reduceMotion ? 0 : t / 1000;
     target = { x: player.x + Math.sin(drift * 0.09) * 180 - focusX / S, y: player.y + Math.cos(drift * 0.07) * 110 - focusY / S };
   }
-  clampCam(target);
+  if (!room) clampCam(target);
   const k = reduceMotion ? 1 : Math.min(1, dt * (started ? 7 : 1.5));
   cam.x += (target.x - cam.x) * k;
   cam.y += (target.y - cam.y) * k;
@@ -1554,8 +1618,9 @@ function render(t) {
   const toX = wx => Math.round(wx * S) - camX;
   const toY = wy => Math.round(wy * S) - camY;
 
-  ctx.fillStyle = '#0b0b0d';
+  ctx.fillStyle = room ? '#050407' : '#0b0b0d';
   ctx.fillRect(0, 0, cw, ch);
+  if (room) { renderRoom(toX, toY, t); return; }
   const sx = Math.max(0, Math.floor(camX / S)), sy = Math.max(0, Math.floor(camY / S));
   const sw = Math.min(W * TILE - sx, Math.ceil(cw / S) + 2), sh = Math.min(H * TILE - sy, Math.ceil(ch / S) + 2);
   ctx.drawImage(worldCanvas, sx, sy, sw, sh, sx * S - camX, sy * S - camY, sw * S, sh * S);
@@ -1576,30 +1641,8 @@ function render(t) {
 
   // y-sorted sprites
   const view = { l: cam.x - 48, r: cam.x + cw / S + 48, t: cam.y - 64, b: cam.y + ch / S + 64 };
-  const drawList = things.filter(o => !o.gone && o.x > view.l && o.x < view.r && o.y > view.t && o.y < view.b);
-  drawList.push({ isPlayer: true, y: player.y });
-  drawList.sort((a, b) => a.y - b.y);
-  for (const o of drawList) {
-    if (o.isPlayer) { drawPlayer(toX, toY, t); continue; }
-    if (o.draw) { o.draw(o, toX, toY, t); continue; }
-    const frame = o.frames.length > 1 ? o.frames[Math.floor((t / 1000) * (o.fps || 6) + (o.phase || 0)) % o.frames.length] : o.frames[0];
-    const w = frame.width, h = frame.height;
-    if (!o.torch) {
-      ctx.fillStyle = 'rgba(0,0,0,0.22)';
-      ctx.fillRect(toX(o.x - w * 0.3), toY(o.y - 1), Math.round(w * 0.6 * S), 2 * S);
-    }
-    // anything being chopped wobbles a pixel either way
-    const shake = o.shake ? Math.round(Math.sin(t / 30) * o.shake) : 0;
-    ctx.drawImage(frame, toX(o.x - Math.floor(w / 2) + shake), toY(o.y - h + 1), w * S, h * S);
-  }
-
-  // particles
-  for (const p of particles) {
-    ctx.globalAlpha = 1 - p.t / p.life;
-    ctx.fillStyle = p.col;
-    ctx.fillRect(toX(p.x), toY(p.y), p.size * S, p.size * S);
-  }
-  ctx.globalAlpha = 1;
+  drawSprites(things.filter(o => !o.gone && o.x > view.l && o.x < view.r && o.y > view.t && o.y < view.b), toX, toY, t);
+  drawParticles(toX, toY);
 
   // darkness: the mines are dim and the night is pitch black. both are one
   // layer of black with holes cut out for your own light and for every torch
@@ -1666,15 +1709,62 @@ function render(t) {
   if (typeof playRenderOverlay === 'function') playRenderOverlay(toX, toY, t);
 }
 
+// everything that stands up gets sorted by its feet so you walk in front of and
+// behind it. flat things (rugs, hatches) always go underneath.
+function drawSprites(list, toX, toY, t) {
+  list.push({ isPlayer: true, y: player.y });
+  list.sort((a, b) => (a.flat ? -1e9 + a.y : a.y) - (b.flat ? -1e9 + b.y : b.y));
+  for (const o of list) {
+    if (o.isPlayer) { drawPlayer(toX, toY, t); continue; }
+    if (o.draw) { o.draw(o, toX, toY, t); continue; }
+    const frame = o.frames.length > 1 ? o.frames[Math.floor((t / 1000) * (o.fps || 6) + (o.phase || 0)) % o.frames.length] : o.frames[0];
+    const w = frame.width, h = frame.height;
+    if (!o.torch && !o.flat) {
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.fillRect(toX(o.x - w * 0.3), toY(o.y - 1), Math.round(w * 0.6 * S), 2 * S);
+    }
+    // anything being chopped wobbles a pixel either way
+    const shake = o.shake ? Math.round(Math.sin(t / 30) * o.shake) : 0;
+    ctx.drawImage(frame, toX(o.x - Math.floor(w / 2) + shake), toY(o.y - h + 1), w * S, h * S);
+  }
+}
+function drawParticles(toX, toY) {
+  for (const p of particles) {
+    ctx.globalAlpha = 1 - p.t / p.life;
+    ctx.fillStyle = p.col;
+    ctx.fillRect(toX(p.x), toY(p.y), p.size * S, p.size * S);
+  }
+  ctx.globalAlpha = 1;
+}
+// indoors: the room's floor and walls, its furniture sorted with you, and its
+// own lamps. no night, no labels, no weather.
+function renderRoom(toX, toY, t) {
+  ctx.drawImage(room.canvas, toX(0), toY(0), room.w * S, room.h * S);
+  drawSprites(room.things.filter(o => !o.gone), toX, toY, t);
+  drawParticles(toX, toY);
+  ctx.globalCompositeOperation = 'lighter';
+  for (const gl of room.glows) {
+    if (gl.off) continue;
+    const gx = toX(gl.x), gy = toY(gl.y);
+    const rad = gl.rad * TILE * S * (gl.flicker ? 0.94 + Math.sin(t / 90 + gl.x) * 0.04 + Math.random() * 0.03 : 1);
+    const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, rad);
+    g.addColorStop(0, `rgba(${gl.rgb},${gl.strength || 0.22})`);
+    g.addColorStop(1, `rgba(${gl.rgb},0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(gx - rad, gy - rad, rad * 2, rad * 2);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  if (typeof playRenderOverlay === 'function') playRenderOverlay(toX, toY, t);
+}
+
 function drawPlayer(toX, toY, t) {
   if (!sheet.complete || !sheet.naturalWidth) return;
+  // asleep, the play layer tucks you into the bed itself
+  if (player.sleeping && typeof playDrawSleeper === 'function') { playDrawSleeper(toX, toY); return; }
   let row, col;
   if (player.dead) {
     row = 9;
     col = Math.min(2, Math.floor(player.deadT / 0.22));
-  } else if (player.sleeping) {
-    row = 9;
-    col = 2;
   } else if (player.swing >= 0) {
     row = ROWS.swing[player.face];
     col = Math.min(3, Math.floor(player.swing / 0.075));
@@ -1686,13 +1776,11 @@ function drawPlayer(toX, toY, t) {
     col = Math.floor(player.anim * 5) % 6;
   }
   const tileUnder = tiles[idx(clamp(Math.floor(player.x / TILE), 0, W - 1), clamp(Math.floor((player.y - 1) / TILE), 0, H - 1))];
-  const wading = tileUnder === T.WATER && player.swing < 0;
+  const wading = !room && tileUnder === T.WATER && player.swing < 0;
   // wading: sink the sprite a few pixels and cut the legs off at the waterline
   const sink = wading ? 3 : 0;
   const srcH = wading ? CELL - 8 : CELL;
-  // asleep, the lying-down frame sits a little right and low in its cell, so
-  // nudge it up and left onto the blanket
-  const dx = toX(player.x - 24 - (player.sleeping ? 4 : 0)), dy = toY(player.y - 42 + sink - (player.sleeping ? 8 : 0));
+  const dx = toX(player.x - 24), dy = toY(player.y - 42 + sink);
   const img = sheetPlay.complete && sheetPlay.naturalWidth ? sheetPlay : sheet;
   const armor = typeof playArmorIndex === 'function' ? playArmorIndex() : -1;
   const armorY = armor >= 0 && armorSheet.naturalWidth ? (armor * 10 + row) * CELL : -1;
@@ -1851,7 +1939,8 @@ function frame(t) {
   renderHero(t);
   // minimap marker follows the player
   const mm = $('#mm-frame');
-  const mx = (player.x / (W * TILE)) * mm.clientWidth, my = (player.y / (H * TILE)) * mm.clientHeight;
+  const at = room ? room.outside : player;
+  const mx = (at.x / (W * TILE)) * mm.clientWidth, my = (at.y / (H * TILE)) * mm.clientHeight;
   marker.style.left = `${mx}px`;
   marker.style.top = `${my}px`;
   // the arrow art points down, so it's heading minus 90deg, snapped to 8 ways

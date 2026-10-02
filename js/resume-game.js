@@ -211,6 +211,7 @@ const W = 120;
 const H = 84;
 const SEED = 20250701;
 const CAMP = { x: 60, y: 42, r: 6.5 };
+const HOUSE = { x: 60, y: 37 };     // the tile the cabin's door is on
 const SPAWN = { x: 60, y: 45 };
 const QUADS = ['dunes', 'tundra', 'meadows', 'mines'];
 
@@ -271,10 +272,11 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 const T = {
   SAND: 0, STONE: 1, PEAK: 2, WATER: 3, SNOW: 4, ICE: 5, ICEROCK: 6,
-  GRASS: 7, FLOOR: 8, WALL: 9, GOLD: 10, DIAMOND: 11, RUBY: 12, IRON: 13, EMERALD: 14
+  GRASS: 7, FLOOR: 8, WALL: 9, GOLD: 10, DIAMOND: 11, RUBY: 12, IRON: 13, EMERALD: 14,
+  DIRT: 15, SNOWBLOCK: 16
 };
-const SOLID = new Uint8Array(15);
-[T.STONE, T.PEAK, T.ICEROCK, T.WALL, T.GOLD, T.DIAMOND, T.RUBY, T.IRON, T.EMERALD].forEach(t => { SOLID[t] = 1; });
+const SOLID = new Uint8Array(17);
+[T.STONE, T.PEAK, T.ICEROCK, T.WALL, T.GOLD, T.DIAMOND, T.RUBY, T.IRON, T.EMERALD, T.SNOWBLOCK].forEach(t => { SOLID[t] = 1; });
 
 // colours are pulled from the game's screenshots, then knocked down a notch so
 // four biomes side by side don't vibrate (the real grass is pure #09b509).
@@ -293,7 +295,10 @@ const PAL = {
   [T.DIAMOND]: { base: '#858585', vein: ['#86f2e2', '#2b9c90'], style: 'ore' },
   [T.RUBY]:    { base: '#858585', vein: ['#e0473a', '#7d1a14'], style: 'ore' },
   [T.IRON]:    { base: '#858585', vein: ['#e2ddd6', '#8f8a84'], style: 'ore' },
-  [T.EMERALD]: { base: '#858585', vein: ['#5fe08a', '#1f7a43'], style: 'ore' }
+  [T.EMERALD]: { base: '#858585', vein: ['#5fe08a', '#1f7a43'], style: 'ore' },
+  // packed earth for the camp clearing, and blocks of packed snow in the tundra
+  [T.DIRT]:    { base: '#9c7650', dots: ['#8a6644', '#ad865c', '#7d5b3b', '#a67f56'], n: 40, style: 'speckle' },
+  [T.SNOWBLOCK]: { base: '#f3f6fc', dots: ['#dfe6f2', '#c9d4e6', '#ffffff'], line: '#c2cde0', style: 'brick' }
 };
 const MINI = { [T.GOLD]: '#e6c541', [T.DIAMOND]: '#86f2e2', [T.RUBY]: '#e0473a', [T.IRON]: '#cfcac3', [T.EMERALD]: '#5fe08a' };
 
@@ -363,14 +368,9 @@ const SWATCH = {
   camp: swatch(T.GRASS), meadows: swatch(T.GRASS), dunes: swatch(T.SAND),
   tundra: swatch(T.SNOW), mines: swatch(T.FLOOR)
 };
-// camp gets a warmer swatch: sand + grass, like where the biomes meet
-SWATCH.camp = (() => {
-  const c = mk(32, 32);
-  const g = c.getContext('2d');
-  g.drawImage(TEX[T.SAND][0], 0, 0); g.drawImage(TEX[T.SNOW][1], 16, 0);
-  g.drawImage(TEX[T.GRASS][2], 0, 16); g.drawImage(TEX[T.FLOOR][3], 16, 16);
-  return c.toDataURL();
-})();
+// camp uses the packed earth of its clearing. it used to be a checker of all
+// four biomes, which looked busy behind the journal header.
+SWATCH.camp = swatch(T.DIRT);
 
 function pixelGrid(w, h) {
   const px = new Array(w * h).fill(null);
@@ -585,25 +585,6 @@ function makeLogo() {
   return c.toDataURL();
 }
 
-function makeTent() {
-  const w = 34, h = 28, cx = 16.5, top = 3, base = 25;
-  const G = pixelGrid(w, h);
-  for (let y = top; y <= base; y++) {
-    const t = (y - top) / (base - top), half = 1 + t * 14;
-    for (let x = 0; x < w; x++) {
-      const dx = x - cx;
-      if (Math.abs(dx) > half) continue;
-      let col = dx < 0 ? '#e0823f' : '#b3572a';
-      if ((y - top) % 6 === 5) col = dx < 0 ? '#ec9a5c' : '#c4683a';
-      const doorTop = base - 11;
-      if (y > doorTop && Math.abs(dx) <= (y - doorTop) * 0.5) col = y > doorTop + 3 ? '#2a150d' : '#4a2616';
-      G.set(x, y, col);
-    }
-  }
-  G.set(cx - 0.5, top - 1, '#6b3a1e'); G.set(cx - 0.5, top - 2, '#6b3a1e');
-  return G.outline(() => '#3a1a0c').canvas();
-}
-
 // the grizzly's cave on the lake island: a lumpy mound of boulders with moss
 // on top and a dark mouth at the bottom. it's exactly three tiles wide, which
 // is what the solid footprint in placeDecor assumes.
@@ -638,6 +619,63 @@ function makeCave() {
     else if (G.get(x, y)) G.set(x, y, hash2(x, y, 46) < 0.5 ? '#b3b3b3' : '#9a9a9a');
   }
   return G.outline(() => '#262626').canvas();
+}
+
+// home at base camp: a log cabin on a stone footing with a thatch roof, a
+// chimney and a warm window either side of the door. exactly three tiles
+// wide, same footprint rule as the cave.
+function makeHouse() {
+  const w = 48, h = 44, cx = 23.5, ground = h - 2;
+  const G = pixelGrid(w, h);
+  for (let y = 0; y <= 13; y++) for (let x = 32; x <= 37; x++) G.set(x, y, y === 0 ? '#bdbdbd' : (x + (y >> 1)) % 3 === 0 ? '#6e6e6e' : '#8a8a8a');
+  for (let y = 20; y <= ground; y++) for (let x = 5; x <= 42; x++) {
+    let col = (y - 20) % 4 === 3 ? '#4a2e14' : x < 12 ? '#9a6a3a' : (y - 20) % 4 === 0 ? '#8a5a2e' : '#74491f';
+    if (y >= ground - 2) col = hash2(x >> 1, y, 61) < 0.3 ? '#6e6e6e' : y === ground - 2 ? '#a3a3a3' : '#8a8a8a';
+    G.set(x, y, col);
+  }
+  for (let y = 1; y <= 23; y++) {
+    const half = 7 + (y - 1) * 0.86;
+    for (let x = 0; x < w; x++) {
+      const dx = x - cx;
+      if (Math.abs(dx) > half) continue;
+      const streak = hash2(x, y >> 2, 62);
+      let col = streak < 0.25 ? '#a37a2c' : streak < 0.6 ? '#c09640' : '#d9b45a';
+      if (dx < -half + 3) col = '#e6c674';
+      if (y >= 21) col = y === 23 ? '#6e4e1c' : '#8a6524';
+      G.set(x, y, col);
+    }
+  }
+  for (let x = Math.round(cx - 7); x <= Math.round(cx + 7); x++) G.set(x, 1, '#7a5520');
+  [[9, 27], [33, 27]].forEach(([wx, wy]) => {
+    for (let y = wy; y < wy + 7; y++) for (let x = wx; x < wx + 6; x++) {
+      const frame = x === wx || x === wx + 5 || y === wy || y === wy + 6 || x === wx + 2 || y === wy + 3;
+      G.set(x, y, frame ? '#3b2412' : y < wy + 3 ? '#ffe39a' : '#ffc45a');
+    }
+  });
+  for (let y = 27; y <= ground - 1; y++) for (let x = 19; x <= 28; x++) {
+    if (y === 27 && (x === 19 || x === 28)) continue;
+    const edge = x === 19 || x === 28 || y === 27;
+    G.set(x, y, edge ? '#3b2412' : x % 3 === 0 ? '#5a3818' : '#6b4020');
+  }
+  G.set(26, 35, '#ffd23f');
+  return G.outline(() => '#24160a').canvas();
+}
+// a log to sit on by the fire, end rings showing
+function makeLogSeat() {
+  const G = pixelGrid(26, 10);
+  for (let y = 2; y <= 8; y++) for (let x = 3; x <= 22; x++) G.set(x, y, y <= 3 ? '#a8703f' : y >= 7 ? '#5e3a1c' : (x * 7 + y) % 9 === 0 ? '#6e4524' : '#8b4726');
+  [2, 23].forEach(x => { for (let y = 2; y <= 8; y++) G.set(x, y, Math.abs(y - 5) < 2 ? '#c48a4f' : '#e0ab70'); });
+  return G.outline(() => '#3b1f10').canvas();
+}
+// a flat stepping stone for the path between home and the fire
+function makeStep() {
+  const G = pixelGrid(14, 10);
+  for (let y = 1; y <= 8; y++) for (let x = 1; x <= 12; x++) {
+    const dx = (x - 6.5) / 6, dy = (y - 4.5) / 4;
+    if (dx * dx + dy * dy > 1) continue;
+    G.set(x, y, dy < -0.3 ? '#b8b8b8' : hash2(x, y, 66) < 0.2 ? '#8a8a8a' : '#a0a0a0');
+  }
+  return G.outline(() => '#5c5c5c').canvas();
 }
 
 function makeFireFrames(count, small) {
@@ -691,7 +729,6 @@ const SPRITE = {
   emerald: [makeCrystal('emerald')],
   iron: [makeCrystal('iron')],
   fire: FIRE,
-  tent: [makeTent()],
   cave: [makeCave()]
 };
 const DECOR = {
@@ -735,6 +772,8 @@ function generate() {
     let t = B.base;
     if (n2 > B.wetAt) t = B.wet;
     else if (n1 > B.rockAt) t = n1 > B.capAt ? B.cap : B.rock;
+    // drifts of packed snow blocks out on the open tundra (where snowballs come from)
+    else if (QUADS[q] === 'tundra' && fbm(x / 3.5, y / 3.5, SEED + 97) > 0.66) t = T.SNOWBLOCK;
     tiles[idx(x, y)] = t;
     quad[idx(x, y)] = q;
   }
@@ -762,7 +801,23 @@ function generate() {
     }
   });
   clear(CAMP.x, CAMP.y, CAMP.r + 0.5, true);
+  clear(HOUSE.x, HOUSE.y - 1, 3, true);
   POIS.forEach(p => clear(p.at[0], p.at[1] + 1, 3.2, true));
+  // camp sits on a clearing of packed earth, so it reads as one tidy place
+  // instead of a patchwork of all four biomes' ground
+  for (let y = CAMP.y - 8; y <= CAMP.y + 8; y++) for (let x = CAMP.x - 8; x <= CAMP.x + 8; x++) {
+    if (inside(x, y) && regionAt(x + 0.5, y + 0.5) === 'camp') tiles[idx(x, y)] = T.DIRT;
+  }
+  // and under the whole cabin, so the clearing's edge doesn't peek out round the roof
+  for (let y = HOUSE.y - 3; y <= HOUSE.y; y++) for (let x = HOUSE.x - 2; x <= HOUSE.x + 2; x++) tiles[idx(x, y)] = T.DIRT;
+  // a single rock on its own with nothing next to it just looks like a
+  // mistake (there was one sitting in the sand by the tent), so near camp
+  // those go
+  for (let y = CAMP.y - 14; y <= CAMP.y + 14; y++) for (let x = CAMP.x - 14; x <= CAMP.x + 14; x++) {
+    if (!inside(x, y) || !SOLID[tiles[idx(x, y)]]) continue;
+    const touching = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inside(x + dx, y + dy) && SOLID[tiles[idx(x + dx, y + dy)]]);
+    if (!touching) tiles[idx(x, y)] = baseOf(idx(x, y));
+  }
 
   // an island landmark gets a round patch of ground with a ring of water all
   // the way round it, so the only way over is wading
@@ -814,6 +869,7 @@ function generate() {
 }
 
 const things = [];   // everything y-sorted with the player
+const campHouse = { decor: true, house: true, frames: [makeHouse()] };
 const glows = [];
 
 function placeDecor() {
@@ -852,8 +908,23 @@ function placeDecor() {
     torches++;
   }
 
-  // camp: tent behind the fire
-  things.push({ decor: true, x: (CAMP.x - 3) * TILE, y: (CAMP.y - 1) * TILE + 6, frames: SPRITE.tent });
+  // camp: home at the back with a stepping stone path down to the fire, a log
+  // to sit on either side of the fire, and a torch either side of the door so
+  // the way home is lit at night. the cabin's walls are solid like the cave's,
+  // and the play layer handles going inside.
+  campHouse.x = HOUSE.x * TILE + 8;
+  campHouse.y = HOUSE.y * TILE + 14;
+  things.push(campHouse);
+  [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0]].forEach(([dx, dy]) => extraSolid.add(idx(HOUSE.x + dx, HOUSE.y + dy)));
+  const step = makeStep();
+  [1, 2].forEach(k => things.push({ decor: true, flat: true, x: HOUSE.x * TILE + 8, y: (HOUSE.y + k) * TILE + 12, frames: [step] }));
+  const seat = makeLogSeat();
+  [-3, 3].forEach(k => things.push({ decor: true, x: (CAMP.x + k) * TILE + 8, y: (CAMP.y - 1) * TILE + 14, frames: [seat] }));
+  [-2, 2].forEach(k => {
+    const t = { decor: true, torch: true, x: (HOUSE.x + k) * TILE + 8, y: (HOUSE.y + 1) * TILE + 10, frames: TORCH, fps: 7, phase: k > 0 ? 1.5 : 0 };
+    things.push(t);
+    glows.push({ x: t.x, y: t.y - 12, rgb: GLOW.torch, rad: 2.6, flicker: true });
+  });
 
   POIS.forEach(p => {
     // the cave's rock is solid: the three tiles of the back row plus the two
@@ -924,7 +995,7 @@ function paintMinimap() {
   }
   // only landmarks you've found go on the map. undiscovered ones stay off it
   // entirely, so the minimap can't be used as a treasure map
-  POIS.filter(canTravel).forEach(p => {
+  POIS.filter(isFound).forEach(p => {
     const [x, y] = p.at;
     g.fillStyle = '#000';
     g.fillRect(x - 2, y - 2, 5, 5);
@@ -1101,7 +1172,7 @@ function lockedCard(poi, skill) {
           <h4 class="entry-title">? ? ?</h4>
           <span class="entry-date">???</span>
         </div>
-        <p class="entry-sub">${typeof playLandmarkLocked === 'function' && playLandmarkLocked(poiById[poi.id]) ? 'Sealed until the Meadows are complete.' : `Undiscovered. Somewhere in ${esc(where)}.`}</p>
+        <p class="entry-sub">Undiscovered. Somewhere in ${esc(where)}.</p>
         <div class="redacted" aria-hidden="true">${bars}</div>
         <div class="entry-foot"><span></span>${gotoHTML(poi)}</div>
       </article>`;
@@ -1340,7 +1411,7 @@ function enterRegion(id, quiet) {
   const R = regionById[id];
   $('#mm-region').textContent = R.biome;
   $('.brand-mark').style.backgroundColor = R.accent;
-  if (!quiet) { toast('Entering', R.biome, R.label); sfx.region(); }
+  if (!quiet) { toast('Entering', R.biome, (typeof playRegionNote === 'function' && playRegionNote(id)) || R.label); sfx.region(); }
   if (started) {
     try { history.replaceState(null, '', `#${id}`); } catch { /* file:// in some browsers */ }
   }
@@ -1352,6 +1423,7 @@ function discover(poi) {
   store.write('dm-found', [...found]);
   paintMinimap();
   updateFoundUI();
+  if (journalRegion !== poi.region) renderJournal(poi.region);
   const el = journalBody.querySelector(`[data-poi="${poi.id}"]`);
   if (el && el.classList.contains('is-locked')) {
     el.outerHTML = cardFor(poi.id);
@@ -1366,6 +1438,7 @@ function discover(poi) {
   if (found.size === POIS.length) toast('World explored', 'All landmarks found', 'Thanks for playing. Now let\'s talk.');
   else toast(`Landmark ${foundCount()}`, poi.label, regionById[poi.region].label);
   sfx.found();
+  peekJournal(poi);
   burst(poi.thing.x, poi.thing.y - 10, GLOW[poi.kind] || GLOW.crystal, 18);
 }
 
@@ -1402,14 +1475,24 @@ function warpTo(tx, ty) {
   setTimeout(() => { land(); w.classList.remove('is-on'); }, 170);
 }
 
-// fast travel only goes to landmarks you've already reached on foot, and it
-// drops you right in front of that landmark instead of on whatever tile you
-// clicked. camp counts as found from the start because that's where you spawn.
-function canTravel(poi) { return poi.id === 'camp' || found.has(poi.id); }
+// fast travel only goes to landmarks you've already reached on foot, in a
+// biome you've cleared (camp opens up with the meadows), and it drops you right
+// in front of that landmark instead of on whatever tile you clicked. camp
+// counts as found from the start because that's where you spawn.
+const isFound = poi => poi.id === 'camp' || found.has(poi.id);
+function canTravel(poi) {
+  return isFound(poi) && (typeof playBiomeCleared !== 'function' || playBiomeCleared(poi.region));
+}
 
 function travelTo(poi) {
-  if (!canTravel(poi)) {
+  if (!isFound(poi)) {
     toast('Uncharted', '? ? ?', `Somewhere in ${regionById[poi.region].biome}. Find it on foot first.`);
+    sfx.deny();
+    return;
+  }
+  if (!canTravel(poi)) {
+    const needs = regionById[poi.region === 'camp' ? 'meadows' : poi.region].biome;
+    toast('Fast travel locked', poi.label, `Clear ${needs} to travel there`);
     sfx.deny();
     return;
   }
@@ -1456,6 +1539,28 @@ function endIntro() {
   if (journal.matches(':hover')) journal.addEventListener('mouseleave', () => setTimeout(tuck, 1200), { once: true });
   else tuck();
 }
+// a new landmark pops the journal open on its entry for a few seconds and then
+// tucks it away again. if you open or close it yourself in the meantime it's
+// yours and stays how you left it, and if you're reading it, it waits.
+let peekTimer = null;
+function peekJournal(poi) {
+  if (introTimer) return;
+  const closed = document.body.classList.contains('journal-closed');
+  if (!closed && !peekTimer) return;
+  if (closed) toggleJournal(true);
+  const el = journalBody.querySelector(`[data-poi="${poi.id}"]`);
+  if (el) el.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
+  clearTimeout(peekTimer);
+  peekTimer = setTimeout(() => {
+    const tuck = () => {
+      if (!peekTimer) return;
+      peekTimer = null;
+      if (!document.body.classList.contains('journal-closed')) toggleJournal(true);
+    };
+    if (journal.matches(':hover')) journal.addEventListener('mouseleave', () => setTimeout(tuck, 1200), { once: true });
+    else tuck();
+  }, 5000);
+}
 function togglePanel(name) {
   if (introTimer) introTouched[name] = true;
   document.body.classList.toggle(`${name}-closed`);
@@ -1467,6 +1572,7 @@ function openJournal() {
 }
 function toggleJournal(auto) {
   if (introTimer && auto !== true) introTouched.journal = true;
+  if (auto !== true && peekTimer) { clearTimeout(peekTimer); peekTimer = null; }
   const closed = document.body.classList.toggle('journal-closed');
   $('#journal-toggle').setAttribute('aria-expanded', String(!closed));
   updateFocus();
@@ -1545,7 +1651,6 @@ function update(dt, t) {
     // it early doesn't give it away
     if (!found.has(p.id) && typeof playLandmarkGuarded === 'function' && playLandmarkGuarded(p)) return;
     // landmarks in biomes you haven't opened yet can't be found
-    if (!found.has(p.id) && typeof playLandmarkLocked === 'function' && playLandmarkLocked(p)) return;
     const d = Math.hypot(p.thing.x - player.x, p.thing.y - player.y);
     if (d < nearD) { near = p; nearD = d; }
   });
@@ -1807,8 +1912,7 @@ function drawLabels(toX, toY, t) {
     // at night a sign is only visible if you or a fire is lighting it
     if (typeof playNight === 'function' && playNight() > 0.5 && Math.hypot(o.x - player.x, o.y - player.y) > TILE * 4.5
       && !glows.some(gl => !gl.off && gl.flicker && Math.hypot(gl.x - o.x, gl.y - o.y) < gl.rad * TILE * 1.2)) continue;
-    const sealed = !got && typeof playLandmarkLocked === 'function' && playLandmarkLocked(p);
-    const text = sealed ? 'SEALED' : known(p) ? p.label.toUpperCase() : '? ? ?';
+    const text = known(p) ? p.label.toUpperCase() : '? ? ?';
     const tw = ctx.measureText(text).width;
     const pad = Math.round(fs * 0.5), bh = Math.round(fs * 1.6);
     const bx = Math.round(x - tw / 2 - pad), by = Math.round(topY - bh);
@@ -1979,7 +2083,7 @@ $('#mm-frame').addEventListener('click', e => {
   const tx = ((e.clientX - r.left) / r.width) * W, ty = ((e.clientY - r.top) / r.height) * H;
   // snap to the nearest landmark you've found. undiscovered ones are ignored
   // here on purpose, otherwise clicking around would hint where they are
-  const foundNear = POIS.filter(canTravel)
+  const foundNear = POIS.filter(isFound)
     .map(p => [p, Math.hypot(p.at[0] - tx, p.at[1] - ty)])
     .sort((a, b) => a[1] - b[1])
     .find(([, d]) => d < 12);

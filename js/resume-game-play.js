@@ -10,8 +10,8 @@
 
 'use strict';
 
-// ranked weakest to strongest: wood = gold, stone = marble, iron, emerald,
-// diamond. gold hits like wood and mines the fastest of anything, but it has
+// ranked weakest to strongest: wood = gold, stone, marble (a hair stronger
+// than stone), iron, emerald, diamond. gold hits like wood and mines the fastest of anything, but it has
 // the worst durability. harvest is how hard an ore a pickaxe can actually
 // collect: below iron you can't get anything out of the precious ores, and
 // wood can't even get iron out (gold can).
@@ -19,7 +19,7 @@ const TIERS = {
   wood:    { name: 'Wood',    dur: 24,  speed: 2,  sword: 1,   axe: 1.5, pick: 1,   harvest: 0 },
   gold:    { name: 'Gold',    dur: 10,  speed: 14, sword: 1,   axe: 1.5, pick: 1,   harvest: 1 },
   stone:   { name: 'Stone',   dur: 48,  speed: 4,  sword: 2,   axe: 2.5, pick: 1.5, harvest: 1 },
-  marble:  { name: 'Marble',  dur: 48,  speed: 4,  sword: 2,   axe: 2.5, pick: 1.5, harvest: 1 },
+  marble:  { name: 'Marble',  dur: 48,  speed: 4,  sword: 2.25, axe: 2.75, pick: 1.75, harvest: 1 },
   iron:    { name: 'Iron',    dur: 96,  speed: 6,  sword: 3,   axe: 3.5, pick: 2,   harvest: 2 },
   emerald: { name: 'Emerald', dur: 160, speed: 8,  sword: 3.5, axe: 4,   pick: 2.5, harvest: 3 },
   diamond: { name: 'Diamond', dur: 250, speed: 10, sword: 4,   axe: 4.5, pick: 3,   harvest: 4 }
@@ -63,7 +63,15 @@ const ITEMS = {
   'raw-beef':       { name: 'Raw Beef', food: 1, sat: 0.3, cooksTo: 'cooked-beef' },
   'cooked-beef':    { name: 'Steak', food: 3, sat: 2 },
   bed:           { name: 'Bed', place: true },
-  dagger:        { name: 'Dagger', tool: 'dagger', dmg: 0.5, cd: 0.45, reach: 1.5 }
+  dagger:        { name: 'Dagger', tool: 'dagger', dmg: 0.5, cd: 0.45, reach: 1.5 },
+  snowball:      { name: 'Snowball', throw: true },
+  feather:       { name: 'Feather' },
+  string:        { name: 'String' },
+  // off a zombie. a little hunger, and it might cost you up to a heart
+  'poison-meat': { name: 'Poisoned Meat', food: 0.5, sat: 0, poison: true },
+  // the bow fires the best arrows in your bag. its dmg is only for whacking
+  // something with it up close.
+  bow:           { name: 'Bow', tool: 'bow', ranged: true, dmg: 0.25, cd: 0.8, reach: 1.4, dur: 120 }
 };
 TIER_ORDER.forEach(m => {
   const t = TIERS[m];
@@ -74,6 +82,12 @@ TIER_ORDER.forEach(m => {
 Object.keys(ARMORS).forEach(m => {
   ITEMS[`${m}-armor`] = { name: `${ARMORS[m].name} Armor`, armor: m, mat: m, dur: ARMORS[m].dur };
 });
+// arrows, weakest to strongest. this is what one does fired point blank. it
+// grows the farther the arrow flies, up to 60% more at ARROW_FULL tiles, so the
+// best arrow from across the screen still hits softer than a diamond sword.
+const ARROW_DMG = { wood: 0.5, gold: 0.5, stone: 0.75, marble: 0.85, iron: 1, emerald: 1.25, diamond: 1.5 };
+const ARROW_RANGE = 12, ARROW_FULL = 10;
+TIER_ORDER.forEach(m => { ITEMS[`${m}-arrow`] = { name: `${TIERS[m].name} Arrow`, arrow: m, adm: ARROW_DMG[m] }; });
 // the machine that holds a wormhole open takes four parts. only the first one
 // exists so far (it makes the exotic matter, the negative mass that keeps the
 // throat from collapsing). every part is called ??? until you've collected all
@@ -85,15 +99,18 @@ ITEMS['exotic-core'] = { part: true, get name() { return partsComplete() ? PART_
 // whatever you're holding that isn't a tool hits like a bare hand
 const FIST = { name: 'Bare hands', dmg: 0.25, cd: 0.45, reach: 1.4 };
 const STACK_MAX = 64;
-const maxStack = id => (ITEMS[id].tool || ITEMS[id].armor || ITEMS[id].place || ITEMS[id].part ? 1 : STACK_MAX);
+const maxStack = id => (ITEMS[id].tool || ITEMS[id].armor || ITEMS[id].place || ITEMS[id].part ? 1 : ITEMS[id].throw ? 100 : STACK_MAX);
 
-// mining: seconds with no bonus. a tool that can't harvest an ore takes three
-// times as long and the block breaks with nothing to show for it.
-const MINE_TIME = { wood: 2.4, stone: 5, ore: 8 };
+// mining: seconds with no bonus. stone and ore only drop for a pickaxe that's
+// up to it; anything else takes longer and the block crumbles to nothing.
+// trees want an axe: any other tool gets there slowly, bare hands (or a
+// fistful of something) take ages. snow comes up with anything.
+const MINE_TIME = { wood: 2.4, stone: 5, ore: 8, snow: 0.8 };
 const NO_HARVEST_SLOW = 3;
+const TREE_TOOL_SLOW = 3, TREE_HAND_SLOW = 5;
 const REACH_TILES = 2.6;
 // things you click once rather than hold down on
-const CLICK_ONLY = new Set(['station', 'cave', 'part']);
+const CLICK_ONLY = new Set(['station', 'building', 'part']);
 const ORE_ITEM = { [T.GOLD]: 'gold-ore', [T.DIAMOND]: 'diamond', [T.RUBY]: 'ruby', [T.EMERALD]: 'emerald', [T.IRON]: 'iron-ore' };
 const ORE_NEED = { 'iron-ore': 1, 'gold-ore': 2, ruby: 2, emerald: 2, diamond: 2 };
 const STONE_TILES = new Set([T.STONE, T.PEAK, T.WALL, T.ICEROCK]);
@@ -115,6 +132,12 @@ RECIPES.push({ out: 'hide-armor', shape: ['HH.HH', 'HHHHH', '.HHH.', '.HHH.'], k
 });
 RECIPES.push({ out: 'bed', shape: ['WWW', 'PPP'], key: { W: 'wool', P: 'wood' } });
 RECIPES.push({ out: 'stick', n: 4, shape: ['W'], key: { W: 'wood' } });
+// two arrows a craft: the material on the tip, a stick, a feather
+TIER_ORDER.forEach(m => RECIPES.push({ out: `${m}-arrow`, n: 2, shape: ['M', 'S', 'F'], key: { M: m, S: 'stick', F: 'feather' } }));
+// pulling a bit of wool apart on the table gives string, and string on a
+// curve of wood makes the bow
+RECIPES.push({ out: 'string', n: 3, shape: ['W'], key: { W: 'wool' } });
+RECIPES.push({ out: 'bow', shape: ['.WS', 'W.S', '.WS'], key: { W: 'wood', S: 'string' } });
 RECIPES.forEach(r => { r.n = r.n || 1; r.mats = [...new Set(Object.values(r.key))]; });
 
 const COOK_RATE = 0.5;        // meat per second while the furnace has fuel
@@ -128,14 +151,31 @@ const CREATURES = {
     name: 'Marble Hyena', hp: 5, speed: 60, aggro: 7, leash: 16, range: 2.4,
     windup: 0.6, lunge: { speed: 220, time: 0.24 }, cooldown: 1.9, dmg: 1,
     knock: 140, h: 28, box: { w: 26, h: 14 }, rest: 'prowl', regen: 0.08, chip: '242,238,231',
-    drops: [['marble', 5, 10]]
+    drops: [['marble', 5, 10]], intro: ['Ambush', 'It crouches before it leaps. Sidestep, then strike.']
   },
   bear: {
     name: 'Grizzly', hp: 15, speed: 74, aggro: 5, leash: 22, range: 2.8,
     windup: 0.55, lunge: { speed: 270, time: 0.28 }, cooldown: 1.7, dmg: 2.5,
     knock: 18, h: 36, box: { w: 36, h: 20 }, rest: 'sleep',
     regen: 0.12, chip: '123,74,41',
-    drops: [['hide', 15, 20]]
+    drops: [['hide', 15, 20]], intro: ['You woke it', '2.5 hearts a swipe. Dodge the lunge, then make it pay.']
+  },
+  // night only, and they don't count bosses toward the cap. both have a bit
+  // over half the hyena's health. zombies shamble at you and burn up in the
+  // daylight; a burning one sets you alight if it touches you. forest
+  // guardians keep their distance and throw poison tipped sticks.
+  zombie: {
+    name: 'Zombie', hp: 3.5, speed: 40, aggro: 12, leash: 80, range: 1.6,
+    windup: 0.45, lunge: { speed: 150, time: 0.18 }, cooldown: 1.3, dmg: 1,
+    knock: 120, h: 30, box: { w: 14, h: 22 }, rest: 'prowl', regen: 0, chip: '111,174,90',
+    nightly: true, burns: true, drops: [['poison-meat', 0, 2]],
+    intro: ['Night', 'They burn up when the sun comes back. Don\'t let a burning one touch you.']
+  },
+  guardian: {
+    name: 'Forest Guardian', hp: 3, speed: 46, aggro: 11, leash: 80, dmg: 0.5,
+    knock: 110, h: 30, box: { w: 16, h: 22 }, rest: 'prowl', regen: 0, chip: '138,96,52',
+    nightly: true, shooter: { range: 7.5, keep: 4, cd: 2.4, speed: 150, dmg: 0.5, poison: 2 },
+    drops: [['stick', 1, 3]], intro: ['Night', 'It keeps its distance and throws poison tipped sticks.']
   },
   // passive livestock: wander, graze, and run when you hit them
   cow: {
@@ -148,7 +188,7 @@ const CREATURES = {
   },
   chicken: {
     name: 'Chicken', passive: true, hp: 1, speed: 24, flee: 76, h: 15, box: { w: 12, h: 8 },
-    knock: 110, regen: 0.05, chip: '251,250,246', count: 3, drops: [['raw-chicken', 1, 1]]
+    knock: 110, regen: 0.05, chip: '251,250,246', count: 3, drops: [['raw-chicken', 1, 1], ['feather', 0, 2]]
   }
 };
 
@@ -222,6 +262,12 @@ function armorIcon(G, P) {
   }
   [5, 7].forEach(y => G.set(8, y, P[2]));
 }
+function arrowIcon(G, P) {
+  pxLine(G, 3, 13, 11, 5, HANDLE[0]);
+  [[2, 12], [3, 14], [1, 12], [3, 15]].forEach(([x, y]) => G.set(x, y, '#f2efe8'));
+  [[2, 13], [4, 14]].forEach(([x, y]) => G.set(x, y, '#d6d0c4'));
+  [[12, 4, 0], [13, 3, 0], [14, 2, 0], [11, 4, 2], [12, 5, 2], [12, 3, 1], [13, 4, 1], [11, 3, 1], [13, 5, 2]].forEach(([x, y, k]) => G.set(x, y, P[k]));
+}
 function gemIcon(G, pal) {
   [[8, 3], [5, 6], [11, 6]].forEach(([cx, top]) => {
     for (let y = top; y <= 13; y++) {
@@ -273,6 +319,7 @@ function makeIcon(id) {
   const it = ITEMS[id];
   if (it.tool && it.mat) ({ sword: swordIcon, pickaxe: pickIcon, axe: axeIcon })[it.tool](G, MAT_PAL[it.mat]);
   else if (it.armor) armorIcon(G, MAT_PAL[it.armor]);
+  else if (it.arrow) arrowIcon(G, MAT_PAL[it.arrow]);
   else switch (id) {
     case 'wood':
       for (let y = 6; y <= 11; y++) for (let x = 2; x <= 12; x++) G.set(x, y, y === 7 || y === 10 ? '#6e3a1e' : '#9a5230');
@@ -331,6 +378,34 @@ function makeIcon(id) {
       break;
     case 'exotic-core':
       coreArt(G, 7.5, 7, 5.5, 6, true);
+      break;
+    case 'snowball':
+      pxBlob(G, 8, 8.5, 5, 5, (dx, dy) => (dx + dy < -0.7 ? '#ffffff' : dx + dy > 0.6 ? '#b9cbe6' : '#eef3fb'));
+      break;
+    case 'feather':
+      for (let k = 1; k <= 9; k++) {
+        const cx = 3 + k * 0.95, cy = 13 - k, half = Math.round(2.2 * Math.sin((Math.PI * k) / 10));
+        for (let j = -half; j <= half; j++) G.set(cx + j * 0.7, cy + j * 0.7, j < 0 ? '#ffffff' : '#e3dfd4');
+      }
+      pxLine(G, 2, 14, 12, 3, '#b9b2a2');
+      break;
+    case 'string':
+      pxLine(G, 2, 12, 6, 4, '#f2efe8'); pxLine(G, 6, 4, 10, 12, '#f2efe8'); pxLine(G, 10, 12, 14, 4, '#f2efe8');
+      pxLine(G, 3, 13, 6, 6, '#bdb8ac'); pxLine(G, 10, 13, 13, 6, '#bdb8ac');
+      break;
+    case 'bow':
+      // the limb bows out towards the top left, the string runs straight
+      pxLine(G, 13, 2, 2, 13, '#e8e4da');
+      for (let k = 0; k <= 22; k++) {
+        const t = k / 22, b = Math.sin(t * Math.PI) * 4;
+        const x = 13 - 11 * t - b * 0.7, y = 2 + 11 * t - b * 0.7;
+        G.set(x, y, t > 0.4 && t < 0.6 ? '#3b2412' : HANDLE[0]);
+        G.set(x + 1, y, HANDLE[1]);
+      }
+      break;
+    case 'poison-meat':
+      pxBlob(G, 8, 9, 6, 4.2, (dx, dy, x, y) => (hash2(x, y, 8) < 0.2 ? '#7a3f8f' : dy < -0.5 ? '#9fbf6a' : '#6f8f3a'));
+      [[6, 8], [10, 10], [8, 11]].forEach(([x, y]) => G.set(x, y, '#c7f26b'));
       break;
     case 'dagger':
       pxLine(G, 8, 8, 13, 3, '#dfe3e8', 2);
@@ -650,6 +725,82 @@ function makeShrooms() {
   return G.outline(() => '#123a33').canvas();
 }
 
+// the inside of home, 11 x 8 tiles: log walls, a window and a shelf on the
+// back wall, a plank floor, a lantern, and the door gap at the bottom. the
+// workshop lines the back wall and the right side is left clear for a bed.
+const HOME_COLS = 11, HOME_ROWS = 8, HOME_DOOR = 5;
+function paintHomeRoom() {
+  const w = HOME_COLS * TILE, h = HOME_ROWS * TILE;
+  const c = mk(w, h), g = c.getContext('2d');
+  const r = mulberry32(SEED + 808);
+  const px = (x, y, col, ww = 1, hh = 1) => { g.fillStyle = col; g.fillRect(x, y, ww, hh); };
+  for (let y = 0, row = 0; y < h; y += 6, row++) {
+    px(0, y, row % 2 ? '#916236' : '#9a6a3c', w, 6);
+    px(0, y, '#a8784a', w, 1);
+    px(0, y + 5, '#5e3b1c', w, 1);
+    for (let x = (row * 17) % 40; x < w; x += 40) px(x, y, '#5e3b1c', 1, 6);
+    for (let k = 0; k < 3; k++) px((r() * w) | 0, y + 2 + ((r() * 2) | 0), '#6e4524', 2, 1);
+  }
+  for (let y = 0; y < 32; y += 4) {
+    px(0, y, '#7a4a26', w, 4);
+    px(0, y, '#94603a', w, 1);
+    px(0, y + 3, '#4e2f16', w, 1);
+  }
+  px(124, 8, '#3b2412', 26, 18);
+  px(126, 10, '#d6efff', 22, 7);
+  px(126, 17, '#a9d8ff', 22, 7);
+  px(136, 10, '#3b2412', 2, 14);
+  px(126, 16, '#3b2412', 22, 2);
+  px(87, 0, '#2b2b2b', 1, 9);
+  px(84, 9, '#2b2b2b', 7, 2);
+  px(85, 11, '#ffd77a', 5, 6);
+  px(84, 17, '#2b2b2b', 7, 2);
+  px(0, 32, 'rgba(0,0,0,0.3)', w, 3);
+  const wallTop = (x, y, ww, hh) => { px(x, y, '#2a190c', ww, hh); px(x + 2, y + 2, '#3b2412', ww - 4, hh - 4); };
+  wallTop(0, 0, 16, h);
+  wallTop(w - 16, 0, 16, h);
+  wallTop(0, h - 16, HOME_DOOR * TILE + 2, 16);
+  wallTop((HOME_DOOR + 1) * TILE - 2, h - 16, w - (HOME_DOOR + 1) * TILE + 2, 16);
+  px(0, 0, '#2a190c', w, 3);
+  const gr = g.createLinearGradient(0, h, 0, h - 26);
+  gr.addColorStop(0, 'rgba(255,240,200,0.4)');
+  gr.addColorStop(1, 'rgba(255,240,200,0)');
+  g.fillStyle = gr;
+  g.fillRect(HOME_DOOR * TILE, h - 26, TILE, 26);
+  return c;
+}
+function makeHomeRug() {
+  const w = 44, h = 28;
+  const G = pixelGrid(w, h);
+  for (let y = 2; y < h - 2; y++) for (let x = 3; x < w - 3; x++) {
+    const border = y < 4 || y > h - 5 || x < 5 || x > w - 6;
+    const dx = Math.abs(x - w / 2), dy = Math.abs(y - h / 2);
+    G.set(x, y, border ? '#2b4a6b' : dx * 0.6 + dy < 5 && dx * 0.6 + dy > 3.4 ? '#e0b14a' : '#3f6e9c');
+  }
+  for (let y = 3; y < h - 3; y += 2) { G.set(1, y, '#efe2c0'); G.set(2, y, '#efe2c0'); G.set(w - 2, y, '#efe2c0'); G.set(w - 3, y, '#efe2c0'); }
+  return G.outline(() => '#162638').canvas();
+}
+function makePlant() {
+  const G = pixelGrid(16, 22);
+  for (let y = 15; y <= 20; y++) for (let x = 4; x <= 11; x++) G.set(x, y, y === 15 ? '#d9845a' : x < 6 ? '#c46a3c' : '#a8552e');
+  [[8, 9, 4, 4], [5, 7, 3, 3], [11, 6, 3, 3.5], [8, 4, 2.5, 3]].forEach(([cx, cy, rx, ry]) =>
+    pxBlob(G, cx, cy, rx, ry, (dx, dy) => (dy < -0.3 ? '#62b240' : '#2d7d37')));
+  return G.outline(() => '#123a1e').canvas();
+}
+function makeBookshelf() {
+  const G = pixelGrid(24, 30);
+  for (let y = 1; y <= 28; y++) for (let x = 1; x <= 22; x++) G.set(x, y, x <= 2 || x >= 21 || y <= 2 || y >= 27 || y === 10 || y === 18 ? '#6b4020' : '#3b2412');
+  const cols = ['#c0392b', '#2f6d9c', '#d9b23a', '#3f8f3a', '#8a4fb0', '#e6e2d8'];
+  [[3, 9], [11, 17], [19, 26]].forEach(([y0, y1], shelf) => {
+    for (let x = 3, k = shelf; x <= 19; k++) {
+      const bw = 2 + (k % 2), top = y0 + (k % 3);
+      for (let y = top; y <= y1; y++) for (let i = 0; i < bw; i++) G.set(x + i, y, cols[k % cols.length]);
+      x += bw + (k % 4 === 0 ? 1 : 0);
+    }
+  });
+  return G.outline(() => '#24160a').canvas();
+}
+
 // livestock, all facing right like the other creatures. frames 0-3 walk.
 const STEP = [[0, 1, 0, -1], [0, -1, 0, 1]];
 function makeCow(frame) {
@@ -719,6 +870,66 @@ function makeChicken(frame) {
 }
 const PASSIVE_MAKERS = { cow: makeCow, sheep: makeSheep, chicken: makeChicken };
 
+// a zombie shambling right with its arms out: green skin, a torn teal shirt,
+// one sunken red eye. 'lunge' is the lean into a grab.
+function makeZombie(frame, pose) {
+  const G = pixelGrid(28, 32);
+  const C = { skin: '#7cb85f', skinD: '#5a9446', shirt: '#3c7d8c', shirtD: '#2a5c68', pants: '#3a3f6b', pantsD: '#2a2e52', eye: '#ff3b30', hair: '#2b3a22', shoe: '#2a2420' };
+  const ground = 30, lean = pose === 'lunge' ? 2 : 0;
+  [[10, 0, true], [13, 1, false]].forEach(([lx, grp, far]) => {
+    const off = pose === 'lunge' ? (far ? -2 : 2) : STEP[grp][frame % 4];
+    for (let y = 21; y < ground; y++) {
+      const x = lx + Math.round((off * (y - 21)) / 9);
+      G.set(x, y, far ? C.pantsD : C.pants);
+      G.set(x + 1, y, far ? C.pantsD : C.pants);
+    }
+    [0, 1, 2].forEach(k => G.set(lx + off + k, ground, C.shoe));
+  });
+  for (let y = 11; y <= 21; y++) for (let x = 9; x <= 16; x++) {
+    if (y === 21 && x % 3 === 0) continue;
+    G.set(x + (y < 16 ? lean : 0), y, hash2(x, y, 81) < 0.08 ? C.skinD : x < 11 ? C.shirtD : C.shirt);
+  }
+  [[12, C.skinD], [14, C.skin]].forEach(([y, col]) => {
+    for (let x = 14 + lean; x <= 24 + lean; x++) { G.set(x, y, col); G.set(x, y + 1, col); }
+  });
+  for (let x = 14 + lean; x <= 16 + lean; x++) { G.set(x, 14, C.shirt); G.set(x, 15, C.shirt); }
+  for (let y = 2; y <= 10; y++) for (let x = 10; x <= 18; x++) G.set(x + lean, y, y <= 3 ? C.hair : x === 10 ? C.skinD : C.skin);
+  [[11, 4], [13, 4], [10, 5]].forEach(([x, y]) => G.set(x + lean, y, C.hair));
+  G.set(16 + lean, 6, '#1a1a1a');
+  G.set(17 + lean, 6, C.eye);
+  for (let x = 15; x <= 18; x++) G.set(x + lean, 9, '#3a2a20');
+  return G.outline(() => '#1f2a18').canvas();
+}
+// a forest guardian: a walking stump with a leafy crown and two green eyes
+// glowing out of the bark. 'lunge' is its throw, branch arm up with a stick.
+function makeGuardian(frame, pose) {
+  const G = pixelGrid(28, 32);
+  const C = { bark: '#8a5a2e', barkD: '#5e3a1c', barkL: '#a8703f', leaf: '#3f8f3a', leafL: '#62b240', leafD: '#2d6b2a', eye: '#c8ff5a' };
+  const ground = 30;
+  [[10, 0], [15, 1]].forEach(([lx, grp]) => {
+    const off = STEP[grp][frame % 4];
+    for (let y = 22; y <= ground; y++) {
+      const x = lx + Math.round((off * (y - 22)) / 8);
+      G.set(x, y, C.barkD); G.set(x + 1, y, C.bark); G.set(x + 2, y, C.barkD);
+    }
+  });
+  for (let y = 10; y <= 22; y++) for (let x = 9; x <= 18; x++) {
+    G.set(x, y, x === 9 ? C.barkD : (x + y * 2) % 5 === 0 ? C.barkD : x < 12 ? C.barkL : C.bark);
+  }
+  pxBlob(G, 14, 6, 7, 5, (dx, dy, x, y) => (hash2(x, y, 82) < 0.25 ? C.leafD : dy < -0.3 ? C.leafL : C.leaf));
+  G.set(15, 12, C.eye); G.set(17, 12, C.eye);
+  if (pose === 'lunge') {
+    pxLine(G, 18, 14, 23, 9, C.bark);
+    pxLine(G, 22, 8, 26, 4, '#c48a4f');
+    G.set(27, 3, '#7be05a');
+  } else {
+    pxLine(G, 18, 14, 22, 20, C.bark);
+    G.set(23, 21, C.leaf);
+  }
+  return G.outline(() => '#24160a').canvas();
+}
+const HUNTER_MAKERS = { hyena: makeHyena, bear: makeBear, zombie: makeZombie, guardian: makeGuardian };
+
 function creatureFrames(kind) {
   if (PASSIVE_MAKERS[kind]) {
     const walk = [0, 1, 2, 3].map(f => PASSIVE_MAKERS[kind](f));
@@ -726,7 +937,7 @@ function creatureFrames(kind) {
     set.white = new Map(walk.map(c => [c, whiteOf(c)]));
     return set;
   }
-  const make = kind === 'hyena' ? makeHyena : makeBear;
+  const make = HUNTER_MAKERS[kind];
   const walk = [0, 1, 2, 3].map(f => make(f, 'walk'));
   const set = {
     walk,
@@ -738,6 +949,10 @@ function creatureFrames(kind) {
   set.white = new Map([...walk, set.crouch, set.lunge, set.scoop, set.sleep].map(c => [c, whiteOf(c)]));
   return set;
 }
+
+// creatures of the same kind share their frames instead of redrawing them
+const FRAME_CACHE = {};
+const framesFor = kind => FRAME_CACHE[kind] || (FRAME_CACHE[kind] = creatureFrames(kind));
 
 const CORE = makeCoreSprite();
 
@@ -758,7 +973,7 @@ const HUNGER_DECAY = 0.02;       // per second of walking, only once saturation 
 const REGEN_EVERY = 3;           // seconds per half heart while hunger is full
 const STARVE_EVERY = 4;          // seconds per half heart lost at zero hunger
 const STARVING_SLOW = 0.35;      // move speed at half a drumstick or less
-const vitals = { hp: 5, max: 5, hunger: HUNGER_MAX, sat: START_SAT, invuln: 0, sinceHit: 99, regenT: 0, starveT: 0, kx: 0, ky: 0, atkCD: 0, eatCD: 0, slowT: 0 };
+const vitals = { hp: 5, max: 5, hunger: HUNGER_MAX, sat: START_SAT, invuln: 0, sinceHit: 99, regenT: 0, starveT: 0, kx: 0, ky: 0, atkCD: 0, eatCD: 0, slowT: 0, burn: null, poison: null };
 const creatures = [];
 const stations = [];
 const floats = [];
@@ -940,18 +1155,19 @@ function nearestOpen(tx, ty) {
   return best;
 }
 
-function addStation(kind, tx, ty) {
+// a station at x, y (pixels) inside a room
+function addStation(kind, x, y, r) {
   const frames = kind === 'craft' ? [makeTable()] : kind === 'chest' ? [makeChest()] : [makeFurnace(false, 0)];
-  const st = { kind, x: tx * TILE + 8, y: ty * TILE + 14, frames, station: kind };
+  const st = { kind, x, y, frames, station: kind };
   if (kind === 'furnace') {
     st.unlit = frames;
     st.lit = [makeFurnace(true, 0), makeFurnace(true, 1), makeFurnace(true, 2)];
     st.fps = 8;
-    st.glow = { x: st.x, y: st.y - 8, rgb: '255,140,50', rad: 2.6, flicker: true, always: true, off: true };
-    glows.push(st.glow);
+    st.glow = { x: st.x, y: st.y - 8, rgb: '255,140,50', rad: 2.6, flicker: true, strength: 0.3, off: true };
+    r.glows.push(st.glow);
   }
   stations.push(st);
-  things.push(st);
+  r.things.push(st);
 }
 
 // a hunter with a home spot it prowls or sleeps at and goes back to
@@ -959,7 +1175,7 @@ function spawnCreature(kind, tx, ty, opts = {}) {
   const def = CREATURES[kind];
   const [x, y] = nearestOpen(tx, ty);
   const c = {
-    kind, def, frames: creatureFrames(kind), creature: true,
+    kind, def, frames: framesFor(kind), creature: true,
     hx: x * TILE + 8, hy: y * TILE + 12, x: x * TILE + 8, y: y * TILE + 12,
     hp: def.hp, state: def.rest, t: 0, cd: 0, sinceHit: 99, anim: 0, flip: false, hurtT: 0, kx: 0, ky: 0,
     lx: 0, ly: 0, moving: false, wander: null, wanderT: 0,
@@ -991,19 +1207,14 @@ function stumpGreatTree() {
 }
 if (quest.greatTree) stumpGreatTree();
 
-// the camp workshop: crafting table, furnace and chest, two tiles apart in a
-// tidy row just north-east of the fire
-addStation('craft', CAMP.x + 2, CAMP.y - 3);
-addStation('furnace', CAMP.x + 4, CAMP.y - 3);
-addStation('chest', CAMP.x + 6, CAMP.y - 3);
-
 const BED = makeBed();
+// a bed out in the world, or one put down at home (its x, y are then tiles of
+// the home room)
 function bedThing(b) {
-  const o = { bed: true, id: b.id, x: b.x * TILE + 8, y: b.y * TILE + 14, frames: [BED] };
-  things.push(o);
+  const o = { bed: true, id: b.id, room: b.room, x: b.x * TILE + 8, y: b.y * TILE + 14, frames: [BED] };
+  (b.room === 'home' ? homeRoom.things : things).push(o);
   return o;
 }
-quest.beds.forEach(bedThing);
 
 // livestock: anywhere open in the meadows, away from the landmarks and camp
 function grassSpot(r, minFromPlayer = 0) {
@@ -1022,7 +1233,7 @@ function spawnPassive(kind, r, minFromPlayer) {
   if (!spot) return null;
   const def = CREATURES[kind];
   const c = {
-    kind, def, frames: creatureFrames(kind), creature: true,
+    kind, def, frames: framesFor(kind), creature: true,
     hx: spot[0] * TILE + 8, hy: spot[1] * TILE + 12, x: spot[0] * TILE + 8, y: spot[1] * TILE + 12,
     hp: def.hp, state: 'graze', t: 0, pause: 1 + r() * 4, sinceHit: 99, anim: 0, flip: r() < 0.5,
     hurtT: 0, kx: 0, ky: 0, moving: false, wander: null, draw: drawCreature
@@ -1059,19 +1270,25 @@ else extraSolid.add(caveMouth);
 if (!Array.isArray(quest.caveChest)) {
   quest.caveChest = [makeStack('raw-beef', 3), makeStack('raw-mutton', 4), makeStack('raw-chicken', 5), null, null, null];
 }
-const caveRoom = {
-  w: CAVE_COLS * TILE, h: CAVE_ROWS * TILE, dust: '#6e6a64', shade: 0.62,
-  canvas: paintCaveRoom(),
-  outside: { x: caveThing.x, y: caveThing.y },
-  // the walls, plus a way out through the mouth and nowhere else
-  blocked(x, y) {
+// the walls of a room: two rows at the back, one tile everywhere else, plus a
+// way out through the door gap in the bottom wall and nowhere else
+function roomWalls(cols, rows, door) {
+  return (x, y) => {
     const wall = (px, py) => {
       const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
-      if (tx === CAVE_MOUTH && ty >= CAVE_ROWS - 1) return false;
-      return tx <= 0 || tx >= CAVE_COLS - 1 || ty <= 1 || ty >= CAVE_ROWS - 1;
+      if (tx === door && ty >= rows - 1) return false;
+      return tx <= 0 || tx >= cols - 1 || ty <= 1 || ty >= rows - 1;
     };
     return wall(x - 4, y - 3) || wall(x + 3, y - 3) || wall(x - 4, y) || wall(x + 3, y);
-  },
+  };
+}
+const caveRoom = {
+  id: 'cave', w: CAVE_COLS * TILE, h: CAVE_ROWS * TILE, dust: '#6e6a64', shade: 0.62,
+  canvas: paintCaveRoom(),
+  outside: { x: caveThing.x, y: caveThing.y },
+  exit: { x: caveThing.x, y: caveThing.y + 10 },
+  door: CAVE_MOUTH,
+  blocked: roomWalls(CAVE_COLS, CAVE_ROWS, CAVE_MOUTH),
   things: [],
   glows: [
     { x: 88, y: 122, rgb: '255,236,200', rad: 3.4, flicker: true, strength: 0.2 },
@@ -1100,6 +1317,37 @@ caveRoom.things.push(
 );
 const coreGlow = { x: ROCK_SPOT.x, y: ROCK_SPOT.y - 10, rgb: '150,120,255', rad: 2.2, flicker: true, strength: 0.3, off: !quest.cave.rock || !!quest.cave.part };
 caveRoom.glows.push(coreGlow);
+
+// home: the cabin at base camp. the crafting table, furnace and chest live in
+// here along the back wall now, with a bookshelf, a plant and a rug, and the
+// right half of the floor is left clear so you can put a bed down. the
+// overworld (and everything hunting you) waits outside while you're in.
+const homeRoom = {
+  id: 'home', w: HOME_COLS * TILE, h: HOME_ROWS * TILE, dust: '#916236',
+  canvas: paintHomeRoom(),
+  outside: { x: campHouse.x, y: campHouse.y },
+  exit: { x: campHouse.x, y: campHouse.y + 10 },
+  door: HOME_DOOR,
+  blocked: roomWalls(HOME_COLS, HOME_ROWS, HOME_DOOR),
+  things: [
+    { flat: true, x: 72, y: 96, frames: [makeHomeRug()] },
+    { x: 24, y: 47, frames: [makePlant()] },
+    { x: 104, y: 47, frames: [makeBookshelf()] }
+  ],
+  glows: [{ x: 87, y: 14, rgb: '255,190,110', rad: 4.5, flicker: true, strength: 0.25 }]
+};
+addStation('craft', 44, 47, homeRoom);
+addStation('furnace', 64, 46, homeRoom);
+addStation('chest', 82, 46, homeRoom);
+quest.beds.forEach(bedThing);
+
+// the buildings you can walk into. the cave opens once the grizzly is dead,
+// home is always open. neither works in a biome that's still locked.
+const BUILDINGS = [
+  { thing: caveThing, tile: cavePoi.at, room: caveRoom, name: 'The Cave', open: caveOpen,
+    shut: ['Not yet', 'Something big sleeps here', 'Deal with the grizzly first'], hint: () => caveOpen() && !quest.cave.part },
+  { thing: campHouse, tile: [HOUSE.x, HOUSE.y], room: homeRoom, name: 'Home', open: () => true, hint: () => !quest.homeVisited }
+];
 checkRecipeUnlocks();
 
 const playerBox = () => ({ x0: player.x - 6, x1: player.x + 6, y0: player.y - 20, y1: player.y });
@@ -1178,8 +1426,8 @@ function aggro(c) {
   c.state = 'chase';
   if (!quest.seen[c.kind]) {
     quest.seen[c.kind] = true;
-    toast(c.kind === 'hyena' ? 'Ambush' : 'You woke it', c.def.name,
-      c.kind === 'hyena' ? 'It crouches before it leaps. Sidestep, then strike.' : '2.5 hearts a swipe. Dodge the lunge, then make it pay.');
+    const [eyebrow, sub] = c.def.intro || ['Hostile', ''];
+    toast(eyebrow, c.def.name, sub);
     markDirty();
   }
 }
@@ -1187,7 +1435,7 @@ function aggro(c) {
 function killCreature(c) {
   c.dead = true;
   c.gone = true;
-  if (c.def.passive) {
+  if (c.def.passive || c.def.nightly) {
     const cc = creatureCenter(c);
     burst(cc.x, cc.y, c.def.chip, 14);
     c.def.drops.forEach(([id, a, b], line) => gain(id, rand(a, b), cc.x, cc.y - 10 - line * 10));
@@ -1250,6 +1498,12 @@ function die() {
 function respawn() {
   if (room) playLeaveRoom(true);
   player.dead = false;
+  vitals.burn = vitals.poison = null;
+  projectiles.length = 0;
+  // the night's monsters don't wait around for you to come back
+  for (let i = creatures.length - 1; i >= 0; i--) {
+    if (creatures[i].def.nightly) { things.splice(things.indexOf(creatures[i]), 1); creatures.splice(i, 1); }
+  }
   player.x = SPAWN.x * TILE + 8;
   player.y = SPAWN.y * TILE + 12;
   vitals.hp = vitals.max;
@@ -1260,8 +1514,9 @@ function respawn() {
   vitals.slowT = 0;
   // your bed, if you've slept in one, otherwise camp
   const bedSpot = quest.spawnBed && quest.beds.find(b => b.id === quest.spawnBed);
+  if (bedSpot && bedSpot.room === 'home') enterRoom(homeRoom, true);
   if (bedSpot) { player.x = bedSpot.x * TILE + 8; player.y = (bedSpot.y + 1) * TILE + 12; }
-  Object.assign(cam, clampCam(camTarget()));
+  if (!room) Object.assign(cam, clampCam(camTarget()));
   // anything still alive goes home and heals, like the fight never happened
   creatures.forEach(c => {
     if (c.dead || c.dormant || c.def.passive) return;
@@ -1280,6 +1535,10 @@ function moveBody(o, mx, my) {
 function updateCreature(c, dt) {
   if (c.dead || c.dormant) return;
   const def = c.def;
+  if (def.burns) burnInDaylight(c, dt);
+  if (c.dead) return;
+  // once it's day, the night's monsters quietly leave when you can't see them
+  if (def.nightly && nightAmount() < 0.35 && Math.hypot(c.x - player.x, c.y - player.y) > 26 * TILE) { c.despawn = true; return; }
   c.hurtT = Math.max(0, c.hurtT - dt);
   c.cd -= dt;
   c.sinceHit += dt;
@@ -1332,6 +1591,7 @@ function updateCreature(c, dt) {
       break;
     case 'chase':
       if (!alive || homeD > def.leash * TILE) { c.state = 'return'; break; }
+      if (def.shooter) { shooterChase(c, dt, d, dx, dy, steer, walk); break; }
       if (d <= def.range * TILE && c.cd <= 0) { c.state = 'windup'; c.t = 0; c.flip = dx < 0; break; }
       // close in, but stop just short of touching you. contact still hurts,
       // it just has to come from you walking into it or from a lunge.
@@ -1376,11 +1636,228 @@ function updateCreature(c, dt) {
   if (alive && overlap(playerBox(), creatureBox(c))) {
     if (c.state === 'sleep' || c.state === 'prowl') aggro(c);
     if (c.state !== 'return') hurtPlayer(def.dmg, c.x, c.y);
+    if (c.burning) ignite();
   }
   if (c.moving) c.anim += dt;
 }
 
 const inWater = o => tiles[idx(clamp(Math.floor(o.x / TILE), 0, W - 1), clamp(Math.floor((o.y - 2) / TILE), 0, H - 1))] === T.WATER;
+
+// zombies catch fire in daylight (unless they're standing in water) and lose
+// half a heart a second until they're gone
+function burnInDaylight(c, dt) {
+  c.burning = nightAmount() < 0.35 && !inWater(c);
+  if (!c.burning) { c.burnT = 0; return; }
+  c.burnT = (c.burnT || 0) + dt;
+  if (!reduceMotion && Math.random() < dt * 14) {
+    particles.push({ x: c.x + (Math.random() - 0.5) * 12, y: c.y - 6 - Math.random() * 20, vx: 0, vy: -24, g: -10, life: 0.4, t: 0, col: Math.random() < 0.5 ? '#ffc93c' : '#ff7b1c', size: 1 });
+  }
+  if (c.burnT >= 1) {
+    c.burnT -= 1;
+    c.hp = Math.max(0, c.hp - 0.5);
+    c.hurtT = 0.1;
+    if (c.hp <= 0) killCreature(c);
+  }
+}
+// a forest guardian keeps its distance: it walks in until you're in range,
+// backs off if you get close, and every couple of seconds throws a poison
+// tipped stick at you if it can see you
+function shooterChase(c, dt, d, dx, dy, steer, walk) {
+  const sh = c.def.shooter;
+  c.aimT = Math.max(0, (c.aimT || 0) - dt);
+  if (d > sh.range * TILE * 0.9) steer(player.x, player.y, c.def.speed);
+  else if (d < sh.keep * TILE && d > 0) walk(c.x - (dx / d) * 24, c.y - (dy / d) * 24, c.def.speed * 0.8);
+  c.flip = dx < 0;
+  if (c.cd <= 0 && d <= sh.range * TILE && clearLine(c.x, c.y, player.x, player.y)) {
+    c.cd = sh.cd;
+    c.aimT = 0.35;
+    const a = Math.atan2(player.y - 10 - (c.y - 14), player.x - c.x);
+    shoot('stick', c.x, c.y - 14, a, sh.speed, sh.range * TILE + 24, { from: 'mob', dmg: sh.dmg, poison: sh.poison });
+    sfx.swing();
+  }
+}
+
+// monsters only come out at night, out of sight (13 to 22 tiles away), never
+// at camp, and only a handful at once. guardians only grow in the meadows.
+// bosses (when they exist) don't count toward the cap.
+const HOSTILE_CAP = 5;
+let hostileT = 4;
+function updateNightSpawns(dt) {
+  if (nightAmount() < 0.5) { hostileT = 4; return; }
+  hostileT -= dt;
+  if (hostileT > 0) return;
+  hostileT = 7 + Math.random() * 6;
+  if (creatures.filter(c => c.def.nightly && !c.dead).length >= HOSTILE_CAP) return;
+  const px = player.x / TILE, py = player.y / TILE;
+  for (let tries = 0; tries < 40; tries++) {
+    const a = Math.random() * Math.PI * 2, d = 13 + Math.random() * 9;
+    const tx = Math.floor(px + Math.cos(a) * d), ty = Math.floor(py + Math.sin(a) * d);
+    if (!inside(tx, ty) || solidTile(tx, ty) || !reach[idx(tx, ty)] || tiles[idx(tx, ty)] === T.WATER) continue;
+    const where = regionAt(tx + 0.5, ty + 0.5);
+    if (where === 'camp') continue;
+    spawnHostile(where === 'meadows' && Math.random() < 0.4 ? 'guardian' : 'zombie', tx, ty);
+    return;
+  }
+}
+function spawnHostile(kind, tx, ty) {
+  const def = CREATURES[kind];
+  const c = {
+    kind, def, frames: framesFor(kind), creature: true,
+    hx: tx * TILE + 8, hy: ty * TILE + 12, x: tx * TILE + 8, y: ty * TILE + 12,
+    hp: def.hp, state: 'prowl', t: 0, cd: 1, sinceHit: 99, anim: 0, flip: false, hurtT: 0, kx: 0, ky: 0,
+    lx: 0, ly: 0, moving: false, wander: null, wanderT: 0, draw: drawCreature
+  };
+  creatures.push(c);
+  things.push(c);
+  return c;
+}
+
+// anything flying: thrown snowballs, your arrows, the guardians' sticks. they
+// fly at chest height, so hits are checked against bodies, and the tile under
+// them is what stops them on rock.
+const projectiles = [];
+function shoot(kind, x, y, a, speed, range, extra = {}) {
+  projectiles.push({ kind, x, y, a, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, range, dist: 0, from: 'player', ...extra });
+}
+const pointIn = (p, b, pad) => p.x > b.x0 - pad && p.x < b.x1 + pad && p.y > b.y0 - pad && p.y < b.y1 + pad;
+function updateProjectiles(dt) {
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    const sx = p.vx * dt, sy = p.vy * dt;
+    p.x += sx; p.y += sy; p.dist += Math.hypot(sx, sy);
+    if (p.dist > p.range || solidTile(Math.floor(p.x / TILE), Math.floor((p.y + 10) / TILE))) {
+      burst(p.x, p.y, p.kind === 'snow' ? '240,244,252' : '160,102,58', 4);
+      projectiles.splice(i, 1);
+      continue;
+    }
+    if (p.from === 'mob') {
+      if (!player.dead && pointIn(p, playerBox(), 2)) {
+        if (hurtPlayer(p.dmg, p.x - p.vx, p.y - p.vy) && p.poison) poisonPlayer(p.poison);
+        projectiles.splice(i, 1);
+      }
+      continue;
+    }
+    const c = creatures.find(k => !k.dead && !k.gone && !k.dormant && pointIn(p, creatureBox(k), 3));
+    if (!c) continue;
+    if (p.kind === 'snow') snowHit(c, p.a);
+    else hurtCreature(c, Math.round(p.dmg * (1 + 0.6 * Math.min(1, p.dist / (ARROW_FULL * TILE))) * 100) / 100, p.a);
+    projectiles.splice(i, 1);
+  }
+}
+// snowballs never hurt anything (a flaming boss will be the exception), they
+// just shove it back a step, whatever it's doing. an ice boss shrugs them off.
+function snowHit(c, a) {
+  const cc = creatureCenter(c);
+  burst(cc.x, cc.y, '240,244,252', 8);
+  sfx.snow();
+  if (c.def.fiery) { hurtCreature(c, 1, a); return; }
+  if (!c.def.icy) {
+    const k = Math.max(45, c.def.knock * 0.6);
+    c.kx = Math.cos(a) * k;
+    c.ky = Math.sin(a) * k;
+  }
+  if (c.def.passive) { c.state = 'flee'; c.t = 0; c.path = null; c.pathT = 0; }
+  else if (['sleep', 'prowl'].includes(c.state)) aggro(c);
+}
+// left click with something you throw or shoot. a snowball goes where you
+// point, a bow fires the best arrow you're carrying. nothing flies indoors.
+let noArrowT = 0;
+function useRanged(it) {
+  if (vitals.atkCD > 0 || room) return;
+  const a = aimAngle(), o = aimOrigin();
+  faceAngle(a);
+  player.swing = 0;
+  if (it.throw) {
+    const s = heldItem();
+    s.n--;
+    if (!s.n) inv.slots[inv.sel] = null;
+    shoot('snow', o.x, o.y, a, 230, 8 * TILE);
+    vitals.atkCD = 0.35;
+    sfx.swing();
+    afterInventoryChange();
+    return;
+  }
+  const arrow = bestArrow();
+  if (!arrow) {
+    vitals.atkCD = 0.4;
+    if (noArrowT <= 0) { floatText('No arrows', player.x, player.y - 34, '#cfcfcf'); noArrowT = 1.5; }
+    return;
+  }
+  takeItem(arrow, 1);
+  shoot('arrow', o.x, o.y, a, 340, ARROW_RANGE * TILE, { dmg: ITEMS[arrow].adm, mat: ITEMS[arrow].arrow });
+  vitals.atkCD = it.cd;
+  sfx.bow();
+  wearHeld(1);
+  afterInventoryChange();
+}
+function bestArrow() {
+  let best = null;
+  inv.slots.forEach(s => { if (s && ITEMS[s.id].arrow && (!best || ITEMS[s.id].adm > ITEMS[best].adm)) best = s.id; });
+  return best;
+}
+
+// damage that isn't a hit: starving, burning, poison, bad meat. armor doesn't
+// help with any of it, and there's no knockback or blink afterwards.
+function loseHp(amount, label, col = '#ff6b6b') {
+  if (player.dead || amount <= 0) return;
+  vitals.hp = Math.max(0, Math.round((vitals.hp - amount) * 100) / 100);
+  floatText(label, player.x, player.y - 34, col);
+  sfx.hurt();
+  const flash = $('#hurt-flash');
+  flash.classList.remove('is-on');
+  void flash.offsetWidth;
+  flash.classList.add('is-on');
+  if (vitals.hp <= 0) die();
+  markDirty();
+  renderVitals();
+}
+// on fire: half a heart a second for five seconds, and any water puts it out.
+// poisoned: half a heart a second for as long as the poison lasts.
+const BURN_TICKS = 5;
+function ignite() {
+  if (room || player.dead || inWater(player)) return;
+  if (!vitals.burn) { floatText('On fire!', player.x, player.y - 40, '#ff9a3c'); sfx.ignite(); }
+  vitals.burn = { left: BURN_TICKS, t: 0 };
+  renderHUD();
+}
+function poisonPlayer(ticks) {
+  vitals.poison = { left: Math.max(ticks, vitals.poison ? vitals.poison.left : 0), t: 0 };
+  renderHUD();
+}
+function tickStatus(dt) {
+  if (vitals.burn) {
+    if (!room && inWater(player)) {
+      vitals.burn = null;
+      floatText('Put out', player.x, player.y - 34, '#9fd3ff');
+      sfx.splash();
+      burst(player.x, player.y - 12, '220,230,240', 10);
+      renderHUD();
+    } else {
+      if (!reduceMotion && Math.random() < dt * 18) {
+        particles.push({ x: player.x + (Math.random() - 0.5) * 12, y: player.y - 4 - Math.random() * 20, vx: 0, vy: -26, g: -10, life: 0.4, t: 0, col: Math.random() < 0.5 ? '#ffc93c' : '#ff7b1c', size: 1 });
+      }
+      vitals.burn.t += dt;
+      if (vitals.burn.t >= 1) {
+        vitals.burn.t -= 1;
+        vitals.burn.left--;
+        loseHp(0.5, 'Burning', '#ff9a3c');
+        if (vitals.burn && vitals.burn.left <= 0) { vitals.burn = null; renderHUD(); }
+      }
+    }
+  }
+  if (vitals.poison) {
+    if (!reduceMotion && Math.random() < dt * 8) {
+      particles.push({ x: player.x + (Math.random() - 0.5) * 10, y: player.y - 10 - Math.random() * 14, vx: 0, vy: -12, g: 0, life: 0.5, t: 0, col: '#9be35a', size: 1 });
+    }
+    vitals.poison.t += dt;
+    if (vitals.poison.t >= 1) {
+      vitals.poison.t -= 1;
+      vitals.poison.left--;
+      loseHp(0.5, 'Poison', '#9be35a');
+      if (vitals.poison && vitals.poison.left <= 0) { vitals.poison = null; renderHUD(); }
+    }
+  }
+}
 // livestock: stand around, amble somewhere nearby, stand around again. hit one
 // and it runs for a few seconds, along a real path to whatever reachable spot is
 // farthest from you, so it goes around rocks instead of running into them.
@@ -1506,7 +1983,7 @@ function drawCreature(c, toX, toY, t) {
   let img = F.walk[0];
   if (c.state === 'sleep') img = F.sleep;
   else if (c.state === 'windup') img = F.crouch;
-  else if (c.state === 'lunge') img = F.lunge;
+  else if (c.state === 'lunge' || c.aimT > 0) img = F.lunge;
   else if (c.moving) img = F.walk[Math.floor(c.anim * (c.kind === 'hyena' ? 10 : c.def.passive ? 7 : 9)) % 4];
   if (c.hurtT > 0) img = F.white.get(img) || img;
   const w = img.width, h = img.height;
@@ -1524,6 +2001,14 @@ function drawCreature(c, toX, toY, t) {
     const rw = w * 0.4 + (Math.floor(t / 250) % 2) * 3;
     ctx.fillStyle = 'rgba(230,244,255,0.85)';
     ctx.fillRect(toX(c.x - rw), toY(c.y - 3), Math.round(rw * 2 * S), S);
+  }
+  // flames licking up a zombie caught in the sun
+  if (c.burning) {
+    const r = mulberry32(Math.floor(t / 90) + c.x);
+    for (let k = 0; k < 9; k++) {
+      ctx.fillStyle = k % 3 ? '#ff7b1c' : '#ffd23f';
+      ctx.fillRect(toX(c.x - 7 + r() * 14), toY(c.y - 4 - r() * 24), S, S * (1 + ((r() * 2) | 0)));
+    }
   }
   // polished marble: little four-point glints that wander over the hyena
   if (c.kind === 'hyena' && c.hurtT <= 0 && !reduceMotion) {
@@ -1558,22 +2043,24 @@ function thingAt(m, pred) {
 function targetAt(m) {
   const st = thingAt(m, o => o.station);
   if (st) return { type: 'station', st, key: `st:${st.kind}`, cx: st.x, cy: st.y - 8 };
+  const bed = thingAt(m, o => o.bed);
+  if (bed) return { type: 'bed', thing: bed, key: `bed:${bed.id}`, cx: bed.x, cy: bed.y - 10, cls: 'wood' };
   if (room) {
-    if (quest.cave.rock && !quest.cave.part && thingAt(m, o => o === hollowThing)) {
+    if (room === caveRoom && quest.cave.rock && !quest.cave.part && thingAt(m, o => o === hollowThing)) {
       return { type: 'part', thing: hollowThing, key: 'part', cx: hollowThing.x, cy: hollowThing.y - 10 };
     }
     return null;
   }
-  if (thingAt(m, o => o === caveThing)) return { type: 'cave', thing: caveThing, key: 'cave', cx: caveThing.x, cy: caveThing.y - 10 };
-  const bed = thingAt(m, o => o.bed);
-  if (bed) return { type: 'bed', thing: bed, key: `bed:${bed.id}`, cx: bed.x, cy: bed.y - 10, cls: 'wood' };
+  const b = BUILDINGS.find(bd => thingAt(m, o => o === bd.thing));
+  if (b) return { type: 'building', b, thing: b.thing, key: `b:${b.room.id}`, cx: b.thing.x, cy: b.thing.y - 10 };
   const tree = thingAt(m, o => o.tree || (o === greatTree && !greatTree.chopped));
   if (tree) return { type: 'tree', thing: tree, key: `tree:${tree.id || 'great'}`, cx: tree.x, cy: tree.y - 6, cls: 'wood', great: tree === greatTree };
   const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE);
   if (!inside(tx, ty)) return null;
   const tile = tiles[idx(tx, ty)];
-  if (STONE_TILES.has(tile) || ORE_ITEM[tile]) {
-    return { type: 'tile', tx, ty, key: `tile:${idx(tx, ty)}`, cx: tx * TILE + 8, cy: ty * TILE + 8, cls: ORE_ITEM[tile] ? 'ore' : 'stone', ore: ORE_ITEM[tile] };
+  if (STONE_TILES.has(tile) || ORE_ITEM[tile] || tile === T.SNOWBLOCK) {
+    const cls = tile === T.SNOWBLOCK ? 'snow' : ORE_ITEM[tile] ? 'ore' : 'stone';
+    return { type: 'tile', tx, ty, key: `tile:${idx(tx, ty)}`, cx: tx * TILE + 8, cy: ty * TILE + 8, cls, ore: ORE_ITEM[tile] };
   }
   return null;
 }
@@ -1586,13 +2073,21 @@ function mineInfo(tgt) {
   // picking a bed back up is quick and free
   if (tgt.type === 'bed') return { time: 0.6, drops: true, cost: 0 };
   if (CLICK_ONLY.has(tgt.type)) return { time: Infinity };
+  // snow is the one thing you can dig anywhere, cleared or not
+  if (tgt.cls === 'snow') return { time: MINE_TIME.snow, drops: true, cost: 0 };
+  const where = room ? null : regionAt(tgt.cx / TILE, tgt.cy / TILE);
+  if (where && !biomeOpen(where)) return { time: Infinity, locked: where };
   if (tgt.type === 'tree') {
     if (!tgt.great && !quest.greatTree) return { time: Infinity };
-    const base = MINE_TIME.wood * (tgt.great ? 1.6 : 1);
-    return { time: it && it.tool === 'axe' ? base / it.speed : base, drops: true, cost: 1 };
+    const base = MINE_TIME.wood * (tgt.great ? 1.4 : 1);
+    const time = it && it.tool === 'axe' ? base / it.speed
+      : it && ['sword', 'pickaxe', 'dagger'].includes(it.tool) ? base * TREE_TOOL_SLOW : base * TREE_HAND_SLOW;
+    return { time, drops: true, cost: 1 };
   }
   const pick = it && it.tool === 'pickaxe' ? it : null;
-  if (tgt.cls === 'stone') return { time: pick ? MINE_TIME.stone / pick.speed : MINE_TIME.stone, drops: true, cost: 1 };
+  if (tgt.cls === 'stone') {
+    return pick ? { time: MINE_TIME.stone / pick.speed, drops: true, cost: 1 } : { time: MINE_TIME.stone * 2, drops: false, cost: 1 };
+  }
   const harvest = !!pick && pick.harvest >= ORE_NEED[tgt.ore];
   // iron is the lowest tier that can take a diamond, and it pays for it: three
   // diamonds and the pickaxe is done
@@ -1607,7 +2102,8 @@ let lockHintT = 0, noDropHintT = 0;
 function mineStep(tgt, dt) {
   const info = mineInfo(tgt);
   if (info.time === Infinity) {
-    if (lockHintT <= 0) {
+    if (info.locked) lockedToast(info.locked);
+    else if (lockHintT <= 0) {
       toast('Too sturdy', 'Not yet', 'The Great Tree in the Meadows has to come down first');
       sfx.deny();
       lockHintT = 2.5;
@@ -1619,7 +2115,8 @@ function mineStep(tgt, dt) {
     if (mining && mining.thing) mining.thing.shake = 0;
     mining = { key: tgt.key, t: 0, thing: tgt.thing, tgt };
     if (!info.drops && noDropHintT <= 0) {
-      toast('Too hard', ITEMS[tgt.ore].name, ORE_NEED[tgt.ore] >= 2
+      if (tgt.cls === 'stone') toast('Needs a pickaxe', 'Stone', 'Without one it just crumbles to nothing');
+      else toast('Too hard', ITEMS[tgt.ore].name, ORE_NEED[tgt.ore] >= 2
         ? 'Needs an iron pickaxe or better. This will crumble to nothing.'
         : 'Needs a stone, marble or gold pickaxe or better.');
       noDropHintT = 4;
@@ -1632,7 +2129,7 @@ function mineStep(tgt, dt) {
     player.swing = 0;
     faceAngle(Math.atan2(tgt.cy - (player.y - 10), tgt.cx - player.x));
     sfx.chip();
-    const rgb = tgt.cls === 'wood' ? '160,102,58' : tgt.cls === 'ore' ? '200,200,200' : '140,140,140';
+    const rgb = tgt.cls === 'wood' ? '160,102,58' : tgt.cls === 'ore' ? '200,200,200' : tgt.cls === 'snow' ? '235,240,250' : '140,140,140';
     burst(tgt.cx, tgt.cy, rgb, 3);
   }
   if (mining.t >= info.time) breakTarget(tgt, info);
@@ -1675,8 +2172,9 @@ function breakTarget(tgt, info) {
     quest.mined.push(i);
     repaintAround(tgt.tx, tgt.ty);
     paintMinimap();
-    burst(tgt.cx, tgt.cy, '140,140,140', 12);
-    if (info.drops) gain(tgt.ore || 'stone', 1, tgt.cx, tgt.cy - 8);
+    burst(tgt.cx, tgt.cy, tgt.cls === 'snow' ? '240,244,252' : '140,140,140', 12);
+    if (tgt.cls === 'snow') gain('snowball', rand(3, 10), tgt.cx, tgt.cy - 8);
+    else if (info.drops) gain(tgt.ore || 'stone', 1, tgt.cx, tgt.cy - 8);
     else floatText('Nothing dropped', tgt.cx, tgt.cy - 8, '#bdbdbd');
   }
   if (tool && tool.dur && info.cost !== 0) wearHeld(info.cost || 1);
@@ -1684,15 +2182,25 @@ function breakTarget(tgt, info) {
 }
 
 function placeBed() {
-  if (room) { toast('No room', 'Bed', 'Put it down outside'); sfx.deny(); return; }
+  if (room && room !== homeRoom) { toast('No room', 'Bed', 'Put it down outside, or at home'); sfx.deny(); return; }
   const m = mouseWorld();
   const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE);
   const spot = { cx: tx * TILE + 8, cy: ty * TILE + 8 };
-  const blockedSpot = !inside(tx, ty) || SOLID[tiles[idx(tx, ty)]] || tiles[idx(tx, ty)] === T.WATER
-    || things.some(o => !o.gone && !o.creature && Math.hypot(o.x - spot.cx, o.y - (spot.cy + 6)) < 14);
+  let blockedSpot;
+  if (room) {
+    // indoors it needs floor under the whole bed, clear of the furniture
+    blockedSpot = ty < 3 || room.blocked(spot.cx, spot.cy + 6) || room.blocked(spot.cx, spot.cy - 12)
+      || room.things.some(o => !o.gone && !o.flat && Math.abs(o.x - spot.cx) < 16 && Math.abs(o.y - (spot.cy + 6)) < 22);
+  } else {
+    const where = regionAt(tx + 0.5, ty + 0.5);
+    if (!biomeOpen(where)) { lockedToast(where); return; }
+    blockedSpot = !inside(tx, ty) || solidTile(tx, ty) || tiles[idx(tx, ty)] === T.WATER
+      || things.some(o => !o.gone && !o.creature && !o.flat && Math.hypot(o.x - spot.cx, o.y - (spot.cy + 6)) < 14);
+  }
   if (!inReach(spot)) { toast('Too far', 'Bed', 'Place it somewhere closer'); return; }
   if (blockedSpot) { toast('No room', 'Bed', 'Needs a clear patch of ground'); sfx.deny(); return; }
   const b = { id: `bed-${Date.now()}`, x: tx, y: ty };
+  if (room) b.room = 'home';
   quest.beds.push(b);
   bedThing(b);
   inv.slots[inv.sel] = null;
@@ -1701,13 +2209,15 @@ function placeBed() {
   afterInventoryChange();
 }
 function removeBed(o) {
-  things.splice(things.indexOf(o), 1);
+  const list = o.room === 'home' ? homeRoom.things : things;
+  list.splice(list.indexOf(o), 1);
   quest.beds = quest.beds.filter(b => b.id !== o.id);
   if (quest.spawnBed === o.id) quest.spawnBed = null;
 }
 function sleepIn(o) {
   if (nightAmount() < 0.5) { toast('Not tired', 'It\'s daytime', 'You can only sleep at night'); sfx.deny(); return; }
-  const hunted = creatures.some(c => !c.def.passive && !c.dead && !c.dormant && ['chase', 'windup', 'lunge', 'recover'].includes(c.state));
+  // nothing can follow you indoors, so a bed at home always works
+  const hunted = !room && creatures.some(c => !c.def.passive && !c.dead && !c.dormant && ['chase', 'windup', 'lunge', 'recover'].includes(c.state));
   if (hunted) { toast('Can\'t sleep', 'Something is hunting you', 'Deal with it first'); sfx.deny(); return; }
   quest.spawnBed = o.id;
   sleeping = { t: 0, bed: o, morning: false };
@@ -1783,7 +2293,7 @@ function tickClock(dt) {
   const night = nightAmount() > 0.5;
   if (night !== wasNight) {
     wasNight = night;
-    if (night) toast('Night falls', `Night ${quest.day || 1}`, 'Craft a bed (3 wool over 3 wood) and sleep through it');
+    if (night) toast('Night falls', `Night ${quest.day || 1}`, 'Monsters come out. Sleep through it, or get home.');
     renderHUD();
   }
 }
@@ -1814,8 +2324,11 @@ function tickEating(dt) {
   }
   if (eating.t < EAT_TIME) return;
   const it = ITEMS[s.id];
-  vitals.hunger = Math.min(HUNGER_MAX, vitals.hunger + it.food);
-  vitals.sat = Math.min(vitals.hunger, vitals.sat + it.sat);
+  // whatever doesn't fit on the hunger bar isn't wasted, it tops up saturation
+  const total = vitals.hunger + it.food;
+  vitals.hunger = Math.min(HUNGER_MAX, total);
+  vitals.sat = Math.min(vitals.hunger, vitals.sat + it.sat + Math.max(0, total - HUNGER_MAX));
+  if (it.poison) loseHp(Math.round(Math.random() * 100) / 100, 'Food poisoning', '#9be35a');
   floatText(`+${it.food} hunger`, player.x, player.y - 34, '#f2c06a');
   s.n--;
   if (!s.n) inv.slots[eating.slot] = null;
@@ -2106,7 +2619,7 @@ function slotHTML(ref, stack, extra = '') {
   </button>`;
 }
 
-// which chest is open, the camp one or the cave's
+// which chest is open, the one at home or the cave's
 let openChest = chestSlots;
 function openUI(kind, st) {
   ui = kind;
@@ -2172,7 +2685,7 @@ function stationHTML() {
     </div>`;
   }
   if (ui === 'chest') {
-    return `<div class="st-chest"><p class="inv-label">Chest <span>${openChest === chestSlots ? 'stays here at camp' : 'in the cave'}</span></p>
+    return `<div class="st-chest"><p class="inv-label">Chest <span>${openChest === chestSlots ? 'at home' : 'in the cave'}</span></p>
       <div class="chest-grid">${openChest.map((st, i) => slotHTML(`chest:${i}`, st)).join('')}</div></div>`;
   }
   if (ui === 'furnace') {
@@ -2230,7 +2743,7 @@ function paintHeld() {
 
 let vitalsKey = '';
 function renderVitals() {
-  const key = `${vitals.hp}|${vitals.hunger.toFixed(2)}|${vitals.sat.toFixed(2)}|${inv.armor && inv.armor.id}|${vitals.slowT > 0}|${nightAmount() > 0.5}|${quest.day}`;
+  const key = `${vitals.hp}|${vitals.hunger.toFixed(2)}|${inv.armor && inv.armor.id}|${vitals.slowT > 0}|${!!vitals.burn}|${!!vitals.poison}|${nightAmount() > 0.5}|${quest.day}`;
   if (key === vitalsKey) return;
   vitalsKey = key;
   const row = (val, set) => {
@@ -2241,13 +2754,22 @@ function renderVitals() {
     }
     return out.join('');
   };
-  $('#hearts').innerHTML = row(vitals.hp, HEART)
+  // hearts fill to the hundredth, so a hit shows exactly what it took after
+  // armor, and the number next to them spells it out
+  let hearts = '';
+  for (let i = 0; i < 5; i++) {
+    const f = clamp(vitals.hp - i, 0, 1);
+    hearts += `<i style="background-image:url(${HEART.empty})"><b style="width:${(f * 100).toFixed(2)}%;background-image:url(${HEART.full})"></b></i>`;
+  }
+  $('#hearts').innerHTML = `${hearts}<span class="hp-num">${vitals.hp.toFixed(2)}</span>`
     + (inv.armor ? `<span class="hud-armor" title="${ITEMS[inv.armor.id].name}"><i style="background-image:url(${ICON[inv.armor.id]})"></i></span>` : '');
-  $('#hearts').setAttribute('aria-label', `Health ${vitals.hp} of ${vitals.max}`);
-  $('#hunger').innerHTML = `<span class="hunger-icons">${row(vitals.hunger, DRUM)}</span>`
-    + `<span class="sat-bar" title="Saturation"><i style="width:${(vitals.sat / HUNGER_MAX) * 100}%"></i></span>`;
+  $('#hearts').setAttribute('aria-label', `Health ${vitals.hp.toFixed(2)} of ${vitals.max}`);
+  // saturation stays hidden, like minecraft's
+  $('#hunger').innerHTML = `<span class="hunger-icons">${row(vitals.hunger, DRUM)}</span>`;
   $('#hunger').setAttribute('aria-label', `Hunger ${vitals.hunger.toFixed(1)} of ${HUNGER_MAX}`);
   $('#hud-status').innerHTML = (vitals.slowT > 0 ? '<span class="hud-soaked">Soaked</span>' : '')
+    + (vitals.burn ? '<span class="hud-burning">Burning</span>' : '')
+    + (vitals.poison ? '<span class="hud-poisoned">Poisoned</span>' : '')
     + `<span class="hud-time${nightAmount() > 0.5 ? ' is-night' : ''}">${nightAmount() > 0.5 ? '☾ Night' : '☀ Day'} ${quest.day || 1}</span>`;
 }
 
@@ -2261,10 +2783,11 @@ function renderHUD() {
     </button>`).join('');
   const s = heldItem();
   $('#held-name').textContent = s
-    ? `${ITEMS[s.id].name}${ITEMS[s.id].food ? ' | right-click to eat' : ''}${ITEMS[s.id].dur ? ` | ${s.dur}/${ITEMS[s.id].dur}` : ''}`
+    ? `${ITEMS[s.id].name}${ITEMS[s.id].food ? ' | right-click to eat' : ''}${ITEMS[s.id].throw ? ' | click to throw' : ''}${ITEMS[s.id].ranged ? ` | ${countArrows()} arrows` : ''}${ITEMS[s.id].dur ? ` | ${s.dur}/${ITEMS[s.id].dur}` : ''}`
     : 'Bare hands';
 }
 
+const countArrows = () => inv.slots.reduce((n, st) => n + (st && ITEMS[st.id].arrow ? st.n : 0), 0);
 function selectSlot(i) {
   inv.sel = (i + 6) % 6;
   mining = null;
@@ -2280,7 +2803,6 @@ const QUEST_STEPS = [
   { done: () => quest.killed.hyena, title: () => (quest.seen.hyena ? 'Defeat the marble hyena' : 'Find the next landmark') },
   { done: craftedWeapon, title: 'Craft a weapon' },
   { done: () => quest.killed.bear, title: 'Defeat the grizzly' },
-  { done: () => !!quest.cave.part, title: 'Search the cave' },
   { done: () => quest.crafted['hide-armor'], title: 'Craft hide armor' },
   { done: () => false, title: 'Meadows complete' }
 ];
@@ -2336,6 +2858,9 @@ Object.assign(sfx, {
   bite:   () => noiseBurst(0.1, 600, 0.12),
   splash: () => noiseBurst(0.25, 1400, 0.1),
   roar:   () => { tone(80, 0.5, 'sawtooth', 0.06); tone(60, 0.6, 'sawtooth', 0.05, 0.1); },
+  snow:   () => noiseBurst(0.07, 2600, 0.08),
+  bow:    () => { tone(420, 0.05, 'triangle', 0.05); noiseBurst(0.06, 3200, 0.06); },
+  ignite: () => { noiseBurst(0.3, 700, 0.12); tone(110, 0.2, 'sawtooth', 0.04); },
   die:    () => { tone(330, 0.15, 'triangle', 0.05); tone(247, 0.15, 'triangle', 0.05, 0.15); tone(165, 0.35, 'triangle', 0.05, 0.3); }
 });
 
@@ -2402,45 +2927,44 @@ function tickHunger(dt) {
     vitals.starveT += dt;
     if (vitals.starveT >= STARVE_EVERY) {
       vitals.starveT = 0;
-      vitals.hp = Math.max(0, vitals.hp - 0.5);
-      floatText('Starving', player.x, player.y - 34, '#ff6b6b');
-      sfx.hurt();
-      const flash = $('#hurt-flash');
-      flash.classList.remove('is-on');
-      void flash.offsetWidth;
-      flash.classList.add('is-on');
-      if (vitals.hp <= 0) die();
-      markDirty();
+      loseHp(0.5, 'Starving');
     }
   } else vitals.starveT = 0;
   renderVitals();
 }
 
-// the biomes open one at a time. right now that's the meadows, then the rest
-// once the meadows quest is finished. base camp is always open.
-const OPEN_FIRST = ['camp', 'meadows'];
-function playLandmarkLocked(p) {
-  return !OPEN_FIRST.includes(p.region) && !meadowsComplete();
+// the biomes open one at a time, in this order. one you haven't reached yet
+// can still be walked and its landmarks found (it's a résumé, after all), but
+// you can't mine, chop, build or go inside anything there until the one before
+// it is cleared. snow is the exception, see mineInfo. the mines, dunes and
+// tundra chapters aren't built yet, so for now only the meadows can be cleared.
+// base camp is always open.
+const CHAPTERS = ['meadows', 'mines', 'dunes', 'tundra'];
+const CHAPTER_DONE = { meadows: () => meadowsComplete(), mines: () => false, dunes: () => false, tundra: () => false };
+function biomeOpen(id) {
+  const i = CHAPTERS.indexOf(id);
+  return i <= 0 || CHAPTER_DONE[CHAPTERS[i - 1]]();
 }
-const sealHinted = new Set();
+// fast travel works in a biome once it's cleared, and home with the meadows
+function playBiomeCleared(id) { return id === 'camp' ? CHAPTER_DONE.meadows() : !!CHAPTER_DONE[id] && CHAPTER_DONE[id](); }
+const prevBiome = id => regionById[CHAPTERS[CHAPTERS.indexOf(id) - 1]].biome;
+function playRegionNote(id) { return biomeOpen(id) ? '' : `Look around. Clear ${prevBiome(id)} to do anything here.`; }
+function lockedToast(id) {
+  if (lockHintT > 0) return;
+  lockHintT = 2.5;
+  toast('Locked', regionById[id].biome, `Clear ${prevBiome(id)} first`);
+  sfx.deny();
+}
 let wasComplete = null;
-function checkSeals() {
+function checkChapters() {
   const done = meadowsComplete();
   if (wasComplete === false && done) {
-    toast('Meadows complete', 'New lands open', 'The other biomes\' landmarks can be found now');
+    toast('Meadows complete', 'The Mines are open', 'Fast travel works in the Meadows now');
     sfx.found();
     renderJournal(journalRegion);
+    paintMinimap();
   }
   wasComplete = done;
-  if (done || room) return;
-  POIS.forEach(p => {
-    if (sealHinted.has(p.id) || found.has(p.id) || !playLandmarkLocked(p) || p.thing.gone) return;
-    if (Math.hypot(p.thing.x - player.x, p.thing.y - player.y) < TILE * 3.4) {
-      sealHinted.add(p.id);
-      toast('Sealed', '? ? ?', 'Finish the Meadows first');
-      sfx.deny();
-    }
-  });
 }
 
 // asleep you lie on your back in the bed: head on the pillow with your eyes
@@ -2468,30 +2992,38 @@ function playDrawSleeper(toX, toY) {
   ctx.fillRect(toX(bx + 2), toY(by + top + 1), 14 * S, S);
 }
 
-// going in and out of the cave. you come in at the mouth facing the back
+// going in and out of buildings. you come in at the door facing the back
 // wall, and leave onto the ground just outside it facing out.
-function enterCave() {
-  room = caveRoom;
-  player.x = CAVE_MOUTH * TILE + 8;
-  player.y = caveRoom.h - 6;
+function enterRoom(r, quiet) {
+  room = r;
+  player.x = r.door * TILE + 8;
+  player.y = r.h - 6;
   player.face = 'up';
   player.path = null;
   mining = null;
   rockT = 0;
   particles.length = 0;
+  projectiles.length = 0;
   keys.clear();
   Object.assign(cam, { x: room.w / 2 - focusX / S, y: room.h / 2 - focusY / S });
+  if (quiet) return;
   sfx.region();
-  if (!quest.cave.visited) {
+  if (r === caveRoom && !quest.cave.visited) {
     quest.cave.visited = true;
     toast('Inside', 'The Cave', 'It smells like bear in here');
     markDirty();
   }
+  if (r === homeRoom && !quest.homeVisited) {
+    quest.homeVisited = true;
+    toast('Home', 'Your workshop', 'Craft, cook and store things in here. There\'s room for a bed.');
+    markDirty();
+  }
 }
 function playLeaveRoom(quiet) {
+  const r = room;
   room = null;
-  player.x = caveThing.x;
-  player.y = caveThing.y + 10;
+  player.x = r.exit.x;
+  player.y = r.exit.y;
   player.face = 'down';
   mining = null;
   particles.length = 0;
@@ -2499,16 +3031,21 @@ function playLeaveRoom(quiet) {
   Object.assign(cam, clampCam(camTarget()));
   if (!quiet) sfx.ui();
 }
-// walking up into the open mouth takes you in, same as clicking the cave
-function checkCaveMouth() {
-  if (room || !caveOpen() || player.dead) return;
-  const mouthX = cavePoi.at[0] * TILE + 8, mouthY = cavePoi.at[1] * TILE;
+const buildingOpen = b => biomeOpen(regionAt(b.tile[0] + 0.5, b.tile[1] + 0.5));
+// walking up into an open doorway takes you in, same as clicking the building
+function checkDoors() {
+  if (room || player.dead) return;
   const pushing = keys.has('w') || keys.has('W') || keys.has('ArrowUp');
-  if (pushing && Math.abs(player.x - mouthX) < 7 && player.y < mouthY + 7) enterCave();
+  if (!pushing) return;
+  for (const b of BUILDINGS) {
+    const doorX = b.tile[0] * TILE + 8, doorY = b.tile[1] * TILE;
+    if (Math.abs(player.x - doorX) < 7 && player.y < doorY + 7 && player.y > doorY && b.open() && buildingOpen(b)) { enterRoom(b.room); return; }
+  }
 }
-function useCave() {
-  if (caveOpen()) { enterCave(); return; }
-  toast('Not yet', 'Something big sleeps here', 'Deal with the grizzly first');
+function useBuilding(b) {
+  if (!buildingOpen(b)) { lockedToast(regionAt(b.tile[0] + 0.5, b.tile[1] + 0.5)); return; }
+  if (b.open()) { enterRoom(b.room); return; }
+  toast(...b.shut);
   sfx.deny();
 }
 
@@ -2625,6 +3162,7 @@ function playUpdate(dt, t) {
       vitals.ky *= Math.max(0, 1 - dt * 10);
     }
     tickHunger(dt);
+    tickStatus(dt);
     // soaked: drips off you while it lasts
     if (vitals.slowT > 0 && Math.random() < dt * 14) {
       particles.push({ x: player.x + (Math.random() - 0.5) * 12, y: player.y - 18, vx: 0, vy: 20, g: 80, life: 0.4, t: 0, col: '#7ec3ff', size: 1 });
@@ -2639,29 +3177,41 @@ function playUpdate(dt, t) {
   // the overworld waits while you're indoors
   if (!room) {
     creatures.forEach(c => updateCreature(c, dt));
+    for (let i = creatures.length - 1; i >= 0; i--) {
+      if (creatures[i].despawn) { things.splice(things.indexOf(creatures[i]), 1); creatures.splice(i, 1); }
+    }
     updateSpawning(dt);
-    checkCaveMouth();
+    updateNightSpawns(dt);
+    updateProjectiles(dt);
+    checkDoors();
   } else if (player.y > room.h - 3) playLeaveRoom();
+  noArrowT -= dt;
   tickSecretRock(dt);
   coreMotes(dt);
   tickClock(dt);
   tickEating(dt);
   tickSleep(dt);
-  checkSeals();
+  checkChapters();
   furnaceTick(dt);
 
   // holding the mouse: hit anything in the swing arc first, otherwise mine
   // whatever's under the cursor, otherwise just swing at the air
+  // (holding a snowball or a bow fires it instead of swinging, unless you're
+  // pointing at something you can dig or chop right in front of you)
   if (mouse.down && !ui && !player.dead) {
     const tool = heldTool();
     const a = aimAngle();
     const tgt = targetAt(mouseWorld());
-    const fighting = creatures.some(c => inArc(c, a, tool));
-    if (!fighting && tgt && !CLICK_ONLY.has(tgt.type) && inReach(tgt)) mineStep(tgt, dt);
+    const held = heldItem() && ITEMS[heldItem().id];
+    const ranged = !room && held && (held.throw || held.ranged);
+    const diggable = tgt && !CLICK_ONLY.has(tgt.type) && inReach(tgt) && (!ranged || mineInfo(tgt).time !== Infinity);
+    const fighting = !ranged && creatures.some(c => inArc(c, a, tool));
+    if (!fighting && diggable) mineStep(tgt, dt);
     else {
       if (mining && mining.thing) mining.thing.shake = 0;
       mining = null;
-      attack();
+      if (ranged) useRanged(held);
+      else attack();
     }
   } else if (mining) {
     if (mining.thing) mining.thing.shake = 0;
@@ -2791,7 +3341,26 @@ function playRenderOverlay(toX, toY, t) {
     ctx.fillText(text, x, y + 1);
   };
   if (!room && !quest.greatTree && Math.hypot(greatTree.x - player.x, greatTree.y - player.y) < TILE * 4) bubble(greatTree, 'HOLD CLICK TO CHOP');
-  if (!room && caveOpen() && !quest.cave.part && Math.hypot(caveThing.x - player.x, caveThing.y - player.y) < TILE * 4) bubble(caveThing, 'CLICK TO ENTER');
+  if (!room) BUILDINGS.forEach(b => { if (b.hint() && b.open() && Math.hypot(b.thing.x - player.x, b.thing.y - player.y) < TILE * 4) bubble(b.thing, 'CLICK TO ENTER'); });
+
+  // things in flight, each with a little shadow on the ground under it
+  if (!room) projectiles.forEach(p => {
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(toX(p.x - 1), toY(p.y + 10), 2 * S, S);
+    if (p.kind === 'snow') {
+      ctx.fillStyle = '#f4f8ff';
+      ctx.fillRect(toX(p.x - 1), toY(p.y - 1), 3 * S, 3 * S);
+      ctx.fillStyle = '#b9cbe6';
+      ctx.fillRect(toX(p.x), toY(p.y + 1), 2 * S, S);
+      return;
+    }
+    const ux = Math.cos(p.a), uy = Math.sin(p.a);
+    const tip = p.kind === 'arrow' ? MAT_PAL[p.mat][1] : '#7be05a';
+    for (let k = -5; k <= 3; k++) {
+      ctx.fillStyle = k >= 2 ? tip : k <= -4 ? (p.kind === 'arrow' ? '#f2efe8' : '#5e3a1c') : (p.kind === 'arrow' ? '#c48a4f' : '#8b4726');
+      ctx.fillRect(toX(p.x + ux * k), toY(p.y + uy * k), S, S);
+    }
+  });
 
   if (eating) {
     const bx = toX(player.x - 10), by = toY(player.y - 46);
@@ -2838,10 +3407,10 @@ canvas.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   const tgt = targetAt(mouseWorld());
   if (tgt && CLICK_ONLY.has(tgt.type)) {
-    const name = tgt.type === 'station' ? { craft: 'Crafting Table', furnace: 'Furnace', chest: 'Chest' }[tgt.st.kind] : tgt.type === 'cave' ? 'The Cave' : '???';
+    const name = tgt.type === 'station' ? { craft: 'Crafting Table', furnace: 'Furnace', chest: 'Chest' }[tgt.st.kind] : tgt.type === 'building' ? tgt.b.name : '???';
     if (!inReach(tgt)) toast('Too far', name, 'Walk up to it first');
     else if (tgt.type === 'station') openUI(tgt.st.kind, tgt.st);
-    else if (tgt.type === 'cave') useCave();
+    else if (tgt.type === 'building') useBuilding(tgt.b);
     else takePart();
     return;
   }

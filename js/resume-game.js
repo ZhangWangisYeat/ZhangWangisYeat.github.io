@@ -30,7 +30,7 @@ const REGIONS = [
     biome: 'Base Camp',
     label: 'Contact',
     accent: '#ff9a3c',
-    blurb: 'Where every run starts. Say hi, or head out into the biomes.',
+    blurb: 'The beginning of every universe. At least, in this demo.',
     blocks: [
       { type: 'profile' },
       {
@@ -63,7 +63,7 @@ const REGIONS = [
     biome: 'The Meadows',
     label: 'Education',
     accent: '#5fd068',
-    blurb: 'Where the save file starts. Two campuses, one long tutorial.',
+    blurb: 'It\'s the safest biome, right?',
     blocks: [
       {
         type: 'entries',
@@ -73,13 +73,13 @@ const REGIONS = [
             title: 'University of California, Los Angeles',
             date: 'Sep 2025 – Present',
             sub: 'B.S. Computer Science & Engineering | Henry Samueli College of Engineering | Los Angeles, CA | Expected Jun 2029',
-            poi: { id: 'ucla', kind: 'bigtree', at: [21, 54], label: 'UCLA' }
+            poi: { id: 'ghs', kind: 'bigtree', at: [21, 54], label: 'Glastonbury HS' }
           },
           {
             title: 'Glastonbury High School',
             date: 'Aug 2021 – Jun 2025',
             sub: 'High School Diploma, Summa Cum Laude | Glastonbury, CT | GPA 4.80 / 4.00',
-            poi: { id: 'ghs', kind: 'hyena', at: [33, 62], label: 'Glastonbury HS' }
+            poi: { id: 'ucla', kind: 'hyena', at: [33, 62], label: 'UCLA' }
           }
         ]
       },

@@ -73,9 +73,9 @@ const REGIONS = [
             title: 'University of California, Los Angeles',
             date: 'Sep 2025 – Present',
             sub: 'B.S. Computer Science & Engineering | Henry Samueli College of Engineering | Los Angeles, CA | Expected Jun 2029',
-            // ucla is the hut out on the lake island. the hyena and the grizzly
-            // guard it, and it only counts as found once both of them are dead
-            poi: { id: 'ucla', kind: 'hut', at: [17, 69], label: 'UCLA', island: true }
+            // ucla is the grizzly's cave out on the lake island. the hyena and the
+            // grizzly guard it, and it only counts as found once both are dead
+            poi: { id: 'ucla', kind: 'cave', at: [17, 69], label: 'UCLA', island: true }
           },
           {
             title: 'Glastonbury High School',
@@ -604,64 +604,40 @@ function makeTent() {
   return G.outline(() => '#3a1a0c').canvas();
 }
 
-// the hut on the lake island: log walls on a stone footing, a mossy thatch roof
-// and two lit windows. it's exactly three tiles wide, which is what the solid
-// footprint in placeDecor assumes. the door is barred shut until the grizzly is
-// dead, then it hangs open (the play layer swaps the frame).
-function makeHut(open) {
-  const w = 48, h = 44, cx = 23.5, ground = h - 2;
+// the grizzly's cave on the lake island: a lumpy mound of boulders with moss
+// on top and a dark mouth at the bottom. it's exactly three tiles wide, which
+// is what the solid footprint in placeDecor assumes.
+function makeCave() {
+  const w = 48, h = 40, cx = 23.5, ground = h - 2;
   const G = pixelGrid(w, h);
-  for (let y = 20; y <= ground; y++) for (let x = 5; x <= 42; x++) {
-    let col = (y - 20) % 4 === 3 ? '#4a2e14' : x < 12 ? '#9a6a3a' : (y - 20) % 4 === 0 ? '#8a5a2e' : '#74491f';
-    if (y >= ground - 2) col = hash2(x >> 1, y, 61) < 0.3 ? '#6e6e6e' : y === ground - 2 ? '#a3a3a3' : '#8a8a8a';
+  // a few overlapping boulders instead of one smooth dome, each lit from the
+  // top left on its own, with a dark seam wherever one sits in front of another
+  const rocks = [[23.5, 30, 23, 17], [12, 31, 11, 9], [36, 31, 11, 9], [19, 16, 10, 9], [30, 17, 10, 9], [24.5, 9, 8, 7]];
+  for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
+    let hit = -1, best = 2;
+    rocks.forEach(([rx, ry, ax, ay], i) => {
+      const dx = (x - rx) / ax, dy = (y - ry) / ay, d = dx * dx + dy * dy;
+      if (d <= 1 && y <= ground && (hit < 0 || i > hit)) { hit = i; best = d; }
+    });
+    if (hit < 0) continue;
+    const [rx, ry, ax, ay] = rocks[hit];
+    const dx = (x - rx) / ax, dy = (y - ry) / ay;
+    const lit = -(dx * 0.6 + dy * 0.8) + (hash2(x, y, 41) - 0.5) * 0.45;
+    let col = lit > 0.55 ? '#a6a6a6' : lit > 0.15 ? '#8c8c8c' : lit > -0.3 ? '#737373' : '#5a5a5a';
+    if (best > 0.82) col = '#4e4e4e';
+    if (hash2(x >> 2, y >> 1, 42) < 0.1) col = '#666666';
+    if (y < ry - ay * 0.45 && hash2(x, y, 44) < 0.6 && dy < -0.35) col = hash2(x, y, 45) < 0.5 ? '#3f8f3a' : '#2f7330';
     G.set(x, y, col);
   }
-  // roof: a wide trapezoid of straw with darker streaks and a few moss patches
-  for (let y = 1; y <= 23; y++) {
-    const half = 7 + (y - 1) * 0.86;
-    for (let x = 0; x < w; x++) {
-      const dx = x - cx;
-      if (Math.abs(dx) > half) continue;
-      const streak = hash2(x, y >> 2, 62);
-      let col = streak < 0.25 ? '#a37a2c' : streak < 0.6 ? '#c09640' : '#d9b45a';
-      if (dx < -half + 3) col = '#e6c674';
-      if (y >= 21) col = y === 23 ? '#6e4e1c' : '#8a6524';
-      if (hash2(x >> 2, y >> 1, 63) < 0.13 && y < 20) col = hash2(x, y, 64) < 0.5 ? '#5d8a3a' : '#4a7330';
-      G.set(x, y, col);
-    }
+  // the mouth, with a lip of lighter stones round the top of it
+  for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
+    const mx = (x - cx) / 7.5, my = (y - ground) / 14;
+    const d = mx * mx + my * my;
+    if (d > 1.25 || y > ground) continue;
+    if (d <= 1) G.set(x, y, d > 0.72 ? '#2a221c' : '#0d0a08');
+    else if (G.get(x, y)) G.set(x, y, hash2(x, y, 46) < 0.5 ? '#b3b3b3' : '#9a9a9a');
   }
-  // ridge cap along the top
-  for (let x = Math.round(cx - 7); x <= Math.round(cx + 7); x++) G.set(x, 1, '#7a5520');
-  // windows, warm light behind a cross frame
-  [[9, 27], [33, 27]].forEach(([wx, wy]) => {
-    for (let y = wy; y < wy + 7; y++) for (let x = wx; x < wx + 6; x++) {
-      const frame = x === wx || x === wx + 5 || y === wy || y === wy + 6 || x === wx + 2 || y === wy + 3;
-      G.set(x, y, frame ? '#3b2412' : y < wy + 3 ? '#ffe39a' : '#ffc45a');
-    }
-  });
-  // door
-  for (let y = 27; y <= ground - 1; y++) for (let x = 19; x <= 28; x++) {
-    const arch = y === 27 && (x === 19 || x === 28);
-    if (arch) continue;
-    const edge = x === 19 || x === 28 || y === 27;
-    let col;
-    if (open) col = edge ? '#3b2412' : y < 31 ? '#1d120a' : '#120b06';
-    else col = edge ? '#3b2412' : y === 31 || y === 37 ? '#4a4a4a' : x % 3 === 0 ? '#5a3818' : '#6b4020';
-    G.set(x, y, col);
-  }
-  if (open) {
-    // the door swung inwards, so you see its edge against the frame
-    for (let y = 28; y <= ground - 1; y++) { G.set(20, y, '#6b4020'); G.set(21, y, '#5a3818'); }
-  } else {
-    // a plank nailed across it
-    pxLineG(G, 18, 30, 29, 38, '#8a5a2e');
-    pxLineG(G, 18, 31, 29, 39, '#5e3a1c');
-  }
-  return G.outline(() => '#24160a').canvas();
-}
-function pxLineG(G, x0, y0, x1, y1, c) {
-  const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
-  for (let i = 0; i <= n; i++) G.set(Math.round(x0 + ((x1 - x0) * i) / n), Math.round(y0 + ((y1 - y0) * i) / n), c);
+  return G.outline(() => '#262626').canvas();
 }
 
 function makeFireFrames(count, small) {
@@ -716,7 +692,7 @@ const SPRITE = {
   iron: [makeCrystal('iron')],
   fire: FIRE,
   tent: [makeTent()],
-  hut: [makeHut(false)]
+  cave: [makeCave()]
 };
 const DECOR = {
   tree: [makeTree(41, false), makeTree(57, false), makeTree(73, false)],
@@ -724,7 +700,7 @@ const DECOR = {
   deadtree: [makeDeadTree(17, false), makeDeadTree(29, false)]
 };
 const GLOW = {
-  fire: '255,140,50', hut: '255,196,110', gold: '255,210,80', diamond: '95,240,224', ruby: '255,90,74', emerald: '90,230,130', iron: '230,226,220', crystal: '160,214,255', torch: '255,150,60'
+  fire: '255,140,50', cave: '150,140,120', gold: '255,210,80', diamond: '95,240,224', ruby: '255,90,74', emerald: '90,230,130', iron: '230,226,220', crystal: '160,214,255', torch: '255,150,60'
 };
 
 // the four biomes meet at a wobbly cross instead of a ruler-straight one
@@ -744,7 +720,7 @@ const quad = new Uint8Array(W * H);
 const reach = new Uint8Array(W * H);
 const idx = (x, y) => y * W + x;
 const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
-// tiles that block you without being terrain, like the hut's walls. they keep
+// tiles that block you without being terrain, like the cave's rock. they keep
 // whatever ground is painted under them.
 const extraSolid = new Set();
 const solidTile = (x, y) => !inside(x, y) || SOLID[tiles[idx(x, y)]] === 1 || extraSolid.has(idx(x, y));
@@ -880,10 +856,10 @@ function placeDecor() {
   things.push({ decor: true, x: (CAMP.x - 3) * TILE, y: (CAMP.y - 1) * TILE + 6, frames: SPRITE.tent });
 
   POIS.forEach(p => {
-    // the hut's walls are solid: the three tiles of the back row plus the two
-    // either side of the door. the door tile itself is left to the play layer,
-    // which keeps it shut until the grizzly is dead.
-    if (p.kind === 'hut') {
+    // the cave's rock is solid: the three tiles of the back row plus the two
+    // either side of the mouth. the mouth tile itself is left to the play
+    // layer, which keeps it blocked until the grizzly is dead.
+    if (p.kind === 'cave') {
       const [hx, hy] = p.at;
       [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0]].forEach(([dx, dy]) => extraSolid.add(idx(hx + dx, hy + dy)));
     }
@@ -1651,29 +1627,8 @@ function render(t) {
   const night = typeof playNight === 'function' ? playNight() : 0;
   const shade = Math.max(0.74 * dark, night);
   if (shade > 0.01) {
-    if (!shadeCanvas || shadeCanvas.width !== cw || shadeCanvas.height !== ch) shadeCanvas = mk(cw, ch);
-    const sg = shadeCanvas.getContext('2d');
-    sg.globalCompositeOperation = 'source-over';
-    sg.clearRect(0, 0, cw, ch);
-    sg.fillStyle = `rgba(3,4,12,${shade})`;
-    sg.fillRect(0, 0, cw, ch);
-    sg.globalCompositeOperation = 'destination-out';
-    const hole = (x, y, inner, outer) => {
-      const g = sg.createRadialGradient(x, y, inner, x, y, outer);
-      g.addColorStop(0, 'rgba(0,0,0,1)');
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      sg.fillStyle = g;
-      sg.fillRect(x - outer, y - outer, outer * 2, outer * 2);
-    };
     const tight = night > 0.5;
-    hole(toX(player.x), toY(player.y - 12), TILE * S * (tight ? 1.6 : 2.6), TILE * S * (tight ? 4.5 : 8.5));
-    for (const gl of glows) {
-      if (gl.off || !gl.flicker) continue;
-      const rad = gl.rad * TILE * S * 1.5, gx = toX(gl.x), gy = toY(gl.y);
-      if (gx < -rad || gy < -rad || gx > cw + rad || gy > ch + rad) continue;
-      hole(gx, gy, rad * 0.25, rad);
-    }
-    ctx.drawImage(shadeCanvas, 0, 0);
+    drawShade(shade, toX, toY, TILE * S * (tight ? 1.6 : 2.6), TILE * S * (tight ? 4.5 : 8.5), glows);
   }
   const lit = Math.max(dark, night);
 
@@ -1710,7 +1665,7 @@ function render(t) {
 }
 
 // everything that stands up gets sorted by its feet so you walk in front of and
-// behind it. flat things (rugs, hatches) always go underneath.
+// behind it. flat things (like a hollow in the floor) always go underneath.
 function drawSprites(list, toX, toY, t) {
   list.push({ isPlayer: true, y: player.y });
   list.sort((a, b) => (a.flat ? -1e9 + a.y : a.y) - (b.flat ? -1e9 + b.y : b.y));
@@ -1736,12 +1691,42 @@ function drawParticles(toX, toY) {
   }
   ctx.globalAlpha = 1;
 }
+// one layer of black with holes cut out for your own light and for every
+// flickering light source, so in the dark you only see what's being lit up
+function drawShade(shade, toX, toY, inner, outer, lights) {
+  const cw = canvas.width, ch = canvas.height;
+  if (!shadeCanvas || shadeCanvas.width !== cw || shadeCanvas.height !== ch) shadeCanvas = mk(cw, ch);
+  const sg = shadeCanvas.getContext('2d');
+  sg.globalCompositeOperation = 'source-over';
+  sg.clearRect(0, 0, cw, ch);
+  sg.fillStyle = `rgba(3,4,12,${shade})`;
+  sg.fillRect(0, 0, cw, ch);
+  sg.globalCompositeOperation = 'destination-out';
+  const hole = (x, y, a, b) => {
+    const g = sg.createRadialGradient(x, y, a, x, y, b);
+    g.addColorStop(0, 'rgba(0,0,0,1)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    sg.fillStyle = g;
+    sg.fillRect(x - b, y - b, b * 2, b * 2);
+  };
+  hole(toX(player.x), toY(player.y - 12), inner, outer);
+  for (const gl of lights) {
+    if (gl.off || !gl.flicker) continue;
+    const rad = gl.rad * TILE * S * 1.5, gx = toX(gl.x), gy = toY(gl.y);
+    if (gx < -rad || gy < -rad || gx > cw + rad || gy > ch + rad) continue;
+    hole(gx, gy, rad * 0.25, rad);
+  }
+  ctx.drawImage(shadeCanvas, 0, 0);
+}
+
 // indoors: the room's floor and walls, its furniture sorted with you, and its
-// own lamps. no night, no labels, no weather.
+// own lights. no night, no labels, no weather. a room with `shade` is dark
+// like the mines, lit only around you and by its own lights.
 function renderRoom(toX, toY, t) {
   ctx.drawImage(room.canvas, toX(0), toY(0), room.w * S, room.h * S);
   drawSprites(room.things.filter(o => !o.gone), toX, toY, t);
   drawParticles(toX, toY);
+  if (room.shade) drawShade(room.shade, toX, toY, TILE * S * 1.4, TILE * S * 3.8, room.glows);
   ctx.globalCompositeOperation = 'lighter';
   for (const gl of room.glows) {
     if (gl.off) continue;

@@ -93,7 +93,7 @@ const MINE_TIME = { wood: 2.4, stone: 5, ore: 8 };
 const NO_HARVEST_SLOW = 3;
 const REACH_TILES = 2.6;
 // things you click once rather than hold down on
-const CLICK_ONLY = new Set(['station', 'hut', 'part']);
+const CLICK_ONLY = new Set(['station', 'cave', 'part']);
 const ORE_ITEM = { [T.GOLD]: 'gold-ore', [T.DIAMOND]: 'diamond', [T.RUBY]: 'ruby', [T.EMERALD]: 'emerald', [T.IRON]: 'iron-ore' };
 const ORE_NEED = { 'iron-ore': 1, 'gold-ore': 2, ruby: 2, emerald: 2, diamond: 2 };
 const STONE_TILES = new Set([T.STONE, T.PEAK, T.WALL, T.ICEROCK]);
@@ -568,113 +568,86 @@ function makeBed() {
   return G.outline(() => '#2b1a0c').canvas();
 }
 
-// the inside of the hut, 11 x 8 tiles. log walls, a window and a shelf on the
-// back wall, a plank floor, and a gap in the bottom wall that's the door.
-const HUT_COLS = 11, HUT_ROWS = 8, HUT_DOOR = 5;
-function paintHutRoom() {
-  const w = HUT_COLS * TILE, h = HUT_ROWS * TILE;
+// the inside of the cave, 11 x 8 tiles. rough rock round the edge that bulges
+// in and out, a gritty floor of stone and packed dirt, a few bones, and the
+// way out at the bottom. the collision is still the plain rectangle (two rows
+// of wall at the back, one tile everywhere else), the rock is just painted
+// a little past it in places so the edge doesn't look ruled.
+const CAVE_COLS = 11, CAVE_ROWS = 8, CAVE_MOUTH = 5;
+function paintCaveRoom() {
+  const w = CAVE_COLS * TILE, h = CAVE_ROWS * TILE;
   const c = mk(w, h), g = c.getContext('2d');
-  const r = mulberry32(SEED + 808);
+  const img = g.createImageData(w, h), d = img.data;
+  const mouthL = CAVE_MOUTH * TILE, mouthR = (CAVE_MOUTH + 1) * TILE;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const wob = (vnoise(x / 9, y / 9, 803) - 0.5) * 9;
+    const top = 32 + wob, side = 16 + wob * 0.7, bot = h - 16 - wob * 0.7;
+    const inMouth = x > mouthL + 1 && x < mouthR - 1 && y > h - 20;
+    const fromWall = Math.min(y - top, x - side, w - side - x, inMouth ? 99 : bot - y);
+    const n = hash2(x, y, 801);
+    let r, gg, b;
+    if (fromWall < 0) {
+      // rock. the back wall shows its face (lighter just above the floor),
+      // the rest is the top of the rock seen from above
+      const face = y < top && y > top - 10 && x > side && x < w - side;
+      const v = face ? 92 - (top - y) * 3 : fromWall > -2 ? 70 : 34;
+      r = v; gg = v - 4; b = v - 8;
+      if (n < 0.14) { r -= 14; gg -= 14; b -= 14; } else if (n > 0.93) { r += 16; gg += 16; b += 16; }
+    } else {
+      const dirt = vnoise(x / 20, y / 20, 802) > 0.58;
+      r = dirt ? 98 : 86; gg = dirt ? 84 : 82; b = dirt ? 68 : 78;
+      if (n < 0.1) { r -= 16; gg -= 16; b -= 16; } else if (n > 0.95) { r += 18; gg += 18; b += 18; }
+      // a soft shadow along the foot of every wall
+      if (fromWall < 4) { r -= 22 - fromWall * 5; gg -= 22 - fromWall * 5; b -= 22 - fromWall * 5; }
+    }
+    const i = (y * w + x) * 4;
+    d[i] = r; d[i + 1] = gg; d[i + 2] = b; d[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
   const px = (x, y, col, ww = 1, hh = 1) => { g.fillStyle = col; g.fillRect(x, y, ww, hh); };
-  // planks: 6px boards with staggered joints and the odd knot
-  for (let y = 0, row = 0; y < h; y += 6, row++) {
-    px(0, y, row % 2 ? '#916236' : '#9a6a3c', w, 6);
-    px(0, y, '#a8784a', w, 1);
-    px(0, y + 5, '#5e3b1c', w, 1);
-    for (let x = (row * 17) % 40; x < w; x += 40) px(x, y, '#5e3b1c', 1, 6);
-    for (let k = 0; k < 3; k++) px((r() * w) | 0, y + 2 + ((r() * 2) | 0), '#6e4524', 2, 1);
-  }
-  // back wall: stacked logs, with a window and a shelf
-  for (let y = 0; y < 32; y += 4) {
-    px(0, y, '#7a4a26', w, 4);
-    px(0, y, '#94603a', w, 1);
-    px(0, y + 3, '#4e2f16', w, 1);
-  }
-  px(36, 8, '#3b2412', 26, 18);
-  px(38, 10, '#d6efff', 22, 7);
-  px(38, 17, '#a9d8ff', 22, 7);
-  px(48, 10, '#3b2412', 2, 14);
-  px(38, 16, '#3b2412', 22, 2);
-  px(104, 15, '#4e2f16', 40, 3);
-  px(104, 14, '#a8784a', 40, 1);
-  [[108, '#c8414b'], [116, '#e6c541'], [124, '#5fe08a'], [134, '#e2ddd6']].forEach(([x, col]) => {
-    px(x, 8, '#2b1a0c', 6, 6);
-    px(x + 1, 9, col, 4, 5);
-    px(x + 1, 9, 'rgba(255,255,255,0.45)', 1, 2);
+  // old bones, and a puddle where the roof drips
+  [[44, 88], [100, 104]].forEach(([x, y]) => {
+    px(x, y, '#e8e2d2', 9, 2); px(x - 1, y - 1, '#e8e2d2', 2, 4); px(x + 8, y - 1, '#e8e2d2', 2, 4);
+    px(x, y + 2, '#a8a294', 9, 1);
   });
-  // a lantern hanging between them
-  px(87, 0, '#2b2b2b', 1, 9);
-  px(84, 9, '#2b2b2b', 7, 2);
-  px(85, 11, '#ffd77a', 5, 6);
-  px(84, 17, '#2b2b2b', 7, 2);
-  px(0, 32, 'rgba(0,0,0,0.3)', w, 3);
-  // wall tops round the edge, darkest at the outside
-  const wallTop = (x, y, ww, hh) => { px(x, y, '#2a190c', ww, hh); px(x + 2, y + 2, '#3b2412', ww - 4, hh - 4); };
-  wallTop(0, 0, 16, h);
-  wallTop(w - 16, 0, 16, h);
-  wallTop(0, h - 16, HUT_DOOR * TILE + 2, 16);
-  wallTop((HUT_DOOR + 1) * TILE - 2, h - 16, w - (HUT_DOOR + 1) * TILE + 2, 16);
-  px(0, 0, '#2a190c', w, 3);
-  // daylight spilling in through the doorway
-  const gr = g.createLinearGradient(0, h, 0, h - 26);
-  gr.addColorStop(0, 'rgba(255,240,200,0.4)');
+  px(66, 46, '#3d4f63', 14, 4); px(64, 47, '#3d4f63', 18, 2); px(68, 46, '#7d98b3', 4, 1);
+  // daylight coming in through the mouth
+  const gr = g.createLinearGradient(0, h, 0, h - 30);
+  gr.addColorStop(0, 'rgba(255,240,200,0.45)');
   gr.addColorStop(1, 'rgba(255,240,200,0)');
   g.fillStyle = gr;
-  g.fillRect(HUT_DOOR * TILE, h - 26, TILE, 26);
+  g.fillRect(mouthL, h - 30, TILE, 30);
   return c;
 }
-// the rug the table stands on. folded, its right half is flipped back over the
-// left, so you see the pale underside and whatever it was hiding.
-function makeRug(folded) {
-  const w = 64, h = 36;
-  const G = pixelGrid(w, h);
-  const half = folded ? 31 : w;
-  for (let y = 2; y < h - 2; y++) for (let x = 3; x < Math.min(w - 3, half); x++) {
-    const border = y < 5 || y > h - 6 || x < 6 || x > w - 7;
-    const dx = Math.abs(((x - 6) % 13) - 6), dy = Math.abs(y - h / 2);
-    let col = border ? '#7a1f1a' : '#b8342b';
-    if (!border && dx + dy * 0.6 < 4 && dx + dy * 0.6 > 2.4) col = '#e0b14a';
-    if ((y === 5 || y === h - 6) && x >= 6 && x <= w - 7) col = '#e0b14a';
-    G.set(x, y, col);
-  }
-  // fringe on the short ends
-  for (let y = 3; y < h - 3; y += 2) { G.set(1, y, '#efe2c0'); G.set(2, y, '#efe2c0'); if (!folded) { G.set(w - 2, y, '#efe2c0'); G.set(w - 3, y, '#efe2c0'); } }
-  if (folded) {
-    // the flap lying back over the rug, underside up, fringe now on its left
-    for (let y = 1; y < h - 1; y++) for (let x = 22; x <= 35; x++) {
-      const edge = x === 35 || y === 1 || y === h - 2;
-      G.set(x, y, edge ? '#8a7a5a' : x > 32 ? '#c9b78f' : '#ddcca4');
-    }
-    for (let y = 3; y < h - 3; y += 2) { G.set(20, y, '#efe2c0'); G.set(21, y, '#efe2c0'); }
-  }
-  return G.outline(() => '#3b120e').canvas();
+// loose rocks for the cave floor. two shapes, and the one hiding the core is
+// one of these too, so there's nothing to tell it apart.
+function makeBoulder(v) {
+  const G = pixelGrid(18, 14);
+  const [rx, ry] = v ? [7.5, 5.5] : [6.5, 6];
+  pxBlob(G, 9, 7.5, rx, ry, (dx, dy, x, y) => {
+    const lit = -(dx * 0.6 + dy * 0.8) + (hash2(x, y, 90 + v) - 0.5) * 0.4;
+    return lit > 0.5 ? '#a6a6a6' : lit > 0.05 ? '#8a8a8a' : lit > -0.4 ? '#6e6e6e' : '#575757';
+  });
+  return G.outline(() => '#262626').canvas();
 }
-function makeSmallTable() {
-  const G = pixelGrid(22, 18);
-  for (let y = 9; y <= 16; y++) [3, 18].forEach(x => { G.set(x, y, '#5a3818'); G.set(x + 1, y, '#7a4f26'); });
-  for (let y = 2; y <= 8; y++) for (let x = 1; x <= 20; x++) G.set(x, y, y === 2 ? '#d9a066' : y >= 7 ? '#8a5a2e' : '#c48a4f');
-  // a candle stub and a cup
-  G.set(6, 1, '#f2ede0'); G.set(6, 0, '#ffd23f'); G.set(6, 2, '#f2ede0');
-  G.set(14, 3, '#9a9a9a'); G.set(15, 3, '#9a9a9a'); G.set(14, 4, '#6f6f6f'); G.set(15, 4, '#6f6f6f');
-  return G.outline(() => '#3b220f').canvas();
-}
-function makeStraw() {
-  const G = pixelGrid(30, 18);
-  pxBlob(G, 15, 10, 13, 6.5, (dx, dy, x, y) => (hash2(x, y, 71) < 0.25 ? '#a37a2c' : dy < -0.3 ? '#ecd27a' : '#d9b45a'));
-  for (let k = 0; k < 10; k++) { const x = 3 + k * 2.6; G.set(x, 3 + (k % 3), '#c09640'); }
+// the grizzly's bed: a ring of flattened straw with tufts of brown fur in it
+function makeNest() {
+  const G = pixelGrid(32, 18);
+  pxBlob(G, 16, 10, 14, 6.5, (dx, dy, x, y) => {
+    const dd = dx * dx + dy * dy;
+    if (dd < 0.3) return hash2(x, y, 72) < 0.3 ? '#7b4a29' : '#a37a2c';
+    return hash2(x, y, 71) < 0.25 ? '#a37a2c' : dy < -0.3 ? '#ecd27a' : '#d9b45a';
+  });
   return G.outline(() => '#5e4210').canvas();
 }
-function makeBarrel() {
-  const G = pixelGrid(18, 22);
-  for (let y = 2; y <= 20; y++) {
-    const half = 7 - Math.abs(y - 11) * 0.12;
-    for (let x = Math.round(9 - half); x <= Math.round(8 + half); x++) {
-      const band = y === 5 || y === 17;
-      G.set(x, y, band ? '#5c5c5c' : x < 6 ? '#a8703f' : (x % 4 === 0 ? '#6e4020' : '#8a5a2e'));
-    }
-  }
-  for (let x = 3; x <= 14; x++) G.set(x, 2, '#c48a4f');
-  return G.outline(() => '#2b1a0c').canvas();
+// a clump of glowing mushrooms, the only light deep in the cave
+function makeShrooms() {
+  const G = pixelGrid(14, 12);
+  [[4, 6, 2.6], [9, 4, 3.2], [11, 8, 2]].forEach(([x, y, r]) => {
+    for (let k = y + 1; k <= 11; k++) G.set(x, k, '#cfe8e0');
+    pxBlob(G, x, y, r, r * 0.7, (dx, dy) => (dy < -0.2 ? '#bffcf0' : '#5fe6c8'));
+  });
+  return G.outline(() => '#123a33').canvas();
 }
 
 // livestock, all facing right like the other creatures. frames 0-3 walk.
@@ -772,7 +745,7 @@ const SAVE_KEY = 'dm-save';
 const inv = { slots: new Array(24).fill(null), armor: null, sel: 0 };   // slots 0-5 are the hotbar
 const craftGrid = new Array(25).fill(null);
 const furnaceState = { input: null, fuel: null, output: null, burn: 0, prog: 0 };
-const quest = { greatTree: false, chopped: [], mined: [], killed: {}, seen: {}, crafted: {}, recipes: [], beds: [], spawnBed: null, day: 1, hut: {}, parts: [], hutChest: null };
+const quest = { greatTree: false, chopped: [], mined: [], killed: {}, seen: {}, crafted: {}, recipes: [], beds: [], spawnBed: null, day: 1, cave: {}, parts: [], caveChest: null };
 // hunger works like minecraft's. saturation is a hidden buffer on top of a full
 // hunger bar: healing spends it, and it trickles away very slowly on its own (a
 // bit faster while you walk). once it's empty, walking starts eating into hunger,
@@ -832,16 +805,16 @@ function loadSave() {
   if (Array.isArray(data.chest)) data.chest.slice(0, 18).forEach((st, i) => { chestSlots[i] = validStack(st); });
   if (typeof data.clock === 'number') clock = ((data.clock % DAY_LEN) + DAY_LEN) % DAY_LEN;
   quest.beds = Array.isArray(quest.beds) ? quest.beds : [];
-  quest.hut = quest.hut && typeof quest.hut === 'object' ? quest.hut : {};
+  quest.cave = quest.cave && typeof quest.cave === 'object' ? quest.cave : {};
   quest.parts = Array.isArray(quest.parts) ? quest.parts.filter(id => ITEMS[id] && ITEMS[id].part) : [];
-  if (Array.isArray(quest.hutChest)) quest.hutChest = Array.from({ length: 6 }, (_, i) => validStack(quest.hutChest[i]));
+  if (Array.isArray(quest.caveChest)) quest.caveChest = Array.from({ length: 6 }, (_, i) => validStack(quest.caveChest[i]));
   if (data.furnace) {
     ['input', 'fuel', 'output'].forEach(k => { furnaceState[k] = validStack(data.furnace[k]); });
     furnaceState.burn = +data.furnace.burn || 0;
   }
 }
 // older saves had the great tree as ucla. now the tree is glastonbury and ucla
-// is the hut, which can only be found once both guards are dead, so a ucla
+// is the cave, which can only be found once both guards are dead, so a ucla
 // without that is really the tree. checked every load rather than by save
 // version, because dm-found can outlive dm-save.
 function fixFoundIds() {
@@ -1063,63 +1036,70 @@ function spawnPassive(kind, r, minFromPlayer) {
   ['cow', 'sheep', 'chicken'].forEach(kind => { for (let n = 0; n < CREATURES[kind].count; n++) spawnPassive(kind, r, 0); });
 }
 
-// ucla is the hut on the lake island, and the two hunters are what stand
-// between you and it. the hyena prowls the meadow between the great tree and
-// the lake, but only shows up once the great tree has come down. the grizzly
-// sleeps right in front of the hut door.
-const hutPoi = POIS.find(p => p.kind === 'hut');
-const hutThing = hutPoi.thing;
+// ucla is the grizzly's cave on the lake island, and the two hunters are what
+// stand between you and it. the hyena prowls the meadow between the great tree
+// and the lake, but only shows up once the great tree has come down. the
+// grizzly sleeps right in front of the cave mouth.
+const cavePoi = POIS.find(p => p.kind === 'cave');
+const caveThing = cavePoi.thing;
 const hyena = spawnCreature('hyena', 33, 62, { dormant: !quest.greatTree || quest.killed.hyena });
 if (quest.killed.hyena) hyena.dead = true;
-const bear = spawnCreature('bear', hutPoi.at[0], hutPoi.at[1] + 2);
+const bear = spawnCreature('bear', cavePoi.at[0], cavePoi.at[1] + 2);
 if (quest.killed.bear) { bear.dead = true; bear.gone = true; }
-function playLandmarkGuarded(p) { return p === hutPoi && !(quest.killed.hyena && quest.killed.bear); }
+function playLandmarkGuarded(p) { return p === cavePoi && !(quest.killed.hyena && quest.killed.bear); }
 
-// the hut door stays barred (and solid) until the grizzly is dead
-const HUT_OPEN = makeHut(true);
-const hutDoor = idx(hutPoi.at[0], hutPoi.at[1]);
-const hutOpen = () => !!quest.killed.bear;
-function openHut() {
-  hutThing.frames = [HUT_OPEN];
-  extraSolid.delete(hutDoor);
-}
-if (hutOpen()) openHut();
-else extraSolid.add(hutDoor);
+// the cave mouth stays blocked until the grizzly is dead
+const caveMouth = idx(cavePoi.at[0], cavePoi.at[1]);
+const caveOpen = () => !!quest.killed.bear;
+function openCave() { extraSolid.delete(caveMouth); }
+if (caveOpen()) openCave();
+else extraSolid.add(caveMouth);
 
-// the hut's chest starts out stocked with a bit of everything raw
-if (!Array.isArray(quest.hutChest)) {
-  quest.hutChest = [makeStack('raw-beef', 3), makeStack('raw-mutton', 4), makeStack('raw-chicken', 5), null, null, null];
+// somebody's old chest at the back of the cave, still stocked with raw meat
+if (!Array.isArray(quest.caveChest)) {
+  quest.caveChest = [makeStack('raw-beef', 3), makeStack('raw-mutton', 4), makeStack('raw-chicken', 5), null, null, null];
 }
-const RUG = makeRug(false), RUG_FOLDED = makeRug(true);
-const hutRoom = {
-  w: HUT_COLS * TILE, h: HUT_ROWS * TILE, dust: '#916236',
-  canvas: paintHutRoom(),
-  outside: { x: hutThing.x, y: hutThing.y },
-  // the walls, plus a way out through the doorway and nowhere else
+const caveRoom = {
+  w: CAVE_COLS * TILE, h: CAVE_ROWS * TILE, dust: '#6e6a64', shade: 0.62,
+  canvas: paintCaveRoom(),
+  outside: { x: caveThing.x, y: caveThing.y },
+  // the walls, plus a way out through the mouth and nowhere else
   blocked(x, y) {
     const wall = (px, py) => {
       const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
-      if (tx === HUT_DOOR && ty >= HUT_ROWS - 1) return false;
-      return tx <= 0 || tx >= HUT_COLS - 1 || ty <= 1 || ty >= HUT_ROWS - 1;
+      if (tx === CAVE_MOUTH && ty >= CAVE_ROWS - 1) return false;
+      return tx <= 0 || tx >= CAVE_COLS - 1 || ty <= 1 || ty >= CAVE_ROWS - 1;
     };
     return wall(x - 4, y - 3) || wall(x + 3, y - 3) || wall(x - 4, y) || wall(x + 3, y);
   },
   things: [],
-  glows: [{ x: 87, y: 14, rgb: '255,190,110', rad: 4.5, flicker: true, strength: 0.28 }]
+  glows: [
+    { x: 88, y: 122, rgb: '255,236,200', rad: 3.4, flicker: true, strength: 0.2 },
+    { x: 26, y: 92, rgb: '95,230,200', rad: 2.6, flicker: true, strength: 0.26 },
+    { x: 150, y: 44, rgb: '95,230,200', rad: 2.6, flicker: true, strength: 0.26 }
+  ]
 };
-const hutChestSt = { kind: 'chest', station: 'chest', slots: quest.hutChest, x: 40, y: 47, frames: [makeChest()] };
-const rugThing = { flat: true, x: 104, y: 95, frames: [quest.hut.rug ? RUG_FOLDED : RUG] };
-// the hatch under the rug, with the core sitting in it. drawn by hand so the
-// core can pulse and pull light in towards it.
-const hatchThing = { flat: true, x: 120, y: 84, gone: !quest.hut.rug, frames: [mk(24, 22)], draw: drawHatch };
-hutRoom.things.push(
-  hutChestSt, rugThing, hatchThing,
-  { x: 88, y: 84, frames: [makeSmallTable()] },
-  { x: 34, y: 104, frames: [makeStraw()] },
-  { x: 146, y: 52, frames: [makeBarrel()] }
+const caveChestSt = { kind: 'chest', station: 'chest', slots: quest.caveChest, x: 40, y: 47, frames: [makeChest()] };
+const BOULDERS = [makeBoulder(0), makeBoulder(1)];
+// the core's rock is the third one along the right. it sits with the others
+// and is drawn from the same two shapes, so nothing gives it away.
+const ROCK_SPOT = { x: 134, y: 78 };
+const secretRock = { x: ROCK_SPOT.x + (quest.cave.rock ? 18 : 0), y: ROCK_SPOT.y, frames: [BOULDERS[0]], slide: quest.cave.rock ? 1 : 0 };
+// the hollow under it, with the core sitting in it. drawn by hand so the core
+// can pulse and pull light in towards it.
+const hollowThing = { flat: true, x: ROCK_SPOT.x, y: ROCK_SPOT.y + 2, gone: !quest.cave.rock, frames: [mk(24, 26)], draw: drawHollow };
+caveRoom.things.push(
+  caveChestSt, hollowThing, secretRock,
+  { x: 58, y: 70, frames: [BOULDERS[1]] },
+  { x: 96, y: 58, frames: [BOULDERS[0]] },
+  { x: 74, y: 100, frames: [BOULDERS[1]] },
+  { x: 144, y: 104, frames: [BOULDERS[1]] },
+  { x: 120, y: 102, frames: [makeNest()] },
+  { x: 26, y: 96, frames: [makeShrooms()] },
+  { x: 150, y: 48, frames: [makeShrooms()] }
 );
-const coreGlow = { x: 120, y: 73, rgb: '150,120,255', rad: 2.2, strength: 0.3, off: !quest.hut.rug || !!quest.hut.part };
-hutRoom.glows.push(coreGlow);
+const coreGlow = { x: ROCK_SPOT.x, y: ROCK_SPOT.y - 10, rgb: '150,120,255', rad: 2.2, flicker: true, strength: 0.3, off: !quest.cave.rock || !!quest.cave.part };
+caveRoom.glows.push(coreGlow);
 checkRecipeUnlocks();
 
 const playerBox = () => ({ x0: player.x - 6, x1: player.x + 6, y0: player.y - 20, y1: player.y });
@@ -1219,13 +1199,13 @@ function killCreature(c) {
   const cc = creatureCenter(c);
   burst(cc.x, cc.y, c.def.chip, 26);
   c.def.drops.forEach(([id, a, b], line) => gain(id, rand(a, b), cc.x, cc.y - 14 - line * 10));
-  if (c.kind === 'bear') openHut();
+  if (c.kind === 'bear') openCave();
   // ucla is the pair of them, so it's found the moment the second one falls.
   // the landmark toast goes first, then the "what you got" one once it's had
   // a moment on screen.
   const both = quest.killed.hyena && quest.killed.bear;
-  if (both) discover(hutPoi);
-  const after = c.kind === 'hyena' ? 'Marble makes tools at Base Camp' : 'Hide makes armor at Base Camp. The hut is open.';
+  if (both) discover(cavePoi);
+  const after = c.kind === 'hyena' ? 'Marble makes tools at Base Camp' : 'Hide makes armor at Base Camp. Its cave is open.';
   setTimeout(() => toast('Defeated', c.def.name, after), both ? 2300 : 0);
   markDirty();
 }
@@ -1573,20 +1553,18 @@ function thingAt(m, pred) {
 }
 
 // what's under the cursor that you could act on: a station, a tree, or a block.
-// in the hut it's the chest, the rug, or what was under the rug.
+// in the cave it's only the chest, or the core once it's been uncovered. the
+// rocks are never targets, on purpose (see tickSecretRock).
 function targetAt(m) {
   const st = thingAt(m, o => o.station);
   if (st) return { type: 'station', st, key: `st:${st.kind}`, cx: st.x, cy: st.y - 8 };
   if (room) {
-    if (!quest.hut.rug && thingAt(m, o => o === rugThing)) {
-      return { type: 'rug', thing: rugThing, key: 'rug', cx: rugThing.x, cy: rugThing.y - 18, barY: rugThing.y - 44, cls: 'cloth' };
-    }
-    if (quest.hut.rug && !quest.hut.part && thingAt(m, o => o === hatchThing)) {
-      return { type: 'part', thing: hatchThing, key: 'part', cx: hatchThing.x, cy: hatchThing.y - 10 };
+    if (quest.cave.rock && !quest.cave.part && thingAt(m, o => o === hollowThing)) {
+      return { type: 'part', thing: hollowThing, key: 'part', cx: hollowThing.x, cy: hollowThing.y - 10 };
     }
     return null;
   }
-  if (thingAt(m, o => o === hutThing)) return { type: 'hut', thing: hutThing, key: 'hut', cx: hutThing.x, cy: hutThing.y - 10 };
+  if (thingAt(m, o => o === caveThing)) return { type: 'cave', thing: caveThing, key: 'cave', cx: caveThing.x, cy: caveThing.y - 10 };
   const bed = thingAt(m, o => o.bed);
   if (bed) return { type: 'bed', thing: bed, key: `bed:${bed.id}`, cx: bed.x, cy: bed.y - 10, cls: 'wood' };
   const tree = thingAt(m, o => o.tree || (o === greatTree && !greatTree.chopped));
@@ -1605,9 +1583,8 @@ const inReach = tgt => tgt && Math.hypot(tgt.cx - player.x, tgt.cy - (player.y -
 // how much durability it eats. time is Infinity if it's locked.
 function mineInfo(tgt) {
   const s = heldItem(), it = s ? ITEMS[s.id] : null;
-  // picking a bed back up is quick and free, and so is dragging a rug aside
+  // picking a bed back up is quick and free
   if (tgt.type === 'bed') return { time: 0.6, drops: true, cost: 0 };
-  if (tgt.type === 'rug') return { time: 1.4, drops: true, cost: 0 };
   if (CLICK_ONLY.has(tgt.type)) return { time: Infinity };
   if (tgt.type === 'tree') {
     if (!tgt.great && !quest.greatTree) return { time: Infinity };
@@ -1655,7 +1632,7 @@ function mineStep(tgt, dt) {
     player.swing = 0;
     faceAngle(Math.atan2(tgt.cy - (player.y - 10), tgt.cx - player.x));
     sfx.chip();
-    const rgb = tgt.cls === 'wood' ? '160,102,58' : tgt.cls === 'ore' ? '200,200,200' : tgt.cls === 'cloth' ? '184,52,43' : '140,140,140';
+    const rgb = tgt.cls === 'wood' ? '160,102,58' : tgt.cls === 'ore' ? '200,200,200' : '140,140,140';
     burst(tgt.cx, tgt.cy, rgb, 3);
   }
   if (mining.t >= info.time) breakTarget(tgt, info);
@@ -1670,8 +1647,6 @@ function breakTarget(tgt, info) {
   if (tgt.type === 'bed') {
     removeBed(tgt.thing);
     gain('bed', 1, tgt.cx, tgt.cy - 10);
-  } else if (tgt.type === 'rug') {
-    pullRug();
   } else if (tgt.type === 'tree') {
     const o = tgt.thing;
     if (tgt.great) {
@@ -2131,7 +2106,7 @@ function slotHTML(ref, stack, extra = '') {
   </button>`;
 }
 
-// which chest is open, the camp one or the hut's
+// which chest is open, the camp one or the cave's
 let openChest = chestSlots;
 function openUI(kind, st) {
   ui = kind;
@@ -2197,7 +2172,7 @@ function stationHTML() {
     </div>`;
   }
   if (ui === 'chest') {
-    return `<div class="st-chest"><p class="inv-label">Chest <span>${openChest === chestSlots ? 'stays here at camp' : 'in the hut'}</span></p>
+    return `<div class="st-chest"><p class="inv-label">Chest <span>${openChest === chestSlots ? 'stays here at camp' : 'in the cave'}</span></p>
       <div class="chest-grid">${openChest.map((st, i) => slotHTML(`chest:${i}`, st)).join('')}</div></div>`;
   }
   if (ui === 'furnace') {
@@ -2305,7 +2280,7 @@ const QUEST_STEPS = [
   { done: () => quest.killed.hyena, title: () => (quest.seen.hyena ? 'Defeat the marble hyena' : 'Find the next landmark') },
   { done: craftedWeapon, title: 'Craft a weapon' },
   { done: () => quest.killed.bear, title: 'Defeat the grizzly' },
-  { done: () => !!quest.hut.part, title: 'Search the hut' },
+  { done: () => !!quest.cave.part, title: 'Search the cave' },
   { done: () => quest.crafted['hide-armor'], title: 'Craft hide armor' },
   { done: () => false, title: 'Meadows complete' }
 ];
@@ -2493,29 +2468,30 @@ function playDrawSleeper(toX, toY) {
   ctx.fillRect(toX(bx + 2), toY(by + top + 1), 14 * S, S);
 }
 
-// going in and out of the hut. you come in at the doorway facing the room, and
-// leave onto the step just outside the door facing out.
-function enterHut() {
-  room = hutRoom;
-  player.x = HUT_DOOR * TILE + 8;
-  player.y = hutRoom.h - 6;
+// going in and out of the cave. you come in at the mouth facing the back
+// wall, and leave onto the ground just outside it facing out.
+function enterCave() {
+  room = caveRoom;
+  player.x = CAVE_MOUTH * TILE + 8;
+  player.y = caveRoom.h - 6;
   player.face = 'up';
   player.path = null;
   mining = null;
+  rockT = 0;
   particles.length = 0;
   keys.clear();
   Object.assign(cam, { x: room.w / 2 - focusX / S, y: room.h / 2 - focusY / S });
   sfx.region();
-  if (!quest.hut.visited) {
-    quest.hut.visited = true;
-    toast('Inside', 'The Hut', 'Someone left in a hurry. Search the place.');
+  if (!quest.cave.visited) {
+    quest.cave.visited = true;
+    toast('Inside', 'The Cave', 'It smells like bear in here');
     markDirty();
   }
 }
 function playLeaveRoom(quiet) {
   room = null;
-  player.x = hutThing.x;
-  player.y = hutThing.y + 10;
+  player.x = caveThing.x;
+  player.y = caveThing.y + 10;
   player.face = 'down';
   mining = null;
   particles.length = 0;
@@ -2523,56 +2499,77 @@ function playLeaveRoom(quiet) {
   Object.assign(cam, clampCam(camTarget()));
   if (!quiet) sfx.ui();
 }
-// walking up into the open doorway takes you in, same as clicking the hut
-function checkHutDoor() {
-  if (room || !hutOpen() || player.dead) return;
-  const doorX = hutPoi.at[0] * TILE + 8, doorY = hutPoi.at[1] * TILE;
+// walking up into the open mouth takes you in, same as clicking the cave
+function checkCaveMouth() {
+  if (room || !caveOpen() || player.dead) return;
+  const mouthX = cavePoi.at[0] * TILE + 8, mouthY = cavePoi.at[1] * TILE;
   const pushing = keys.has('w') || keys.has('W') || keys.has('ArrowUp');
-  if (pushing && Math.abs(player.x - doorX) < 7 && player.y < doorY + 7) enterHut();
+  if (pushing && Math.abs(player.x - mouthX) < 7 && player.y < mouthY + 7) enterCave();
 }
-function useHut() {
-  if (hutOpen()) { enterHut(); return; }
-  toast('Barred', 'The door won\'t budge', 'Something big is guarding it');
+function useCave() {
+  if (caveOpen()) { enterCave(); return; }
+  toast('Not yet', 'Something big sleeps here', 'Deal with the grizzly first');
   sfx.deny();
 }
 
-// left click and hold on the rug drags it aside. under it is a hatch, and in
-// the hatch is the first part of the machine.
-function pullRug() {
-  quest.hut.rug = true;
-  rugThing.frames = [RUG_FOLDED];
-  hatchThing.gone = false;
-  coreGlow.off = !!quest.hut.part;
-  burst(rugThing.x + 14, rugThing.y - 18, '217,199,160', 16);
-  toast('Under the rug', 'A hidden hatch', 'Something down there is humming');
+// the rock with the core under it looks and acts exactly like the other rocks:
+// it's never a target, so there's no outline, no hand cursor, no wobble and no
+// progress bar, and holding the mouse on it just swings at the air like
+// anywhere else. keep holding on it (in reach) for a few seconds and it rolls
+// aside, and that's the first sign anything was there. letting go starts the
+// count over.
+const ROCK_TIME = 2.6;
+let rockT = 0;
+function tickSecretRock(dt) {
+  if (quest.cave.rock) {
+    // finish rolling it out of the way after it gives
+    if (secretRock.slide < 1) {
+      secretRock.slide = Math.min(1, secretRock.slide + dt * 2.5);
+      secretRock.x = ROCK_SPOT.x + smooth(secretRock.slide) * 18;
+    }
+    return;
+  }
+  const m = mouseWorld(), f = secretRock.frames[0];
+  const over = m.x >= secretRock.x - f.width / 2 && m.x <= secretRock.x + f.width / 2 && m.y >= secretRock.y - f.height && m.y <= secretRock.y + 2;
+  const near = Math.hypot(secretRock.x - player.x, secretRock.y - 6 - (player.y - 8)) <= REACH_TILES * TILE;
+  rockT = room === caveRoom && mouse.down && !ui && !player.dead && over && near ? rockT + dt : 0;
+  if (rockT >= ROCK_TIME) moveRock();
+}
+function moveRock() {
+  quest.cave.rock = true;
+  rockT = 0;
+  secretRock.slide = 0;
+  hollowThing.gone = false;
+  coreGlow.off = !!quest.cave.part;
+  sfx.crunch();
+  burst(ROCK_SPOT.x, ROCK_SPOT.y - 4, '140,140,140', 18);
+  toast('Under the rock', 'A hollow in the floor', 'Something down there is humming');
   markDirty();
 }
 function takePart() {
-  if (!inv.slots.some(s => !s)) { toast('Bag full', '???', 'Make some room in your inventory (E)'); sfx.deny(); return; }
+  if (!inv.slots.some(st => !st)) { toast('Bag full', '???', 'Make some room in your inventory (E)'); sfx.deny(); return; }
   addItem('exotic-core', 1);
-  quest.hut.part = true;
+  quest.cave.part = true;
   if (!quest.parts.includes('exotic-core')) quest.parts.push('exotic-core');
   coreGlow.off = true;
-  burst(hatchThing.x, hatchThing.y - 10, '150,120,255', 24);
+  burst(hollowThing.x, hollowThing.y - 10, '150,120,255', 24);
   toast('Found', '???', `Part ${quest.parts.length} of ${MACHINE_PARTS}`);
   sfx.found();
   markDirty();
 }
-// the open hatch: lid flipped up, a dark pit, and the core sitting in it with a
-// slow pulse of light round the ring and a darker breath in the middle
-function drawHatch(o, toX, toY, t) {
-  const x0 = o.x - 12, y0 = o.y - 22;
-  ctx.fillStyle = '#7a4a26';
-  ctx.fillRect(toX(x0 + 1), toY(y0 - 6), 22 * S, 6 * S);
-  ctx.fillStyle = '#94603a';
-  ctx.fillRect(toX(x0 + 1), toY(y0 - 6), 22 * S, S);
-  ctx.fillStyle = '#3b2412';
-  ctx.fillRect(toX(x0), toY(y0), 24 * S, 22 * S);
-  ctx.fillStyle = '#0b0806';
-  ctx.fillRect(toX(x0 + 2), toY(y0 + 2), 20 * S, 18 * S);
-  if (quest.hut.part) return;
+// the hollow the rock was sitting on: a dark pit in the floor with the core
+// standing in it, a slow pulse of light round the ring and a darker breath in
+// the middle
+function drawHollow(o, toX, toY, t) {
+  const cx = o.x, py = o.y - 6;
+  for (let y = -5; y <= 5; y++) {
+    const half = Math.round(Math.sqrt(1 - (y / 5.5) ** 2) * 11);
+    ctx.fillStyle = Math.abs(y) >= 4 ? '#3a3532' : '#0b0908';
+    ctx.fillRect(toX(cx - half), toY(py + y), half * 2 * S, S);
+  }
+  if (quest.cave.part) return;
   const bob = reduceMotion ? 0 : Math.round(Math.sin(t / 500));
-  const cx = o.x, cy = y0 + 10 + bob;
+  const cy = py - 9 + bob;
   ctx.drawImage(CORE, toX(cx - 12), toY(cy - 11), 24 * S, 24 * S);
   const pulse = reduceMotion ? 0.5 : 0.5 + Math.sin(t / 380) * 0.5;
   ctx.globalCompositeOperation = 'lighter';
@@ -2587,9 +2584,9 @@ function drawHatch(o, toX, toY, t) {
 }
 // light falling into the core instead of coming off it
 function coreMotes(dt) {
-  if (room !== hutRoom || !quest.hut.rug || quest.hut.part || reduceMotion || Math.random() > dt * 9) return;
+  if (room !== caveRoom || !quest.cave.rock || quest.cave.part || reduceMotion || Math.random() > dt * 9) return;
   const a = Math.random() * Math.PI * 2, d = 16 + Math.random() * 10;
-  const cx = hatchThing.x, cy = hatchThing.y - 12;
+  const cx = hollowThing.x, cy = hollowThing.y - 15;
   particles.push({ x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, vx: -Math.cos(a) * d * 1.6, vy: -Math.sin(a) * d * 1.6, g: 0, life: 0.6, t: 0, col: Math.random() < 0.5 ? '#7ff7ff' : '#c08bff', size: 1 });
 }
 
@@ -2643,8 +2640,9 @@ function playUpdate(dt, t) {
   if (!room) {
     creatures.forEach(c => updateCreature(c, dt));
     updateSpawning(dt);
-    checkHutDoor();
+    checkCaveMouth();
   } else if (player.y > room.h - 3) playLeaveRoom();
+  tickSecretRock(dt);
   coreMotes(dt);
   tickClock(dt);
   tickEating(dt);
@@ -2783,7 +2781,7 @@ function playRenderOverlay(toX, toY, t) {
   });
 
   // hint bubbles that sit above a landmark's label so they never cover you:
-  // "hold click" on the great tree until it's down, "click" on the open hut
+  // "hold click" on the great tree until it's down, "click" on the open cave
   const bubble = (o, text) => {
     const tw = ctx.measureText(text).width, pad = fs * 0.5;
     const x = toX(o.x), y = toY(o.y - o.frames[0].height - 3) - fs * 3.4;
@@ -2793,7 +2791,7 @@ function playRenderOverlay(toX, toY, t) {
     ctx.fillText(text, x, y + 1);
   };
   if (!room && !quest.greatTree && Math.hypot(greatTree.x - player.x, greatTree.y - player.y) < TILE * 4) bubble(greatTree, 'HOLD CLICK TO CHOP');
-  if (!room && hutOpen() && !quest.hut.part && Math.hypot(hutThing.x - player.x, hutThing.y - player.y) < TILE * 4) bubble(hutThing, 'CLICK TO ENTER');
+  if (!room && caveOpen() && !quest.cave.part && Math.hypot(caveThing.x - player.x, caveThing.y - player.y) < TILE * 4) bubble(caveThing, 'CLICK TO ENTER');
 
   if (eating) {
     const bx = toX(player.x - 10), by = toY(player.y - 46);
@@ -2840,10 +2838,10 @@ canvas.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   const tgt = targetAt(mouseWorld());
   if (tgt && CLICK_ONLY.has(tgt.type)) {
-    const name = tgt.type === 'station' ? { craft: 'Crafting Table', furnace: 'Furnace', chest: 'Chest' }[tgt.st.kind] : tgt.type === 'hut' ? 'The Hut' : '???';
+    const name = tgt.type === 'station' ? { craft: 'Crafting Table', furnace: 'Furnace', chest: 'Chest' }[tgt.st.kind] : tgt.type === 'cave' ? 'The Cave' : '???';
     if (!inReach(tgt)) toast('Too far', name, 'Walk up to it first');
     else if (tgt.type === 'station') openUI(tgt.st.kind, tgt.st);
-    else if (tgt.type === 'hut') useHut();
+    else if (tgt.type === 'cave') useCave();
     else takePart();
     return;
   }

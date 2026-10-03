@@ -69,8 +69,8 @@ const ITEMS = {
   string:        { name: 'String' },
   // off a zombie. a little hunger, and it might cost you up to a heart
   'poison-meat': { name: 'Poisoned Meat', food: 0.5, sat: 0, poison: true },
-  // the bow fires the best arrows in your bag. its dmg is only for whacking
-  // something with it up close.
+  // the bow fires the best arrows in your bag: hold right click to draw it,
+  // let go to loose. its dmg is only for whacking something with it up close.
   bow:           { name: 'Bow', tool: 'bow', ranged: true, dmg: 0.25, cd: 0.8, reach: 1.4, dur: 120 }
 };
 TIER_ORDER.forEach(m => {
@@ -82,9 +82,9 @@ TIER_ORDER.forEach(m => {
 Object.keys(ARMORS).forEach(m => {
   ITEMS[`${m}-armor`] = { name: `${ARMORS[m].name} Armor`, armor: m, mat: m, dur: ARMORS[m].dur };
 });
-// arrows, weakest to strongest. this is what one does fired point blank. it
-// grows the farther the arrow flies, up to 60% more at ARROW_FULL tiles, so the
-// best arrow from across the screen still hits softer than a diamond sword.
+// arrows, weakest to strongest. this is what one does fired from a full draw,
+// point blank (a part drawn bow does less, see BOW). it grows very slightly the
+// farther the arrow flies, up to 15% more at ARROW_FULL tiles.
 const ARROW_DMG = { wood: 0.5, gold: 0.5, stone: 0.75, marble: 0.85, iron: 1, emerald: 1.25, diamond: 1.5 };
 const ARROW_RANGE = 12, ARROW_FULL = 10;
 TIER_ORDER.forEach(m => { ITEMS[`${m}-arrow`] = { name: `${TIERS[m].name} Arrow`, arrow: m, adm: ARROW_DMG[m] }; });
@@ -1801,7 +1801,7 @@ function updateProjectiles(dt) {
     const c = creatures.find(k => !k.dead && !k.gone && !k.dormant && pointIn(p, creatureBox(k), 3));
     if (!c) continue;
     if (p.kind === 'snow') snowHit(c, p.a);
-    else hurtCreature(c, Math.round(p.dmg * (1 + 0.6 * Math.min(1, p.dist / (ARROW_FULL * TILE))) * 100) / 100, p.a);
+    else hurtCreature(c, Math.round(p.dmg * (1 + 0.15 * Math.min(1, p.dist / (ARROW_FULL * TILE))) * 100) / 100, p.a);
     projectiles.splice(i, 1);
   }
 }
@@ -1838,15 +1838,45 @@ function useRanged(it) {
     afterInventoryChange();
     return;
   }
-  const arrow = bestArrow();
-  if (!arrow) {
-    vitals.atkCD = 0.4;
+}
+
+// the bow: hold right click to draw, aim with the cursor while you hold (you
+// turn to face it and the bow follows), let go to loose. the longer you draw,
+// up to BOW.draw seconds, the harder and farther the arrow flies: a quick tap
+// barely does anything, a full draw hits for 1.2 times the arrow's damage.
+// switching slots, opening a menu or dying while drawn lets the string go
+// without wasting the arrow.
+const BOW = { draw: 1, minMult: 0.3, maxMult: 1.2, minSpeed: 180, maxSpeed: 380, minRange: 5, maxRange: ARROW_RANGE };
+let bowDraw = null;
+const bowCharge = () => (bowDraw ? Math.min(1, bowDraw.t / BOW.draw) : 0);
+function startBowDraw() {
+  if (room || bowDraw || vitals.atkCD > 0 || player.dead) return;
+  if (!bestArrow()) {
     if (noArrowT <= 0) { floatText('No arrows', player.x, player.y - 34, '#cfcfcf'); noArrowT = 1.5; }
     return;
   }
+  bowDraw = { t: 0, slot: inv.sel };
+  sfx.draw();
+}
+function tickBow(dt) {
+  if (!bowDraw) return;
+  const s = heldItem();
+  if (ui || player.dead || sleeping || room || inv.sel !== bowDraw.slot || !s || !ITEMS[s.id].ranged) { bowDraw = null; return; }
+  bowDraw.t += dt;
+  faceAngle(aimAngle());
+}
+function releaseBow() {
+  if (!bowDraw) return;
+  const charge = bowCharge();
+  bowDraw = null;
+  const arrow = bestArrow(), s = heldItem();
+  if (charge < 0.08 || !arrow || !s || !ITEMS[s.id].ranged) return;
+  const a = aimAngle(), o = aimOrigin();
+  faceAngle(a);
   takeItem(arrow, 1);
-  shoot('arrow', o.x, o.y, a, 340, ARROW_RANGE * TILE, { dmg: ITEMS[arrow].adm, mat: ITEMS[arrow].arrow });
-  vitals.atkCD = it.cd;
+  shoot('arrow', o.x, o.y, a, BOW.minSpeed + (BOW.maxSpeed - BOW.minSpeed) * charge, (BOW.minRange + (BOW.maxRange - BOW.minRange) * charge) * TILE,
+    { dmg: ITEMS[arrow].adm * (BOW.minMult + (BOW.maxMult - BOW.minMult) * charge), mat: ITEMS[arrow].arrow });
+  vitals.atkCD = 0.25;
   sfx.bow();
   wearHeld(1);
   afterInventoryChange();
@@ -2336,6 +2366,7 @@ function useRight() {
   }
   const s = heldItem();
   if (s && s.id === 'bed') { placeBed(); return; }
+  if (s && ITEMS[s.id].ranged) { startBowDraw(); return; }
   eat();
 }
 
@@ -2844,7 +2875,7 @@ function renderHUD() {
     </button>`).join('');
   const s = heldItem();
   $('#held-name').textContent = s
-    ? `${ITEMS[s.id].name}${ITEMS[s.id].food ? ' | right-click to eat' : ''}${ITEMS[s.id].throw ? ' | click to throw' : ''}${ITEMS[s.id].ranged ? ` | ${countArrows()} arrows` : ''}${ITEMS[s.id].dur ? ` | ${s.dur}/${ITEMS[s.id].dur}` : ''}`
+    ? `${ITEMS[s.id].name}${ITEMS[s.id].food ? ' | right-click to eat' : ''}${ITEMS[s.id].throw ? ' | click to throw' : ''}${ITEMS[s.id].ranged ? ` | hold right-click to draw | ${countArrows()} arrows` : ''}${ITEMS[s.id].dur ? ` | ${s.dur}/${ITEMS[s.id].dur}` : ''}`
     : 'Bare hands';
 }
 
@@ -2921,6 +2952,7 @@ Object.assign(sfx, {
   roar:   () => { tone(80, 0.5, 'sawtooth', 0.06); tone(60, 0.6, 'sawtooth', 0.05, 0.1); },
   snow:   () => noiseBurst(0.07, 2600, 0.08),
   bow:    () => { tone(420, 0.05, 'triangle', 0.05); noiseBurst(0.06, 3200, 0.06); },
+  draw:   () => { tone(180, 0.25, 'triangle', 0.025); tone(240, 0.3, 'triangle', 0.02, 0.1); },
   ignite: () => { noiseBurst(0.3, 700, 0.12); tone(110, 0.2, 'sawtooth', 0.04); },
   die:    () => { tone(330, 0.15, 'triangle', 0.05); tone(247, 0.15, 'triangle', 0.05, 0.15); tone(165, 0.35, 'triangle', 0.05, 0.3); }
 });
@@ -2952,6 +2984,9 @@ function playDrawHeld(dx, dy, row, col, front) {
   const it = ITEMS[s.id], img = ICON_CANVAS[s.id];
   let x = pose.x, a = pose.a;
   if (player.flip) { x = CELL - x; a = 180 - a; }
+  // a drawn bow is turned so its string runs across your aim, the way you'd
+  // actually hold it
+  if (bowDraw && it.ranged) a = (aimAngle() * 180) / Math.PI - 90;
   // tools are held by the handle and point along the swing, anything else is
   // just a smaller copy of its icon sitting in your hand
   const k = it.tool ? 0.72 : 0.55;
@@ -3267,20 +3302,22 @@ function playUpdate(dt, t) {
   coreMotes(dt);
   tickClock(dt);
   tickEating(dt);
+  tickBow(dt);
   tickSleep(dt);
   checkChapters();
   furnaceTick(dt);
 
   // holding the mouse: hit anything in the swing arc first, otherwise mine
   // whatever's under the cursor, otherwise just swing at the air
-  // (holding a snowball or a bow fires it instead of swinging, unless you're
-  // pointing at something you can dig or chop right in front of you)
+  // (holding a snowball throws it instead of swinging, unless you're pointing
+  // at something you can dig or chop right in front of you. the bow is drawn
+  // with the right button, see startBowDraw.)
   if (mouse.down && !ui && !player.dead) {
     const tool = heldTool();
     const a = aimAngle();
     const tgt = targetAt(mouseWorld());
     const held = heldItem() && ITEMS[heldItem().id];
-    const ranged = !room && held && (held.throw || held.ranged);
+    const ranged = !room && held && held.throw;
     const diggable = tgt && !CLICK_ONLY.has(tgt.type) && inReach(tgt) && (!ranged || mineInfo(tgt).time !== Infinity);
     const fighting = !ranged && creatures.some(c => inArc(c, a, tool));
     if (!fighting && diggable) mineStep(tgt, dt);
@@ -3470,6 +3507,25 @@ function playRenderOverlay(toX, toY, t) {
     }
   });
 
+  // drawing the bow: a bar filling over your head, the arrow nocked along your
+  // aim, and a dotted line out the way it'll go, longer the further you draw
+  if (bowDraw) {
+    const charge = bowCharge(), a = aimAngle(), o = aimOrigin();
+    const bx = toX(player.x - 10), by = toY(player.y - 46);
+    ctx.fillStyle = 'rgba(10,10,14,0.85)';
+    ctx.fillRect(bx, by, 20 * S, 3 * S);
+    ctx.fillStyle = charge >= 1 ? '#ffffff' : '#ffd23f';
+    ctx.fillRect(bx + S, by + S, Math.round(18 * S * charge), S);
+    const ux = Math.cos(a), uy = Math.sin(a), pull = 4 - charge * 3;
+    for (let k = 0; k < 9; k++) {
+      ctx.fillStyle = k > 6 ? MAT_PAL[ITEMS[bestArrow() || 'wood-arrow'].arrow][1] : '#c48a4f';
+      ctx.fillRect(toX(o.x + ux * (k - pull)), toY(o.y + uy * (k - pull)), S, S);
+    }
+    const reachPx = (BOW.minRange + (BOW.maxRange - BOW.minRange) * charge) * TILE;
+    ctx.fillStyle = `rgba(255,240,200,${0.45 + charge * 0.45})`;
+    for (let d = 16; d < reachPx; d += 7) ctx.fillRect(toX(o.x + ux * d), toY(o.y + uy * d), S * 2, S * 2);
+  }
+
   if (eating) {
     const bx = toX(player.x - 10), by = toY(player.y - 46);
     ctx.fillStyle = 'rgba(10,10,14,0.85)';
@@ -3535,8 +3591,8 @@ canvas.addEventListener('pointerdown', e => {
   }
   mouse.down = true;
 });
-window.addEventListener('pointerup', () => { mouse.down = false; });
-window.addEventListener('blur', () => { mouse.down = false; });
+window.addEventListener('pointerup', e => { if (e.button === 2) releaseBow(); else mouse.down = false; });
+window.addEventListener('blur', () => { mouse.down = false; bowDraw = null; });
 canvas.addEventListener('wheel', e => {
   if (!started || ui) return;
   e.preventDefault();

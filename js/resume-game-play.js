@@ -870,10 +870,10 @@ function makeShrooms() {
   return G.outline(() => '#123a33').canvas();
 }
 
-// the inside of the tent, 11 x 8 tiles: canvas walls with the centre pole
-// holding the back up and a lantern hung off it, a dirt floor, and the flap at
-// the bottom. the workshop lines the back wall and the right side is left
-// clear for a bed.
+// the inside of the tent, 11 x 8 tiles: canvas walls with the pole holding
+// the back up and a lantern hung off it, a dirt floor, and the flap at the
+// bottom. the workshop sits in a row at the left of the back wall and the rest
+// of the floor is left open (there's room for a bed and more).
 const HOME_COLS = 11, HOME_ROWS = 8, HOME_DOOR = 5;
 function paintHomeRoom() {
   const w = HOME_COLS * TILE, h = HOME_ROWS * TILE;
@@ -894,14 +894,15 @@ function paintHomeRoom() {
     if (y >= 29) col = '#8a3f1c';
     px(x, y, col);
   }
-  // the centre pole, with the lantern hung off a hook on it
-  px(86, 0, '#6b3a1e', 4, 35);
-  px(86, 0, '#8a4f2a', 1, 35);
-  px(90, 8, '#2b2b2b', 4, 1);
-  px(93, 8, '#2b2b2b', 1, 3);
-  px(90, 11, '#2b2b2b', 7, 2);
-  px(91, 13, '#ffd77a', 5, 6);
-  px(90, 19, '#2b2b2b', 7, 2);
+  // the pole, with the lantern hung off a hook on it. it stands a little
+  // right of the middle so the workshop can sit in one tidy row to its left.
+  px(110, 0, '#6b3a1e', 4, 35);
+  px(110, 0, '#8a4f2a', 1, 35);
+  px(114, 8, '#2b2b2b', 4, 1);
+  px(117, 8, '#2b2b2b', 1, 3);
+  px(114, 11, '#2b2b2b', 7, 2);
+  px(115, 13, '#ffd77a', 5, 6);
+  px(114, 19, '#2b2b2b', 7, 2);
   px(0, 32, 'rgba(0,0,0,0.3)', w, 3);
   // the canvas round the sides and front, seen from above
   const wallTop = (x, y, ww, hh) => { px(x, y, '#8a3f1c', ww, hh); px(x + 2, y + 2, '#b3572a', ww - 4, hh - 4); };
@@ -1574,12 +1575,13 @@ const homeRoom = {
     { x: 26, y: 106, frames: [makePlant()] },
     { x: 147, y: 47, frames: [makeBookshelf()] }
   ],
-  glows: [{ x: 93, y: 16, rgb: '255,190,110', rad: 4.5, flicker: true, strength: 0.25 }]
+  glows: [{ x: 117, y: 16, rgb: '255,190,110', rad: 4.5, flicker: true, strength: 0.25 }]
 };
-// a tile or so of floor between each, so they read as separate pieces
-addStation('craft', 34, 47, homeRoom);
-addStation('furnace', 66, 46, homeRoom);
-addStation('chest', 108, 46, homeRoom);
+// side by side from the left wall, 4px apart (table 20-45, furnace 50-71,
+// chest 76-97), so the rest of the tent stays open for other things
+addStation('craft', 33, 47, homeRoom);
+addStation('furnace', 61, 47, homeRoom);
+addStation('chest', 87, 47, homeRoom);
 quest.beds.forEach(bedThing);
 
 // the buildings you can walk into. the cave opens once the grizzly is dead,

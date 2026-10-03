@@ -919,21 +919,31 @@ function generate() {
     if (!reach[i] && !SOLID[tiles[i]]) tiles[i] = BIOMES[QUADS[quad[i]]].rock;
   }
 
-  // ore veins sprinkled along exposed cave walls. diamond and emerald are
-  // very rare on purpose: the way to get them is beating the mines' bosses.
+  // ore veins sprinkled along exposed cave walls: iron, gold and ruby
   const r = mulberry32(SEED + 404);
-  const ORE_WEIGHTS = [[T.IRON, 56], [T.GOLD, 25], [T.RUBY, 17], [T.DIAMOND, 1.4], [T.EMERALD, 0.6]];
+  const ORE_WEIGHTS = [[T.IRON, 56], [T.GOLD, 25], [T.RUBY, 17]];
+  const ORE_TOTAL = ORE_WEIGHTS.reduce((n, [, w]) => n + w, 0);
   const pickOre = () => {
-    let roll = r() * 100;
+    let roll = r() * ORE_TOTAL;
     for (const [t, w] of ORE_WEIGHTS) { roll -= w; if (roll < 0) return t; }
     return T.IRON;
   };
   const exposed = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inside(x + dx, y + dy) && !solidTile(x + dx, y + dy));
+  const deep = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = idx(x, y);
     if (tiles[i] !== T.WALL || !exposed(x, y)) continue;
     if (r() < 0.1) tiles[i] = pickOre();
+    else if (QUADS[quad[i]] === 'mines' && Math.hypot(x - CAMP.x, y - CAMP.y) > 38) deep.push(i);
   }
+  // diamond and emerald are rationed by hand instead of rolled: two diamonds
+  // and one emerald in the whole world, in the deepest part of the mines, far
+  // from camp. the real way to get them is beating the mines' bosses. (rolling
+  // them at a tiny weight gave anywhere from none to four of one and none of
+  // the other, because the few high rolls clump together.)
+  [[T.DIAMOND, 2], [T.EMERALD, 1]].forEach(([t, n]) => {
+    for (let k = 0; k < n && deep.length; k++) tiles[deep.splice((r() * deep.length) | 0, 1)[0]] = t;
+  });
 }
 
 const things = [];   // everything y-sorted with the player
@@ -1015,6 +1025,8 @@ function placeDecor() {
     };
     p.thing = t;
     things.push(t);
+    // a hole in the floor doesn't give off light (the glow washed the pit out)
+    if (p.kind === 'den') return;
     glows.push({
       x: t.x, y: t.y - t.frames[0].height * 0.45, rgb: GLOW[p.kind] || GLOW.crystal,
       rad: p.kind === 'fire' ? 4.2 : 2.4, flicker: p.kind === 'fire', mine: p.region === 'mines', always: p.kind === 'fire'

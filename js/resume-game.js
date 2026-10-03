@@ -2245,18 +2245,24 @@ function buildTitle() {
 }
 
 // the timelines in motion: an endless stream of them born along the core on
-// the horizon, racing out towards the screen and branching as they come. each
+// the horizon, growing out towards the screen and branching as they come. each
 // one is a curve in 3d: it starts far away (z = FLOW.far) and every second its
 // leading end gets FLOW.speed closer, while drifting outwards in its own
-// direction. drawn in perspective (screen = centre + x * focal / z) that makes
-// it creep out of the vanishing point, then spread and thicken faster and
-// faster until it whips past the edge of the screen, which is what makes them
-// feel like they're coming at you. partway along a strand can split into a
-// new one heading off at an angle, and those can split again, in every
-// direction, and a fifth of the strands are aimed right at you. anything
-// nearer the camera than you are is drawn in front of you, so strands fly past
-// on both sides. they're plotted pixel by pixel (no smoothing) to stay crisp.
-const FLOW = { far: 60, near: 1.4, focal: 120, speed: 15, len: 34, roots: 26, playerZ: 9 };
+// direction. drawn in perspective (screen = centre + x * focal / z) the line
+// creeps out of the vanishing point, then spreads and thickens faster and
+// faster until its end whips past the edge of the screen. partway along, a
+// strand can split into a new one heading off at an angle, and those can split
+// again, in every direction, and a fifth of the strands are aimed right at you.
+// each strand is solid, a whole line from the core to wherever it's got to,
+// and it stays once it's grown. a whole branching family (a strand and
+// everything that forked off it) grows together, since forks travel at the same
+// speed as their parent, lingers a few seconds, then dissolves: its pixels drop
+// out a few at a time in a dither pattern while it dims, on its own timing, so
+// nothing ever vanishes at once. new families are started at a gentle, capped
+// rate so the screen never gets crowded. anything nearer the camera than you is
+// drawn in front of you. plotted pixel by pixel (no smoothing) to stay crisp.
+const FLOW = { far: 60, near: 1.4, focal: 120, speed: 15, families: 14, every: 0.45, playerZ: 9 };
+const FLOW_GROW = (FLOW.far - FLOW.near) / FLOW.speed;
 const FLOW_COLS = ['255,214,120', '255,214,120', '255,190,100', '255,170,80', '255,236,200', '255,236,200', '255,130,70', '120,215,255', '190,140,255', '255,120,190'];
 function flowStrand(r, born, opts) {
   const { cx, cy, fx, fy } = titleLayout();
@@ -2270,7 +2276,9 @@ function flowStrand(r, born, opts) {
     wob: (r() - 0.5) * 7, wf: 0.06 + r() * 0.1, wph: r() * 6.28,
     col: FLOW_COLS[(r() * FLOW_COLS.length) | 0], forks: [], ...opts
   };
-  // where along itself it'll split, and how many times
+  // a new family keeps its timing on its root: how long it lingers once it's
+  // fully grown, and how long it takes to dissolve
+  if (!s.fam) { s.fam = s; s.hold = 2.5 + r() * 4; s.fadeDur = 3 + r() * 3; }
   const n = s.depth === 0 ? 1 + (r() < 0.6 ? 1 : 0) + (r() < 0.25 ? 1 : 0) : s.depth === 1 ? (r() < 0.8 ? 1 : 0) : s.depth === 2 && r() < 0.4 ? 1 : 0;
   for (let k = 0; k < n; k++) s.forks.push(s.s0 + 4 + r() * 26);
   return s;
@@ -2279,32 +2287,44 @@ function flowPoint(s, at) {
   const d = at - s.s0, ease = Math.min(1, d / 8);
   return [s.x0 + s.ux * d + s.wob * Math.sin(d * s.wf + s.wph) * ease, s.y0 + s.uy * d + s.wob * 0.5 * Math.cos(d * s.wf * 1.3 + s.wph) * ease, FLOW.far - at];
 }
+// how much of a family is still there: 1 until it starts to go, then easing
+// down to 0
+function flowLife(s, secs) {
+  const f = s.fam, k = (secs - (f.born + FLOW_GROW + f.hold)) / f.fadeDur;
+  return k <= 0 ? 1 : k >= 1 ? 0 : 1 - k * k * (3 - 2 * k);
+}
 function flowStep(secs) {
-  const r = Math.random;
+  const r = Math.random, span = FLOW_GROW + 6.5 + 6;
   if (!tv.flow) {
-    // start with the screen already full, as if they'd been coming for a while
+    // start with the screen already populated, as if they'd been coming for a
+    // while, with families at every stage of growing and fading
     tv.flow = [];
-    for (let k = 0; k < FLOW.roots; k++) tv.flow.push(flowStrand(r, secs - r() * (FLOW.far + FLOW.len) / FLOW.speed, {}));
+    tv.nextFam = secs;
+    for (let k = 0; k < FLOW.families; k++) tv.flow.push(flowStrand(r, secs - r() * span, {}));
   }
   const kids = [];
   tv.flow = tv.flow.filter(s => {
     const head = s.s0 + FLOW.speed * (secs - s.born);
-    // split off a new branch when the leading end reaches a fork point
+    // split off a new branch when the growing end reaches a fork point
     s.forks = s.forks.filter(at => {
       if (head < at) return true;
       const [X, Y] = flowPoint(s, at), turn = (r() < 0.5 ? -1 : 1) * (0.3 + r() * 0.6);
       const c = Math.cos(turn), sn = Math.sin(turn), m = 0.7 + r() * 0.6;
       kids.push(flowStrand(r, s.born + (at - s.s0) / FLOW.speed, {
-        s0: at, x0: X, y0: Y, depth: s.depth + 1, col: r() < 0.7 ? s.col : FLOW_COLS[(r() * FLOW_COLS.length) | 0],
+        s0: at, x0: X, y0: Y, depth: s.depth + 1, fam: s.fam, col: r() < 0.7 ? s.col : FLOW_COLS[(r() * FLOW_COLS.length) | 0],
         ux: (s.ux * c - s.uy * sn) * m, uy: (s.ux * sn + s.uy * c) * m
       }));
       return false;
     });
-    return head - FLOW.len < FLOW.far - FLOW.near;
+    return flowLife(s, secs) > 0;
   });
   tv.flow.push(...kids);
-  const roots = tv.flow.filter(s => s.depth === 0).length;
-  for (let k = roots; k < FLOW.roots; k++) tv.flow.push(flowStrand(r, secs - r() * 0.4, {}));
+  // a new family every so often, as long as there aren't too many about
+  const families = tv.flow.filter(s => s.depth === 0).length;
+  if (families < FLOW.families && secs >= tv.nextFam) {
+    tv.flow.push(flowStrand(r, secs, {}));
+    tv.nextFam = secs + FLOW.every * (0.6 + r() * 0.8);
+  }
 }
 // draw every strand's stretch that's further away than `minZ` and nearer than
 // `maxZ`, so the ones behind you go down before you and the rest after
@@ -2312,31 +2332,33 @@ function flowDraw(g, secs, minZ, maxZ) {
   const { cx, cy } = titleLayout(), W2 = tv.w, H2 = tv.h;
   g.globalCompositeOperation = 'lighter';
   tv.flow.forEach(s => {
-    const head = s.s0 + FLOW.speed * (secs - s.born), tail = Math.max(s.s0, head - FLOW.len);
-    if (head <= s.s0) return;
+    const life = flowLife(s, secs);
+    const head = Math.min(FLOW.far - FLOW.near, s.s0 + FLOW.speed * (secs - s.born)), growing = head < FLOW.far - FLOW.near;
+    if (head <= s.s0 || life <= 0) return;
     let prev = null;
-    for (let at = tail; at <= head; ) {
+    for (let at = s.s0; at <= head; ) {
       const [X, Y, Z] = flowPoint(s, at);
       const step = Math.max(0.25, Z * 0.06);
-      if (Z < FLOW.near) break;
       const px = cx + (X * FLOW.focal) / Z, py = cy + (Y * FLOW.focal) / Z;
       if (Z >= minZ && Z < maxZ && prev) {
-        // brighter towards the leading end, faded at the tail, thicker up close
-        const fade = Math.min(1, (at - tail) / 8) * (0.6 + 0.4 * Math.min(1, 8 / Z));
-        const w = Z < 3 ? 3 : Z < 8 ? 2 : 1, tip = head - at < 1.2;
+        // eased in where it leaves the core, brighter and thicker up close
+        const fade = Math.min(1, (at - s.s0) / 8) * (0.6 + 0.4 * Math.min(1, 8 / Z)) * (0.35 + 0.65 * life);
+        const w = Z < 3 ? 3 : Z < 8 ? 2 : 1, tip = growing && head - at < 1.2;
         const dx = px - prev[0], dy = py - prev[1], n = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy))));
         if (n < 600) {
-          // a soft glow under the near ones, then the strand itself
           if (w > 1) {
             g.fillStyle = `rgba(${s.col},${fade * 0.18})`;
             for (let i = 1; i <= n; i += 2) {
               const x = Math.round(prev[0] + (dx * i) / n), y = Math.round(prev[1] + (dy * i) / n);
+              if (BAYER[(y & 3) * 4 + (x & 3)] > life) continue;
               g.fillRect(x - w, y - w, w * 2 + 1, w * 2 + 1);
             }
           }
           g.fillStyle = tip ? `rgba(255,250,236,${Math.min(1, fade * 1.6)})` : `rgba(${s.col},${Math.min(1, fade)})`;
           for (let i = 1; i <= n; i++) {
             const x = Math.round(prev[0] + (dx * i) / n), y = Math.round(prev[1] + (dy * i) / n);
+            // dissolving: pixels drop out in a dither pattern as life runs down
+            if (life < 1 && BAYER[(y & 3) * 4 + (x & 3)] > life) continue;
             if (x > -4 && y > -4 && x < W2 + 4 && y < H2 + 4) g.fillRect(x - (w >> 1), y - (w >> 1), w, w);
           }
         }

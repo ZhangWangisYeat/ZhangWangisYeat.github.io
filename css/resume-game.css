@@ -687,6 +687,93 @@ body.map-closed .chip[data-panel="map"] { display: inline-flex; }
 }
 @keyframes drain { to { transform: scaleX(0); } }
 
+.boss-bar {
+  position: fixed;
+  top: 18px;
+  left: var(--focus-x, 50vw);
+  width: min(520px, 46vw);
+  transform: translate(-50%, -10px);
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 17;
+  transition: opacity 0.3s steps(4), transform 0.3s steps(4);
+}
+.boss-bar.is-on { opacity: 1; transform: translate(-50%, 0); }
+.boss-name {
+  font-family: var(--head);
+  font-weight: 700;
+  font-size: 1.15rem;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fff0d8;
+  text-shadow: 0 2px 0 #000;
+}
+.boss-track {
+  --edge: #5a2a2a;
+  position: relative;
+  height: 16px;
+  margin-top: 6px;
+  background: #1a0d10;
+}
+.boss-track i,
+.boss-track b { position: absolute; top: 3px; bottom: 3px; left: 3px; width: 0; }
+.boss-track b { background: #fff3c4; }
+.boss-track i { background: linear-gradient(#ff6a52, #c0392b 60%, #8a2418); }
+.boss-bar.is-mad .boss-track { --edge: #a02818; }
+.boss-bar.is-mad .boss-name { color: #ffb09a; }
+
+.cine { position: fixed; inset: 0; pointer-events: none; z-index: 21; }
+.cine::before,
+.cine::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 12vh;
+  background: #000;
+  transition: transform 0.5s steps(6);
+}
+.cine::before { top: 0; transform: translateY(-100%); }
+.cine::after { bottom: 0; transform: translateY(100%); }
+body.is-cine .cine::before,
+body.is-cine .cine::after { transform: none; }
+.cine-card {
+  position: absolute;
+  top: 20vh;
+  left: var(--focus-x, 50vw);
+  transform: translate(-50%, 12px);
+  text-align: center;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.4s steps(5), transform 0.4s steps(5);
+}
+.cine.show-card .cine-card { opacity: 1; transform: translate(-50%, 0); }
+.cine-eyebrow {
+  font-family: var(--px);
+  font-size: 0.7rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: #ffd23f;
+}
+.cine-title {
+  margin-top: 6px;
+  font-family: var(--head);
+  font-weight: 700;
+  font-size: clamp(2.6rem, 6vw, 4.6rem);
+  line-height: 0.95;
+  text-transform: uppercase;
+  color: #ffffff;
+  text-shadow: 0 4px 0 #000, 0 0 30px rgba(255, 140, 60, 0.5);
+}
+.cine-sub { margin-top: 10px; font-size: 0.9rem; color: var(--ink-2); text-shadow: 0 2px 0 #000; }
+body.is-cine .quest,
+body.is-cine .hud-play,
+body.is-cine .hud-left,
+body.is-cine .toast,
+body.is-cine .boss-bar { opacity: 0; }
+
 .warp {
   position: fixed;
   inset: 0;

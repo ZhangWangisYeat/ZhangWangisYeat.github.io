@@ -100,6 +100,11 @@ ITEMS['exotic-core'] = { part: true, get name() { return partsComplete() ? PART_
 // has one, and you only ever get the one. unlike the core it has a name you
 // can see from the start, because that's what alex called it.
 ITEMS['forest-heart'] = { part: true, name: 'Forest\'s Heart' };
+// moe's drill, off moe the mole. hold right click and it spins up (see
+// tickDrill). it never wears out, it takes anything an emerald pickaxe can,
+// diamond is hard going for it (about as slow as an iron pickaxe), and it just
+// packs snow down, so that's still a job for your hands.
+ITEMS['moe-drill'] = { name: 'Moe\'s Drill', tool: 'drill', dmg: 1.5, cd: 0.5, reach: 1.6, speed: 20, harvest: TIERS.emerald.harvest, slowOn: { diamond: TIERS.iron.speed } };
 // whatever you're holding that isn't a tool hits like a bare hand
 const FIST = { name: 'Bare hands', dmg: 0.25, cd: 0.45, reach: 1.4 };
 const STACK_MAX = 64;
@@ -182,6 +187,22 @@ const CREATURES = {
     // the fourth number is a drop chance: 3% for the heart, and it stops
     // dropping once you have it
     drops: [['stick', 1, 3], ['forest-heart', 1, 1, 0.03]], intro: ['Night', 'It keeps its distance and throws poison tipped sticks.']
+  },
+  // the mines. moles wait under the floor of their burrows and come up when
+  // you get close; they're a bit tougher than the hyena and their teeth hurt
+  // more. moe the mole is the first boss (updateMoe runs him): six times the
+  // grizzly's health, 3 hearts if his drill lunge catches you, and 5 if he
+  // comes up out of the floor right under you.
+  mole: {
+    name: 'Mole', hp: 6, speed: 62, aggro: 6, leash: 99, range: 2.2, minion: true,
+    windup: 0.5, lunge: { speed: 240, time: 0.22 }, cooldown: 1.5, dmg: 1.25,
+    knock: 120, h: 20, box: { w: 20, h: 12 }, rest: 'burrowed', regen: 0.04, chip: '120,104,150',
+    drops: [['iron-ore', 0, 1]], intro: ['Ambush', 'Moles. Mind the teeth.']
+  },
+  moe: {
+    name: 'Moe the Mole', boss: true, steady: true, hp: 90, speed: 36, knock: 0, h: 50, box: { w: 34, h: 26 },
+    windup: 0.7, lunge: { speed: 320, time: 0.32 }, dmg: 1, lungeDmg: 3, popDmg: 5, regen: 0, rest: 'wait',
+    chip: '106,91,130', drops: []
   },
   // passive livestock: wander, graze, and run when you hit them
   cow: {
@@ -385,6 +406,9 @@ function makeIcon(id) {
     case 'exotic-core':
       coreArt(G, 7.5, 7, 5.5, 6, true);
       break;
+    case 'moe-drill':
+      drillIconArt(G, 0);
+      break;
     case 'forest-heart': {
       // a heart of bark with a living green core and a sprout on top
       const rows = ['.XX...XX.', 'XXXX.XXXX', 'XXXXXXXXX', 'XXXXXXXXX', '.XXXXXXX.', '..XXXXX..', '...XXX...', '....X....'];
@@ -454,9 +478,24 @@ function makeIcon(id) {
   }
   return G.outline(() => '#141414').canvas();
 }
+// moe's drill in miniature, pointing up to the top right like the other tools:
+// the grip, the hazard yellow motor, the collar and the threaded bit. spin
+// moves the thread along, for the drill turning in your hand.
+function drillIconArt(G, spin) {
+  pxLine(G, 1, 14, 3, 12, '#2b2b33', 2);
+  for (let k = 0; k <= 4; k++) {
+    const x = 4 + k, y = 11 - k;
+    [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1]].forEach(([a, b]) => G.set(x + a, y + b, (k + a - b + 4) % 2 ? '#1f1f24' : '#f2c84b'));
+  }
+  G.set(9, 6, '#ffffff'); G.set(9, 7, '#c9c4bd'); G.set(10, 7, '#827d77'); G.set(8, 6, '#c9c4bd');
+  pxLine(G, 10, 5, 14, 1, '#b4bccb', 2);
+  [[11 + spin, 4 - spin], [13 - spin, 2 + spin]].forEach(([x, y]) => G.set(x, y, '#4f5768'));
+  G.set(15, 1, '#ffffff');
+}
 // canvases for drawing items in your hand, data urls for the html slots
 const ICON_CANVAS = Object.fromEntries(Object.keys(ITEMS).map(id => [id, makeIcon(id)]));
 const ICON = Object.fromEntries(Object.entries(ICON_CANVAS).map(([id, c]) => [id, c.toDataURL()]));
+const DRILL_SPIN = (() => { const G = pixelGrid(16, 16); drillIconArt(G, 1); return G.outline(() => '#141414').canvas(); })();
 
 // hearts for the hud: full, half, empty
 function makeHeart(kind) {
@@ -638,12 +677,21 @@ function makeBear(frame, pose) {
   return G.outline(() => '#24140a').canvas();
 }
 
-function makeChest() {
+function makeChest(locked) {
   const G = pixelGrid(22, 18);
   for (let y = 7; y <= 16; y++) for (let x = 1; x <= 20; x++) G.set(x, y, y === 11 || y === 14 ? '#7a4a24' : x < 5 ? '#b07a42' : '#9a6233');
   for (let y = 2; y <= 6; y++) for (let x = 1; x <= 20; x++) G.set(x, y, y === 2 ? '#d29a5c' : y === 6 ? '#6e4020' : '#b98049');
   [3, 18].forEach(x => { for (let y = 2; y <= 16; y++) G.set(x, y, y === 2 ? '#9a9a9a' : '#6f6f6f'); });
   for (let y = 5; y <= 8; y++) for (let x = 10; x <= 11; x++) G.set(x, y, y === 5 ? '#ffe28a' : '#d9b23a');
+  if (locked) {
+    // chained shut: two chains across the front and a padlock on the clasp
+    for (let k = 0; k <= 18; k++) {
+      [[2 + k, 3 + Math.round(k * 0.7)], [2 + k, 16 - Math.round(k * 0.7)]].forEach(([x, y]) => G.set(x, y, k % 2 ? '#a6a6a6' : '#5f5f5f'));
+    }
+    [[9, 5], [9, 6], [10, 4], [11, 4], [12, 5], [12, 6]].forEach(([x, y]) => G.set(x, y, '#7a7a7a'));
+    for (let y = 7; y <= 12; y++) for (let x = 8; x <= 13; x++) G.set(x, y, y === 7 ? '#ffe28a' : x === 13 || y === 12 ? '#a8800f' : '#d9b23a');
+    G.set(10, 9, '#3a2a0a'); G.set(10, 10, '#3a2a0a');
+  }
   return G.outline(() => '#2b1a0c').canvas();
 }
 
@@ -971,7 +1019,7 @@ function makeGuardian(frame, pose) {
 }
 // where each night mob's eyes sit in its sprite, so they can glow in the dark
 const EYES = { zombie: [[18, 5]], guardian: [[16, 7], [19, 7]] };
-const HUNTER_MAKERS = { hyena: makeHyena, bear: makeBear, zombie: makeZombie, guardian: makeGuardian };
+const HUNTER_MAKERS = { hyena: makeHyena, bear: makeBear, zombie: makeZombie, guardian: makeGuardian, mole: makeMole };
 
 function creatureFrames(kind) {
   if (PASSIVE_MAKERS[kind]) {
@@ -984,12 +1032,13 @@ function creatureFrames(kind) {
   const walk = [0, 1, 2, 3].map(f => make(f, 'walk'));
   const set = {
     walk,
-    crouch: kind === 'hyena' ? make(0, 'crouch') : make(0, 'lunge'),
+    crouch: kind === 'hyena' || kind === 'mole' ? make(0, 'crouch') : make(0, 'lunge'),
     lunge: make(0, 'lunge'),
     scoop: kind === 'bear' ? make(0, 'scoop') : walk[0],
     sleep: kind === 'bear' ? make(0, 'sleep') : walk[0]
   };
   set.white = new Map([...walk, set.crouch, set.lunge, set.scoop, set.sleep].map(c => [c, whiteOf(c)]));
+  if (kind === 'mole') set.mound = [makeMoleMound(false), makeMoleMound(true)];
   return set;
 }
 
@@ -1003,7 +1052,7 @@ const SAVE_KEY = 'dm-save';
 const inv = { slots: new Array(24).fill(null), armor: null, sel: 0 };   // slots 0-5 are the hotbar
 const craftGrid = new Array(25).fill(null);
 const furnaceState = { input: null, fuel: null, output: null, burn: 0, prog: 0 };
-const quest = { greatTree: false, chopped: [], mined: [], killed: {}, seen: {}, crafted: {}, recipes: [], beds: [], spawnBed: null, day: 1, cave: {}, parts: [], caveChest: null };
+const quest = { greatTree: false, chopped: [], mined: [], killed: {}, seen: {}, crafted: {}, recipes: [], beds: [], spawnBed: null, day: 1, cave: {}, parts: [], caveChest: null, moe: {}, burrows: [], denChest: null };
 // hunger works like minecraft's. saturation is a hidden buffer on top of a full
 // hunger bar: healing spends it, and it trickles away very slowly on its own (a
 // bit faster while you walk). once it's empty, walking starts eating into hunger,
@@ -1066,6 +1115,12 @@ function loadSave() {
   quest.cave = quest.cave && typeof quest.cave === 'object' ? quest.cave : {};
   quest.parts = Array.isArray(quest.parts) ? quest.parts.filter(id => ITEMS[id] && ITEMS[id].part) : [];
   if (Array.isArray(quest.caveChest)) quest.caveChest = Array.from({ length: 6 }, (_, i) => validStack(quest.caveChest[i]));
+  quest.moe = quest.moe && typeof quest.moe === 'object' ? quest.moe : {};
+  quest.burrows = Array.isArray(quest.burrows) ? quest.burrows.map(b => (b && typeof b === 'object' ? {
+    visited: !!b.visited, dead: Array.isArray(b.dead) ? b.dead.map(Boolean) : [],
+    chest: Array.isArray(b.chest) ? Array.from({ length: 6 }, (_, i) => validStack(b.chest[i])) : null
+  } : null)) : [];
+  if (Array.isArray(quest.denChest)) quest.denChest = Array.from({ length: 12 }, (_, i) => validStack(quest.denChest[i]));
   if (data.furnace) {
     ['input', 'fuel', 'output'].forEach(k => { furnaceState[k] = validStack(data.furnace[k]); });
     furnaceState.burn = +data.furnace.burn || 0;
@@ -1081,6 +1136,16 @@ function fixFoundIds() {
   if (found.has('ucla') && !both) { found.delete('ucla'); found.add('ghs'); }
   if (quest.greatTree) found.add('ghs');
   if (both) found.add('ucla');
+  // mines landmarks used to be found just by walking up to them. now each one
+  // waits on its boss, so any found that way that are still guarded go back to
+  // undiscovered, and a beaten boss's landmark always counts as found.
+  let before0 = true;
+  MINE_ORDER.forEach(p => {
+    const boss = MINE_BOSSES[p.id], beaten = !!boss && boss.beaten();
+    if (beaten && before0) found.add(p.id);
+    if (!beaten || !before0) found.delete(p.id);
+    before0 = before0 && found.has(p.id);
+  });
   if ([...found].join() === before) return;
   store.write('dm-found', [...found]);
   paintMinimap();
@@ -1211,6 +1276,7 @@ function addStation(kind, x, y, r) {
   }
   stations.push(st);
   r.things.push(st);
+  return st;
 }
 
 // a hunter with a home spot it prowls or sleeps at and goes back to
@@ -1227,6 +1293,19 @@ function spawnCreature(kind, tx, ty, opts = {}) {
   creatures.push(c);
   things.push(c);
   return c;
+}
+
+// the mines' landmarks are the projects, and each has a boss guarding it.
+// they go in the journal's order: beating a boss reveals its landmark, and every
+// landmark after it stays sealed until all the ones before it are found. only
+// moe exists so far, so the other four stay sealed until their bosses do.
+const MINE_ORDER = POIS.filter(p => p.region === 'mines');
+const MINE_BOSSES = { mailsisi: { beaten: () => !!quest.moe.dead } };
+function mineSealReason(p) {
+  const i = MINE_ORDER.indexOf(p);
+  if (i < 0) return '';
+  if (MINE_ORDER.slice(0, i).some(q => !found.has(q.id))) return 'Beat the bosses before it first.';
+  return MINE_BOSSES[p.id] ? '' : 'Its boss is still on the way.';
 }
 
 loadSave();
@@ -1300,7 +1379,10 @@ const hyena = spawnCreature('hyena', HYENA_HOME.x, HYENA_HOME.y, { dormant: !que
 if (quest.killed.hyena) hyena.dead = true;
 const bear = spawnCreature('bear', cavePoi.at[0], cavePoi.at[1] + 2);
 if (quest.killed.bear) { bear.dead = true; bear.gone = true; }
-function playLandmarkGuarded(p) { return p === cavePoi && !(quest.killed.hyena && quest.killed.bear); }
+function playLandmarkGuarded(p) {
+  if (p === cavePoi) return !(quest.killed.hyena && quest.killed.bear);
+  return !!MINE_BOSSES[p.id] && !MINE_BOSSES[p.id].beaten();
+}
 
 // the cave mouth stays blocked until the grizzly is dead
 const caveMouth = idx(cavePoi.at[0], cavePoi.at[1]);
@@ -1339,7 +1421,7 @@ const caveRoom = {
     { x: 150, y: 44, rgb: '95,230,200', rad: 2.6, flicker: true, strength: 0.26 }
   ]
 };
-const caveChestSt = { kind: 'chest', station: 'chest', slots: quest.caveChest, x: 40, y: 47, frames: [makeChest()] };
+const caveChestSt = { kind: 'chest', station: 'chest', slots: quest.caveChest, where: 'in the cave', x: 40, y: 47, frames: [makeChest()] };
 const BOULDERS = [makeBoulder(0), makeBoulder(1)];
 // the core's rock is the third one along the right. it sits with the others
 // and is drawn from the same two shapes, so nothing gives it away.
@@ -1392,6 +1474,974 @@ const BUILDINGS = [
     shut: ['Not yet', 'Something big sleeps here', 'Deal with the grizzly first'], hint: () => caveOpen() && !quest.cave.part },
   { thing: campHouse, tile: [HOUSE.x, HOUSE.y], room: homeRoom, name: 'Home', open: () => true, hint: () => !quest.homeVisited }
 ];
+
+// the mines' art: the mole holes, the little moles, moe the mole and his drill,
+// and the insides of the holes. everything here is drawn facing right like the
+// other creatures.
+
+// a hole in the mine floor, seen from above: a ring of fresh dirt thrown up
+// round a dark pit, with a few pebbles in it. the edge is lumpy on purpose so
+// it reads as clods of dirt and not a drawn oval.
+function makeMoleHole() {
+  const w = 36, h = 24, cx = 17.5, cy = 12.5;
+  const G = pixelGrid(w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (x - cx) / 16, dy = (y - cy) / 10.5;
+    const d = Math.sqrt(dx * dx + dy * dy) - (hash2(x >> 1, y >> 1, 610) - 0.5) * 0.24;
+    if (d > 1) continue;
+    const pit = ((x - cx) / 9.5) ** 2 + ((y - cy - 0.5) / 5.2) ** 2;
+    let col;
+    if (pit <= 1) col = pit > 0.62 && y < cy ? '#2a2018' : '#0d0a08';
+    else {
+      const lit = -(dx * 0.5 + dy * 0.9) + (hash2(x, y, 611) - 0.5) * 0.5;
+      col = lit > 0.45 ? '#a8865f' : lit > 0 ? '#8a6a4c' : lit > -0.4 ? '#6b5038' : '#4e3a28';
+      if (hash2(x, y, 612) < 0.05) col = '#9a9a9a';
+    }
+    G.set(x, y, col);
+  }
+  return G.outline(() => '#2b1e14').canvas();
+}
+
+// a mole: dark velvet fur, a pink star of a nose, and two big front teeth
+// (they're why it bites harder than the hyena). frames 0-3 shuffle along,
+// 'crouch' bares the teeth, 'lunge' is the bite with the jaw open.
+const MOLE_FUR = { light: '#8a7aa6', base: '#6a5b82', mid: '#54476a', shade: '#3d3350' };
+function moleFur(F, seed) {
+  return (dx, dy, x, y) => {
+    const lit = -(dx * 0.55 + dy * 0.8);
+    let c = lit > 0.55 ? F.light : lit > 0.05 ? F.base : lit > -0.45 ? F.mid : F.shade;
+    // short darker strokes so the fur reads as velvet instead of plastic
+    if (lit < 0.3 && lit > -0.45 && hash2(x >> 1, y, seed) < 0.07) c = F.shade;
+    return c;
+  };
+}
+function moleNose(G, nx, ny) {
+  [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(([a, b]) => G.set(nx + a, ny + b, '#ff8fb6'));
+  [[-1, -1], [1, -2], [2, -1], [2, 2], [1, 3], [-1, 2]].forEach(([a, b]) => G.set(nx + a, ny + b, '#ffc4d8'));
+  G.set(nx + 2, ny, '#e66f98'); G.set(nx + 2, ny + 1, '#e66f98');
+}
+function makeMole(frame, pose) {
+  const G = pixelGrid(34, 19);
+  const ground = 17, lunge = pose === 'lunge', crouch = pose === 'crouch' ? 1 : 0, ahead = lunge ? 2 : 0;
+  const fur = moleFur(MOLE_FUR, 620);
+  [[8, 0], [12, 1], [17 + ahead, 1], [21 + ahead, 0]].forEach(([fx, grp], n) => {
+    const off = lunge ? (n < 2 ? -1 : 1) : STEP[grp][frame % 4];
+    G.set(fx + off, ground - 1, '#d68aa0'); G.set(fx + off + 1, ground - 1, '#d68aa0');
+    G.set(fx + off, ground, '#ece4d4'); G.set(fx + off + 2, ground, '#ece4d4');
+  });
+  pxBlob(G, 13 + ahead / 2, 10 + crouch, 9.5 + ahead / 2, 6, fur);
+  const hx = 21 + ahead, hy = 8 + crouch;
+  pxBlob(G, hx, hy, 5, 4.5, fur);
+  pxBlob(G, hx + 4, hy + 1.5, 2.6, 2, (dx, dy) => (dy < 0 ? MOLE_FUR.light : MOLE_FUR.base));
+  moleNose(G, hx + 7, hy);
+  G.set(hx + 1, hy - 1, '#120c18'); G.set(hx + 2, hy - 1, '#ff4a3a');
+  const ty = hy + 3;
+  if (lunge) {
+    for (let x = hx + 2; x <= hx + 6; x++) G.set(x, ty + 1, '#2a0f18');
+    [[3, 0], [4, 0], [3, 2], [4, 2], [3, 3]].forEach(([a, b]) => G.set(hx + a, ty + b, '#fffbe8'));
+  } else {
+    [[0, 0], [1, 0], [0, 1], [1, 1], [0, 2], [1, 2]].forEach(([a, b]) => G.set(hx + 3 + a, ty + b, b === 2 || a === 1 ? '#cfc3a6' : '#fffbe8'));
+    if (crouch) { G.set(hx + 2, ty, '#2a0f18'); G.set(hx + 5, ty, '#2a0f18'); }
+  }
+  [[hx - 1, ground - 2], [hx, ground - 2], [hx + 1, ground - 1]].forEach(([x, y]) => G.set(x, y, '#ece4d4'));
+  return G.outline(() => '#1a1222').canvas();
+}
+// a mole waiting under the floor: a hump of dirt with the tip of its nose
+// poking out (it ducks back in every so often, that's the second frame)
+function makeMoleMound(peek) {
+  const G = pixelGrid(24, 12);
+  pxBlob(G, 12, 8.5, 10, 4, (dx, dy, x, y) => {
+    const lit = -(dx * 0.5 + dy * 0.9) + (hash2(x, y, 630) - 0.5) * 0.5;
+    return lit > 0.4 ? '#a8865f' : lit > -0.1 ? '#8a6a4c' : '#6b5038';
+  });
+  if (peek) moleNose(G, 11, 3);
+  return G.outline(() => '#2b1e14').canvas();
+}
+
+// moe the mole: a big pear of dark velvet fur in a yellow mining helmet with
+// its lamp lit, a pink star nose, two huge front teeth, a scar across one
+// squinting red eye, a tool belt with spare bits hanging off it, and a digging
+// claw the size of your head held up behind him. his near hand holds the
+// drill, which is drawn separately so it can point anywhere (see makeDrillGrid).
+// each frame remembers how far it's shifted down (oy) so the hand and the lamp
+// can follow it.
+const MOE_W = 54, MOE_H = 50, MOE_HAND = { x: 39, y: 33 }, MOE_LAMP = { x: 44, y: 9 };
+function makeMoe(frame, pose) {
+  const G = pixelGrid(MOE_W, MOE_H);
+  const F = { light: '#7d6d99', base: '#5c4e74', mid: '#473b5e', shade: '#31283f' };
+  const ground = MOE_H - 2, crouch = pose === 'crouch' ? 2 : 0;
+  const oy = crouch + (pose === 'walk' ? frame % 2 : pose === 'idle' ? frame : 0);
+  const fur = moleFur(F, 640);
+  // the far arm and its claw
+  pxLine(G, 15, 30 + oy, 10, 24 + oy, F.shade, 2);
+  pxLine(G, 14, 31 + oy, 9, 25 + oy, F.mid, 2);
+  pxBlob(G, 9, 22 + oy, 4, 3.2, (dx, dy) => (dy < -0.2 ? '#e8a6ba' : '#c47890'));
+  [[5, -1], [7, -0.5], [10, 0], [12, 0.5]].forEach(([x0, lean]) => {
+    for (let i = 0; i < 5; i++) G.set(x0 + lean * i * 0.7, 20 + oy - i, i >= 3 ? '#ffffff' : '#ece4d4');
+  });
+  // feet
+  [[13, 0], [30, 1]].forEach(([fx, grp]) => {
+    const off = pose === 'walk' ? STEP[grp][frame % 4] : crouch ? (fx < 20 ? -1 : 1) : 0;
+    for (let x = 0; x < 8; x++) for (let y = 0; y < 4; y++) G.set(fx + off + x, ground - 3 + y, y <= 1 ? '#e8a6ba' : '#c47890');
+    [1, 3, 5, 7].forEach(k => G.set(fx + off + k, ground + 1, '#ece4d4'));
+  });
+  // body, belly, tool belt with its buckle and two spare drill bits
+  pxBlob(G, 25, 31 + oy, 17, 13, fur);
+  pxBlob(G, 29, 34 + oy, 9, 8.5, (dx, dy) => (dy < -0.3 ? '#9a8ab2' : dx + dy > 0.6 ? '#73658a' : '#8a7aa0'));
+  for (let x = 8; x <= 42; x++) {
+    if (!G.get(x, 37 + oy)) continue;
+    G.set(x, 37 + oy, '#6b4020');
+    G.set(x, 38 + oy, '#4a2a14');
+  }
+  for (let y = 36; y <= 39; y++) for (let x = 30; x <= 33; x++) {
+    G.set(x, y + oy, y === 36 || y === 39 || x === 30 || x === 33 ? '#a8800f' : '#e0b14a');
+  }
+  [16, 21].forEach(x => {
+    [[0, 0, '#b4bccb'], [1, 0, '#7a8396'], [0, 1, '#b4bccb'], [1, 1, '#7a8396'], [0, 2, '#7a8396']].forEach(([a, b, c]) => G.set(x + a, 39 + oy + b, c));
+  });
+  // head and snout
+  pxBlob(G, 35, 18 + oy, 12, 10, fur);
+  pxBlob(G, 45, 22 + oy, 5.5, 3.8, (dx, dy) => (dy < -0.3 ? F.light : dy > 0.4 ? F.mid : F.base));
+  // the star nose: a pink knot with tentacles fanning out round it
+  const nx = 50, ny = 20 + oy;
+  [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(([a, b]) => G.set(nx + a, ny + b, '#ff8fb6'));
+  [[-1, -2], [1, -3], [3, -2], [3, 1], [2, 3], [0, 3], [-2, 2]].forEach(([a, b]) => {
+    G.set(nx + a, ny + b, '#ffc4d8');
+    G.set(nx + Math.round(a * 0.5), ny + Math.round(b * 0.5), '#e66f98');
+  });
+  G.set(nx, ny, '#ffd6e4');
+  // mouth and the two big teeth
+  for (let x = 42; x <= 48; x++) G.set(x, 25 + oy, '#1a1018');
+  for (let y = 26; y <= 29; y++) [44, 45, 46, 47].forEach(x => G.set(x, y + oy, x === 45 || x === 47 || y === 29 ? '#cfc3a6' : '#fffbe8'));
+  // the scar, then the eye: a mean little squint under a heavy brow, with a
+  // red glint in it
+  pxLine(G, 36, 12 + oy, 42, 21 + oy, '#c49aae');
+  [[36, 15], [37, 15], [38, 16], [39, 16], [40, 16], [41, 16]].forEach(([x, y]) => G.set(x, y + oy, '#1a1018'));
+  [[38, 17, '#120c18'], [39, 17, '#ff4a3a'], [40, 17, '#ffb09a'], [38, 18, '#120c18'], [39, 18, '#120c18'], [40, 18, '#120c18']].forEach(([x, y, c]) => G.set(x, y + oy, c));
+  // mining helmet: a yellow dome lit from the top left, the brim, and the lamp
+  for (let y = 3; y <= 13; y++) for (let x = 20; x <= 47; x++) {
+    const dx = (x - 33.5) / 12.5, dy = (y - 13) / 8.5;
+    if (dx * dx + dy * dy > 1) continue;
+    const lit = -(dx * 0.6 + dy * 0.7);
+    G.set(x, y + oy, lit > 0.75 ? '#fff0a0' : lit > 0.3 ? '#f2c84b' : '#c99a1e');
+  }
+  for (let x = 20; x <= 47; x++) { G.set(x, 13 + oy, '#d9b23a'); G.set(x, 14 + oy, '#a8800f'); }
+  G.set(27, 7 + oy, '#ffffff'); G.set(28, 6 + oy, '#ffffff'); G.set(29, 6 + oy, '#fffbe0');
+  for (let y = 6; y <= 11; y++) for (let x = 42; x <= 46; x++) G.set(x, y + oy, '#3a3f47');
+  for (let y = 7; y <= 10; y++) for (let x = 43; x <= 45; x++) G.set(x, y + oy, '#fff6c0');
+  G.set(44, 8 + oy, '#ffffff'); G.set(44, 9 + oy, '#ffffff');
+  // near arm reaching forward to the drill
+  pxLine(G, 31, 27 + oy, 38, 32 + oy, F.base, 2);
+  pxLine(G, 31, 29 + oy, 37, 34 + oy, F.mid);
+  pxBlob(G, 39, 33 + oy, 2.6, 2.4, (dx, dy) => (dy < 0 ? '#e8a6ba' : '#c47890'));
+  const c = G.outline(() => '#1a1222').canvas();
+  c.oy = oy;
+  return c;
+}
+
+// the drill: a rubber grip with a trigger, a hazard striped motor housing
+// with vents and a red light, a steel collar, and a long bit with a thread
+// wound round it. it points right with the grip at (3, 7). there are three
+// spin frames: the thread creeps along the bit, which is what makes it look
+// like it's turning.
+function makeDrillGrid(spin) {
+  const G = pixelGrid(38, 15);
+  for (let y = 5; y <= 9; y++) for (let x = 0; x <= 5; x++) G.set(x, y, y === 5 ? '#4a4a56' : '#2b2b33');
+  G.set(6, 10, '#2b2b33'); G.set(6, 11, '#2b2b33'); G.set(7, 11, '#2b2b33');
+  for (let y = 2; y <= 12; y++) for (let x = 6; x <= 17; x++) {
+    if ((y === 2 || y === 12) && (x === 6 || x === 17)) continue;
+    let col = y <= 3 ? '#fff0a0' : y >= 11 ? '#a8800f' : ((x + y) >> 1) % 2 ? '#f2c84b' : '#1f1f24';
+    if (y === 2 && x % 3 === 0 && x > 7 && x < 17) col = '#1b1b20';
+    G.set(x, y, col);
+  }
+  G.set(8, 4, '#ff3b30'); G.set(9, 4, '#ff8a80');
+  for (let y = 3; y <= 11; y++) { G.set(18, y, y < 6 ? '#ffffff' : '#c9c4bd'); G.set(19, y, '#827d77'); }
+  for (let x = 20; x <= 37; x++) {
+    const r = 5.2 * (1 - (x - 20) / 18) + 0.4;
+    for (let y = Math.ceil(7 - r); y <= Math.floor(7 + r); y++) {
+      const v = (y - 7) / Math.max(r, 0.5);
+      const thread = (((x + (y - 7) * 1.4 + spin * 1.33) % 4) + 4) % 4 < 1.3;
+      let col = v < -0.35 ? '#eef2f8' : v < 0.35 ? '#b4bccb' : '#7a8396';
+      if (thread) col = v < -0.35 ? '#9aa3b3' : '#4f5768';
+      G.set(x, y, col);
+    }
+  }
+  G.set(37, 7, '#ffffff');
+  return G.outline(() => '#121218');
+}
+// turn a pixel grid round a pivot at every one of `steps` angles. it's the
+// rotsprite trick from the title screen: blow it up 4x with scale2x first so
+// the edges stay clean, rotate, then sample back down at 1x. the pivot ends
+// up in the middle of each D x D canvas.
+function rotSet(G, px, py, D, steps) {
+  const w = G.w, h = G.h, src = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) src.push(G.get(x, y));
+  const big = epx2(epx2(src, w, h), w * 2, h * 2), BW = w * 4, BH = h * 4;
+  return Array.from({ length: steps }, (_, k) => {
+    const a = (k / steps) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
+    const c = mk(D, D), g = c.getContext('2d');
+    for (let oy = 0; oy < D; oy++) for (let ox = 0; ox < D; ox++) {
+      const vx = ox + 0.5 - D / 2, vy = oy + 0.5 - D / 2;
+      const bx = Math.floor((px + vx * ca + vy * sa) * 4), by = Math.floor((py - vx * sa + vy * ca) * 4);
+      if (bx < 0 || by < 0 || bx >= BW || by >= BH) continue;
+      const col = big[by * BW + bx];
+      if (col) { g.fillStyle = col; g.fillRect(ox, oy, 1, 1); }
+    }
+    return c;
+  });
+}
+const DRILL_STEPS = 32, DRILL_D = 74;
+const DRILL_ROT = [0, 1, 2].map(spin => rotSet(makeDrillGrid(spin), 3.5, 7.5, DRILL_D, DRILL_STEPS));
+
+// a pile of rocks that comes down over the way out when the fight starts
+function makeRubble() {
+  const G = pixelGrid(34, 22);
+  [[8, 15, 7, 6], [26, 15, 7, 6], [17, 13, 9, 8], [11, 8, 5, 4], [23, 8, 5, 4], [17, 5, 4, 3.5]].forEach(([cx, cy, rx, ry], i) =>
+    pxBlob(G, cx, cy, rx, ry, (dx, dy, x, y) => {
+      const lit = -(dx * 0.6 + dy * 0.8) + (hash2(x, y, 650 + i) - 0.5) * 0.4;
+      return lit > 0.5 ? '#a6a6a6' : lit > 0.05 ? '#8a8a8a' : lit > -0.4 ? '#6e6e6e' : '#575757';
+    }));
+  return G.outline(() => '#262626').canvas();
+}
+
+// the inside of a mole hole: walls of packed earth and rock that bulge in and
+// out, roots hanging through the back, the odd fleck of ore, a floor of loose
+// dirt scored with claw marks, and the slope back up to daylight at the
+// bottom (that's the way out). moe's den is the same thing much bigger, mostly
+// rock, propped up by old mine timbers, with the floor pocked by holes he's
+// filled back in. the collision is the plain rectangle from roomWalls, same as
+// every other room.
+function paintDig(cols, rows, door, seed, den) {
+  const w = cols * TILE, h = rows * TILE;
+  const c = mk(w, h), g = c.getContext('2d');
+  const img = g.createImageData(w, h), d = img.data;
+  const doorL = door * TILE, doorR = (door + 1) * TILE;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const wob = (vnoise(x / 9, y / 9, seed) - 0.5) * 9;
+    const top = 32 + wob, side = 16 + wob * 0.7, bot = h - 16 - wob * 0.7;
+    const inDoor = x > doorL + 1 && x < doorR - 1 && y > h - 20;
+    const fromWall = Math.min(y - top, x - side, w - side - x, inDoor ? 99 : bot - y);
+    const n = hash2(x, y, seed + 1);
+    let r, gg, b;
+    if (fromWall < 0) {
+      const face = y < top && y > top - 12 && x > side && x < w - side;
+      const rock = vnoise(x / 14, y / 14, seed + 2) > (den ? 0.4 : 0.62);
+      const v = face ? 96 - (top - y) * 3 : fromWall > -2 ? 74 : 38;
+      if (rock) { r = v; gg = v - 3; b = v - 6; } else { r = v * 1.05; gg = v * 0.8; b = v * 0.58; }
+      if (n < 0.12) { r -= 14; gg -= 12; b -= 10; } else if (n > 0.94) { r += 14; gg += 12; b += 10; }
+    } else {
+      const loose = vnoise(x / 16, y / 16, seed + 3) > 0.55;
+      r = loose ? 112 : 100; gg = loose ? 86 : 78; b = loose ? 62 : 58;
+      if (n < 0.1) { r -= 16; gg -= 14; b -= 12; } else if (n > 0.95) { r += 16; gg += 14; b += 12; }
+      if (fromWall < 4) { const k = 22 - fromWall * 5; r -= k; gg -= k; b -= k; }
+    }
+    const i = (y * w + x) * 4;
+    d[i] = r; d[i + 1] = gg; d[i + 2] = b; d[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const rnd = mulberry32(seed + 4);
+  const px = (x, y, col, ww = 1, hh = 1) => { g.fillStyle = col; g.fillRect(Math.round(x), Math.round(y), ww, hh); };
+  if (den) {
+    // old holes he's filled back in: rings of darker loose dirt
+    for (let k = 0; k < 14; k++) {
+      const cx = 40 + rnd() * (w - 80), cy = 60 + rnd() * (h - 100), rx = 9 + rnd() * 6;
+      for (let a = 0; a < Math.PI * 2; a += 0.08) {
+        const rr = rx * (0.85 + rnd() * 0.3);
+        px(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.45, 'rgba(60,42,28,0.55)', 2, 1);
+      }
+      px(cx - rx * 0.4, cy - 1, 'rgba(60,42,28,0.25)', rx * 0.8, 2);
+    }
+    // timbers holding the back wall up: posts with a beam across the top
+    for (let x = 36; x < w - 30; x += 72) {
+      px(x - 9, 4, '#5e3a1c', 24, 5); px(x - 9, 4, '#8a5a32', 24, 2);
+      px(x, 6, '#8a5a32', 5, 26); px(x + 4, 6, '#5e3a1c', 1, 26); px(x, 6, '#a8703f', 1, 26);
+    }
+    // a pair of old rails coming in from the right wall and stopping short
+    for (let x = w - 16; x > w - 120; x -= 1) { px(x, h - 46, '#6e6e6e'); px(x, h - 38, '#6e6e6e'); }
+    for (let x = w - 18; x > w - 120; x -= 9) px(x, h - 47, '#5e3a1c', 3, 11);
+  }
+  // claw marks scored into the floor, three lines at a time
+  for (let k = 0; k < (den ? 24 : 9); k++) {
+    const x = 24 + rnd() * (w - 48), y = 44 + rnd() * (h - 70), a = rnd() * Math.PI;
+    for (let j = -1; j <= 1; j++) for (let s = 0; s < 7; s++) {
+      px(x + Math.cos(a) * s + j * 3 * Math.sin(a), y + Math.sin(a) * s - j * 3 * Math.cos(a), 'rgba(40,28,18,0.45)');
+    }
+  }
+  // roots hanging through the back wall
+  for (let k = 0; k < cols; k++) {
+    if (rnd() < 0.45) continue;
+    let x = 16 + rnd() * (w - 32), y = 6 + rnd() * 8;
+    const len = 10 + rnd() * 16;
+    for (let s = 0; s < len; s++) { px(x, y, '#6b4a2c'); x += (rnd() - 0.5) * 1.4; y += 1; }
+  }
+  // flecks of ore in the rock, mostly iron
+  const ores = [['#e2ddd6', '#8f8a84'], ['#e6c541', '#9a7616'], ['#e0473a', '#7d1a14'], ['#86f2e2', '#2b9c90']];
+  for (let k = 0; k < (den ? 22 : 8); k++) {
+    const [hi, lo] = ores[rnd() < 0.6 ? 0 : 1 + ((rnd() * 3) | 0)];
+    const onSide = rnd() < 0.5;
+    const x = onSide ? (rnd() < 0.5 ? 3 + rnd() * 8 : w - 12 + rnd() * 8) : 16 + rnd() * (w - 32);
+    const y = onSide ? 36 + rnd() * (h - 56) : 8 + rnd() * 16;
+    px(x, y, hi, 2, 1); px(x + 1, y + 1, lo, 2, 1);
+  }
+  // the slope back up to daylight
+  const gr = g.createLinearGradient(0, h, 0, h - 30);
+  gr.addColorStop(0, 'rgba(255,240,200,0.45)');
+  gr.addColorStop(1, 'rgba(255,240,200,0)');
+  g.fillStyle = gr;
+  g.fillRect(doorL, h - 30, TILE, 30);
+  return c;
+}
+
+// the mines, chapter two. moles have dug holes all over the early mines
+// (MOLE_HOLES in the engine). three of them are burrows, each with a chest of
+// mine loot and a few moles with big teeth in it, and the fourth is moe the
+// mole's den. moe guards the first project landmark, and beating him is what
+// reveals it.
+const HOLE = makeMoleHole();
+const holeThings = MOLE_HOLES.map(([x, y]) => {
+  const t = { flat: true, hole: true, x: x * TILE + 8, y: y * TILE + 14, frames: [HOLE] };
+  things.push(t);
+  return t;
+});
+
+// a creature that lives in a room instead of out in the world. it only moves
+// while you're in there with it.
+function spawnRoomCreature(kind, r, x, y) {
+  const def = CREATURES[kind];
+  const c = {
+    kind, def, frames: framesFor(kind), creature: true, room: r,
+    hx: x, hy: y, x, y, hp: def.hp, state: def.rest, t: 0, cd: 0.6, sinceHit: 99, anim: 0, flip: x > r.w / 2,
+    hurtT: 0, kx: 0, ky: 0, lx: 0, ly: 0, moving: false, wander: null, wanderT: 0, draw: drawCreature
+  };
+  creatures.push(c);
+  r.things.push(c);
+  return c;
+}
+
+// a burrow's chest: a little of whatever the moles have dug up. raw iron is
+// nearly always in there, gold and rubies sometimes, an emerald or a diamond
+// only rarely, and sometimes a few iron arrows somebody dropped (handy for
+// moe). rolled once, the first time the game sees it, and then saved.
+function rollBurrowLoot() {
+  const out = [];
+  const add = (chance, id, a, b) => { if (Math.random() < chance) out.push(makeStack(id, rand(a, b))); };
+  add(0.9, 'iron-ore', 2, 5);
+  add(0.45, 'gold-ore', 1, 3);
+  add(0.3, 'ruby', 1, 2);
+  add(0.35, 'iron-arrow', 2, 4);
+  add(0.1, 'emerald', 1, 1);
+  add(0.06, 'diamond', 1, 1);
+  if (out.length < 2) out.push(makeStack('stone', rand(3, 8)));
+  return Array.from({ length: 6 }, (_, i) => out[i] || null);
+}
+// moe's chest is the better haul, and it's locked until he's beaten. iron
+// ingots for sure, then diamonds, emeralds, a sword and a set of armor, each
+// rarer than the one before. a sword or armor is iron most of the time,
+// emerald sometimes and diamond rarely, since moe is the easiest boss.
+function rollDenLoot() {
+  const out = [makeStack('iron', rand(3, 6))];
+  const add = (chance, id, a, b) => { if (Math.random() < chance) out.push(makeStack(id, rand(a, b))); };
+  add(0.6, 'gold-ore', 2, 4);
+  add(0.4, 'diamond', 1, 2);
+  add(0.25, 'emerald', 1, 2);
+  const tier = () => { const r = Math.random(); return r < 0.08 ? 'diamond' : r < 0.25 ? 'emerald' : 'iron'; };
+  if (Math.random() < 0.2) out.push(makeStack(`${tier()}-sword`));
+  if (Math.random() < 0.1) out.push(makeStack(`${tier()}-armor`));
+  return Array.from({ length: 12 }, (_, i) => out[i] || null);
+}
+
+// the three burrows: where the moles wait under the floor, the chest, and a
+// few things to look at. rooms are 13 x 8 tiles of floor inside the walls.
+const BURROW_COLS = 13, BURROW_ROWS = 9, BURROW_DOOR = 6;
+const BURROWS = [
+  { moles: [[60, 84], [150, 96]], chest: [56, 47], shrooms: [[26, 100], [184, 60]], rocks: [[124, 62, 0], [172, 118, 1]] },
+  { moles: [[54, 70], [156, 74], [104, 106]], chest: [152, 47], shrooms: [[182, 106], [28, 56]], rocks: [[80, 114, 1], [42, 116, 0]] },
+  { moles: [[44, 96], [100, 66], [168, 92]], chest: [104, 47], shrooms: [[24, 62], [184, 116]], rocks: [[150, 56, 0], [64, 58, 1]] }
+];
+const doorLight = (cols, rows, door) => ({ x: door * TILE + 8, y: rows * TILE - 6, rgb: '255,236,200', rad: 3.2, flicker: true, strength: 0.2 });
+const burrowRooms = BURROWS.map((B, i) => {
+  const hole = holeThings[i];
+  const save = quest.burrows[i] || (quest.burrows[i] = { visited: false, dead: [], chest: null });
+  if (!Array.isArray(save.chest)) save.chest = rollBurrowLoot();
+  const r = {
+    id: `burrow-${i}`, burrow: i, w: BURROW_COLS * TILE, h: BURROW_ROWS * TILE, dust: '#7a5c40', shade: 0.55, fight: true,
+    canvas: paintDig(BURROW_COLS, BURROW_ROWS, BURROW_DOOR, 7000 + i * 31, false),
+    outside: { x: hole.x, y: hole.y }, exit: { x: hole.x, y: hole.y + 14 }, door: BURROW_DOOR,
+    blocked: roomWalls(BURROW_COLS, BURROW_ROWS, BURROW_DOOR), things: [],
+    glows: [doorLight(BURROW_COLS, BURROW_ROWS, BURROW_DOOR)]
+  };
+  const st = addStation('chest', B.chest[0], B.chest[1], r);
+  st.slots = save.chest;
+  st.where = 'in the burrow';
+  B.shrooms.forEach(([x, y]) => {
+    r.things.push({ x, y, frames: [makeShrooms()] });
+    r.glows.push({ x, y: y - 4, rgb: '95,230,200', rad: 2.4, flicker: true, strength: 0.24 });
+  });
+  B.rocks.forEach(([x, y, v]) => r.things.push({ x, y, frames: [BOULDERS[v]] }));
+  B.moles.forEach(([x, y], j) => {
+    if (save.dead[j]) return;
+    const m = spawnRoomCreature('mole', r, x, y);
+    m.onDeath = () => { save.dead[j] = true; markDirty(); };
+  });
+  return r;
+});
+
+// moe's den: 24 x 16 tiles, too big to fit on screen, so the camera follows
+// you round it (roomCam in the engine). torches on the timbers, a few loose
+// rocks, the locked chest at the back, and moe himself waiting under the
+// middle of the floor.
+const DEN_COLS = 24, DEN_ROWS = 16, DEN_DOOR = 12;
+const denHole = holeThings[3];
+const denWalls = roomWalls(DEN_COLS, DEN_ROWS, DEN_DOOR);
+const denRoom = {
+  id: 'den', w: DEN_COLS * TILE, h: DEN_ROWS * TILE, dust: '#7a5c40', shade: 0.42, fight: true, sealed: false,
+  canvas: paintDig(DEN_COLS, DEN_ROWS, DEN_DOOR, 9100, true),
+  outside: { x: denHole.x, y: denHole.y }, exit: { x: denHole.x, y: denHole.y + 14 }, door: DEN_DOOR,
+  // once the fight starts, the way out is buried under rocks until he's beaten
+  blocked: (x, y) => denWalls(x, y) || (denRoom.sealed && y > DEN_ROWS * TILE - 26 && Math.abs(x - (DEN_DOOR * TILE + 8)) < 18),
+  things: [], glows: [doorLight(DEN_COLS, DEN_ROWS, DEN_DOOR)]
+};
+if (!Array.isArray(quest.denChest)) quest.denChest = rollDenLoot();
+const denChest = addStation('chest', denRoom.w / 2, 47, denRoom);
+denChest.slots = quest.denChest;
+denChest.where = 'in Moe\'s den';
+const LOCKED_CHEST = makeChest(true);
+function lockDenChest(locked) {
+  denChest.locked = locked;
+  denChest.frames = locked ? [LOCKED_CHEST] : [makeChest()];
+}
+lockDenChest(!quest.moe.dead);
+[36, 108, 252, 324].forEach(x => {
+  const t = { x: x + 2, y: 30, frames: TORCH, fps: 7, phase: x % 3 };
+  denRoom.things.push(t);
+  denRoom.glows.push({ x: t.x, y: t.y - 12, rgb: GLOW.torch, rad: 3, flicker: true, strength: 0.24 });
+});
+[[60, 90, 1], [330, 120, 0], [74, 200, 0], [300, 206, 1]].forEach(([x, y, v]) => denRoom.things.push({ x, y, frames: [BOULDERS[v]] }));
+const rubble = { x: DEN_DOOR * TILE + 8, y: denRoom.h - 1, frames: [makeRubble()], gone: true };
+denRoom.things.push(rubble);
+
+// moe himself. he isn't an ordinary hunter: updateMoe runs his fight and
+// drawMoe draws him, and the floor under him (the hole he's in, the bulge
+// that chases you while he's underground, the cracks where he's about to come
+// up) is its own flat thing so it always draws under everything else.
+const MOE_FRAMES = {
+  idle: [makeMoe(0, 'idle'), makeMoe(1, 'idle')],
+  walk: [0, 1, 2, 3].map(f => makeMoe(f, 'walk')),
+  crouch: makeMoe(0, 'crouch')
+};
+MOE_FRAMES.white = new Map([...MOE_FRAMES.idle, ...MOE_FRAMES.walk, MOE_FRAMES.crouch].map(c => [c, whiteOf(c)]));
+const MOE_HOME = { x: denRoom.w / 2, y: 140 };
+const moe = {
+  kind: 'moe', def: CREATURES.moe, creature: true, room: denRoom, frames: [MOE_FRAMES.idle[0]], draw: drawMoe,
+  hx: MOE_HOME.x, hy: MOE_HOME.y, x: MOE_HOME.x, y: MOE_HOME.y, hp: CREATURES.moe.hp, state: 'wait', t: 0, cd: 0,
+  sinceHit: 99, anim: 0, flip: false, hurtT: 0, kx: 0, ky: 0, aim: Math.PI / 2, spin: 0, sink: 1, under: true,
+  pops: 0, lunges: 0, trail: [], spot: null, tellK: null, mx: 0, my: 0,
+  dead: !!quest.moe.dead, gone: !!quest.moe.dead
+};
+creatures.push(moe);
+const moeFloor = { flat: true, x: 0, y: 0, frames: [mk(1, 1)], draw: drawMoeFloor };
+denRoom.things.push(moe, moeFloor);
+// his helmet lamp, and the patch of floor it lights up in front of him
+const moeLamp = { x: 0, y: 0, rgb: '255,244,200', rad: 2.2, flicker: true, strength: 0.3, off: true };
+const moeBeam = { x: 0, y: 0, rgb: '255,240,190', rad: 2.6, flicker: true, strength: 0.16, off: true };
+denRoom.glows.push(moeLamp, moeBeam);
+
+BUILDINGS.push(
+  ...burrowRooms.map((r, i) => ({ thing: holeThings[i], tile: MOLE_HOLES[i], room: r, name: 'Mole Hole', hole: true, open: () => true, hint: () => false })),
+  { thing: denHole, tile: MOLE_HOLES[3], room: denRoom, name: 'Mole Hole', hole: true, open: () => true, hint: () => false }
+);
+
+// the numbers for the fight. tell is how long the floor cracks before he
+// comes up (your time to get off it), stuck is how long he's half out of the
+// ground and can't hurt you. under half health he gets angrier: quicker
+// tells, shorter openings, more pops before he climbs out.
+const MOE = {
+  dig: 0.8, chase: 1.3, chaseAgain: 0.8, tell: 0.95, tellMad: 0.75, pop: 0.3, stuck: 2.4, stuckMad: 2, climb: 0.6,
+  pops: 3, popsMad: 4, popR: 18, stuckSink: 0.45, under: 150, underMad: 190, mad: 0.5
+};
+let cine = null, shakeAmp = 0;
+const bossHints = new Set();
+function bossHint(key, ...msg) {
+  if (bossHints.has(key)) return;
+  bossHints.add(key);
+  toast(...msg);
+}
+const addShake = a => { shakeAmp = Math.max(shakeAmp, a); };
+function playShake() { return shakeAmp; }
+// during the intro the camera goes to moe, not you
+function playCamFocus() { return cine && cine.t < 2.3 * cine.k ? { x: moe.hx, y: moe.hy - 24 } : null; }
+function playTravelBlocked() { return room === denRoom && (denRoom.sealed || !!cine); }
+
+// where his hand (and so the drill's grip) and his lamp are in the world,
+// for whichever frame he's on, sunk however far he is into the floor
+function moePoint(c, p, img) {
+  const left = c.x - Math.floor(MOE_W / 2), top = c.y - MOE_H + 2 + Math.round(c.sink * (MOE_H - 4)) + (img.oy || 0);
+  return { x: c.flip ? left + (MOE_W - 1 - p.x) : left + p.x, y: top + p.y };
+}
+function moeFrame(c, t) {
+  if (c.state === 'windup') return MOE_FRAMES.crouch;
+  if (c.moving || c.state === 'lunge') return MOE_FRAMES.walk[Math.floor(c.anim * 8) % 4];
+  return MOE_FRAMES.idle[Math.floor(t / 500) % 2];
+}
+const moeMad = c => c.hp < c.def.hp * MOE.mad;
+
+function dirtSpray(x, y, n) {
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, sp = 40 + Math.random() * 90;
+    particles.push({ x: x + (Math.random() - 0.5) * 16, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 260, life: 0.5 + Math.random() * 0.4, t: 0, col: Math.random() < 0.3 ? '#9a9a9a' : Math.random() < 0.5 ? '#8a6a4c' : '#6b5038', size: 1 + (Math.random() < 0.4) });
+  }
+}
+
+function updateMoe(c, dt) {
+  const def = c.def, mad = moeMad(c);
+  c.hurtT = Math.max(0, c.hurtT - dt);
+  c.t += dt;
+  c.moving = false;
+  c.spin += dt * (['windup', 'lunge', 'dig', 'pop'].includes(c.state) ? 30 : 12);
+  const img = moeFrame(c, performance.now());
+  const hand = moePoint(c, MOE_HAND, img);
+  const toYou = Math.atan2(player.y - 10 - hand.y, player.x - hand.x);
+  const turn = (target, rate) => {
+    const d = Math.atan2(Math.sin(target - c.aim), Math.cos(target - c.aim));
+    c.aim += clamp(d, -rate * dt, rate * dt);
+  };
+  const d = Math.hypot(player.x - c.x, player.y - c.y);
+  const walk = (tx, ty, speed) => {
+    const vx = tx - c.x, vy = ty - c.y, l = Math.hypot(vx, vy);
+    if (l < 2) return;
+    moveBody(c, (vx / l) * speed * dt, (vy / l) * speed * dt);
+    c.moving = true;
+  };
+  switch (c.state) {
+    case 'face':
+      // above ground the drill never stops pointing at you. he edges in to
+      // about three tiles and every couple of seconds he lunges.
+      turn(toYou, 9);
+      c.flip = Math.cos(c.aim) < 0;
+      if (d > 3 * TILE) walk(player.x, player.y, def.speed);
+      else if (d < 2 * TILE && d > 0) walk(c.x - (player.x - c.x), c.y - (player.y - c.y), def.speed * 0.6);
+      if (c.t > (c.lunges ? 1.2 : 1.8) && d < 6.5 * TILE && !player.dead) { c.state = 'windup'; c.t = 0; sfx.rev(); }
+      break;
+    case 'windup':
+      turn(toYou, 9);
+      c.flip = Math.cos(c.aim) < 0;
+      if (Math.random() < dt * 30) burst(hand.x + Math.cos(c.aim) * 30, hand.y + Math.sin(c.aim) * 30, '255,220,140', 1);
+      if (c.t >= def.windup) { c.lx = Math.cos(c.aim); c.ly = Math.sin(c.aim); c.state = 'lunge'; c.t = 0; sfx.bite(); }
+      break;
+    case 'lunge': {
+      const bx = c.x, by = c.y;
+      moveBody(c, c.lx * def.lunge.speed * dt, c.ly * def.lunge.speed * dt);
+      c.moving = true;
+      // ran the drill into the wall: it sticks in the rock for a moment, and
+      // with it out of the way he's open from any side
+      if (c.t > 0.05 && Math.hypot(c.x - bx, c.y - by) < def.lunge.speed * dt * 0.3) {
+        c.state = 'dazed'; c.t = 0;
+        addShake(3); sfx.clang();
+        burst(hand.x + c.lx * 34, hand.y + c.ly * 34, '255,220,140', 14);
+        break;
+      }
+      if (c.t >= def.lunge.time) { c.state = 'recover'; c.t = 0; }
+      break;
+    }
+    case 'dazed':
+      if (c.t > 1.3) { c.state = 'recover'; c.t = 0; }
+      break;
+    case 'recover':
+      turn(toYou, 4);
+      c.flip = Math.cos(c.aim) < 0;
+      if (c.t > 0.5) {
+        c.lunges++;
+        c.t = 0;
+        c.state = c.lunges >= (mad ? 1 : 2) ? 'dig' : 'face';
+        if (c.state === 'dig') sfx.rumble();
+      }
+      break;
+    case 'dig':
+      // drill pointed down, he sinks out of sight
+      turn(Math.PI / 2, 10);
+      c.sink = Math.min(1, c.t / MOE.dig);
+      if (Math.random() < dt * 40) dirtSpray(c.x, c.y - 2, 2);
+      addShake(1);
+      if (c.t >= MOE.dig) {
+        c.state = 'under'; c.t = 0; c.under = true; c.lunges = 0;
+        c.mx = c.x; c.my = c.y; c.trail = [];
+        bossHint('under', 'Watch the floor', 'He\'s digging', 'Get off the cracks before he comes up');
+      }
+      break;
+    case 'under': {
+      // a bulge in the floor that runs you down
+      const sp = mad ? MOE.underMad : MOE.under, vx = player.x - c.mx, vy = player.y - c.my, l = Math.hypot(vx, vy);
+      if (l > 2) {
+        c.mx = clamp(c.mx + (vx / l) * Math.min(l, sp * dt), 28, denRoom.w - 28);
+        c.my = clamp(c.my + (vy / l) * Math.min(l, sp * dt), 50, denRoom.h - 26);
+      }
+      const lastT = c.trail[c.trail.length - 1];
+      if (!lastT || Math.hypot(lastT[0] - c.mx, lastT[1] - c.my) > 5) { c.trail.push([c.mx, c.my]); if (c.trail.length > 40) c.trail.shift(); }
+      addShake(0.7);
+      if (Math.random() < dt * 20) dirtSpray(c.mx, c.my - 2, 1);
+      if (c.t >= (c.pops ? MOE.chaseAgain : MOE.chase)) {
+        c.state = 'tell'; c.t = 0;
+        c.spot = { x: clamp(player.x, 28, denRoom.w - 28), y: clamp(player.y, 50, denRoom.h - 26) };
+        c.mx = c.spot.x; c.my = c.spot.y;
+        sfx.rumble();
+      }
+      break;
+    }
+    case 'tell': {
+      // the floor cracks open right where he's coming up. get off it.
+      const tell = mad ? MOE.tellMad : MOE.tell;
+      c.tellK = Math.min(1, c.t / tell);
+      addShake(0.6 + c.tellK * 1.2);
+      if (Math.random() < dt * 14) dirtSpray(c.spot.x, c.spot.y - 2, 1);
+      if (c.t >= tell) {
+        c.state = 'pop'; c.t = 0; c.tellK = null;
+        c.x = c.spot.x; c.y = c.spot.y; c.under = false; c.sink = 1; c.aim = -Math.PI / 2;
+        dirtSpray(c.x, c.y - 4, 26);
+        addShake(5); sfx.boom();
+        if (!player.dead && Math.hypot(player.x - c.x, (player.y - c.y) * 1.3) < MOE.popR) hurtPlayer(def.popDmg, c.x, c.y + 6);
+      }
+      break;
+    }
+    case 'pop':
+      c.sink = 1 - (1 - MOE.stuckSink) * Math.min(1, c.t / MOE.pop);
+      c.aim = -Math.PI / 2;
+      if (c.t >= MOE.pop) {
+        c.state = 'stuck'; c.t = 0;
+        bossHint('stuck', 'He\'s stuck', 'Hit him now', 'Swings do the most damage while he\'s in the ground');
+      }
+      break;
+    case 'stuck':
+      // half out of the hole and dizzy: he can't hurt you, so make it count
+      c.aim = -Math.PI / 2;
+      c.flip = player.x < c.x;
+      if (c.t >= (mad ? MOE.stuckMad : MOE.stuck)) {
+        c.pops++;
+        if (c.pops >= (mad ? MOE.popsMad : MOE.pops)) { c.state = 'climb'; c.t = 0; }
+        // straight back under, carrying on from halfway down
+        else { c.state = 'dig'; c.t = MOE.dig * MOE.stuckSink; sfx.rumble(); }
+      }
+      break;
+    case 'climb':
+      c.sink = MOE.stuckSink * Math.max(0, 1 - c.t / MOE.climb);
+      turn(toYou, 6);
+      c.flip = Math.cos(c.aim) < 0;
+      if (c.t >= MOE.climb) { c.state = 'face'; c.t = 0; c.pops = 0; c.sink = 0; }
+      break;
+    case 'dying':
+      // sparks, shaking, flashing, then he's gone in a burst of dirt
+      addShake(1.5);
+      c.hurtT = Math.floor(c.t * 10) % 2 ? 0.05 : 0;
+      if (Math.random() < dt * 24) burst(hand.x + (Math.random() - 0.5) * 30, hand.y - Math.random() * 30, Math.random() < 0.5 ? '255,220,140' : '106,91,130', 2);
+      if (c.t >= 1.8) finishMoe(c);
+      break;
+  }
+  // touching him above ground hurts, and a lunge hurts a lot. half buried he
+  // can't do anything to you.
+  if (!player.dead && !c.under && ['face', 'windup', 'lunge', 'recover', 'climb'].includes(c.state) && overlap(playerBox(), creatureBox(c))) {
+    hurtPlayer(c.state === 'lunge' ? def.lungeDmg : def.dmg, c.x, c.y - 10);
+  }
+  if (c.moving) c.anim += dt;
+  // the lamp follows his helmet, and the beam goes the way the drill points
+  const lampOn = !c.under && c.sink < 0.8 && c.state !== 'wait';
+  const lamp = moePoint(c, MOE_LAMP, img);
+  Object.assign(moeLamp, { x: lamp.x, y: lamp.y, off: !lampOn });
+  Object.assign(moeBeam, { x: lamp.x + Math.cos(c.state === 'stuck' ? (c.flip ? Math.PI : 0) : c.aim) * 34, y: lamp.y + 18 + Math.sin(c.aim) * 20, off: !lampOn });
+}
+
+// how much a hit on moe actually does. above ground his drill is between you
+// and him: swings and the drill barely scratch him unless you've caught him
+// side on (straight after a lunge), but arrows get round it. half out of the
+// ground he can't turn, so swings land for half again as much. underground
+// you can't hit him at all.
+function bossHit(c, dmg, how) {
+  if (c.under || ['wait', 'intro', 'tell', 'dying'].includes(c.state)) return { dmg: 0 };
+  if (c.state === 'stuck' || c.state === 'pop') return how === 'arrow' ? { dmg } : { dmg: dmg * 1.5, col: '#ffd23f' };
+  if (how === 'arrow' || ['dazed', 'dig', 'climb'].includes(c.state)) return { dmg };
+  const img = moeFrame(c, performance.now()), hand = moePoint(c, MOE_HAND, img);
+  const toYou = Math.atan2(player.y - 10 - hand.y, player.x - hand.x);
+  if (Math.abs(Math.atan2(Math.sin(toYou - c.aim), Math.cos(toYou - c.aim))) > 1.1) return { dmg };
+  sfx.clang();
+  burst(hand.x + Math.cos(c.aim) * 26, hand.y + Math.sin(c.aim) * 26, '255,220,140', 6);
+  bossHint('blocked', 'Blocked', 'He faces you with the drill', 'Use arrows while he\'s up, swing while he\'s stuck');
+  return { dmg: dmg * 0.15, col: '#aeb8c8' };
+}
+function bossDown(c) {
+  c.state = 'dying'; c.t = 0; c.under = false;
+  bossBar(false);
+  sfx.roar();
+}
+function finishMoe(c) {
+  c.dead = true;
+  c.gone = true;
+  quest.moe.dead = true;
+  quest.killed.moe = true;
+  dirtSpray(c.x, c.y - 10, 40);
+  burst(c.x, c.y - 24, '106,91,130', 30);
+  addShake(4);
+  sfx.boom();
+  moeLamp.off = moeBeam.off = true;
+  // the way out clears, and the chest comes unlocked
+  denRoom.sealed = false;
+  rubble.gone = true;
+  burst(rubble.x, rubble.y - 10, '140,140,140', 20);
+  lockDenChest(false);
+  // his drill. if your bag's full it's waiting in his chest instead.
+  if (inv.slots.some(st => !st)) gain('moe-drill', 1, c.x, c.y - 40);
+  else {
+    const free = quest.denChest.findIndex(st => !st);
+    if (free >= 0) quest.denChest[free] = makeStack('moe-drill');
+    toast('Bag full', 'Moe\'s Drill', 'It\'s in his chest');
+  }
+  setTimeout(() => discover(MINE_ORDER[0]), 900);
+  setTimeout(() => toast('Defeated', c.def.name, 'His drill is yours. Hold right-click to use it.'), 3200);
+  markDirty();
+  renderHUD();
+}
+
+// the intro, every time you walk in while he's alive: black bars, the camera
+// goes to the middle of the room, the floor cracks, he bursts up out of it and
+// revs the drill, his name comes up, and the rocks come down over the way you
+// came in. the first time it plays at full length, after that it's quicker.
+const cineEl = $('#cine');
+function startMoeIntro() {
+  const first = !quest.moe.introSeen;
+  cine = { t: 0, prev: 0, k: first ? 1 : 0.6 };
+  Object.assign(moe, { x: moe.hx, y: moe.hy, state: 'intro', t: 0, under: true, sink: 1, aim: Math.PI / 2, spot: { x: moe.hx, y: moe.hy }, tellK: null, flip: false });
+  mouse.down = false;
+  bowDraw = null;
+  stopDrill();
+  eating = null;
+  $('#cine-eyebrow').textContent = 'The Mines | Boss';
+  $('#cine-title').textContent = moe.def.name;
+  $('#cine-sub').textContent = 'He hears every step you take';
+  document.body.classList.add('is-cine');
+}
+function tickCine(dt) {
+  if (!cine) return;
+  const c = cine, k = c.k, beat = s => c.prev < s * k && c.t >= s * k;
+  c.prev = c.t;
+  c.t += dt;
+  if (beat(0.3)) sfx.rumble();
+  // the floor cracks where he's about to come up
+  if (c.t > 0.3 * k && c.t < 1.1 * k) {
+    moe.tellK = (c.t - 0.3 * k) / (0.8 * k);
+    addShake(0.5 + moe.tellK);
+  }
+  if (beat(1.1)) {
+    moe.tellK = null;
+    moe.under = false;
+    dirtSpray(moe.x, moe.y - 4, 30);
+    addShake(5);
+    sfx.boom();
+  }
+  if (c.t > 1.1 * k) {
+    moe.sink = Math.max(0, 1 - (c.t - 1.1 * k) / (0.45 * k));
+    moe.aim = -Math.PI / 2 + Math.min(1, Math.max(0, (c.t - 1.5 * k) / (0.3 * k))) * (Math.atan2(player.y - moe.y, player.x - moe.x) + Math.PI / 2);
+    moe.flip = Math.cos(moe.aim) < 0;
+    moe.spin += dt * 30;
+  }
+  if (beat(1.6)) { cineEl.classList.add('show-card'); sfx.roar(); }
+  if (beat(2.3)) {
+    // the way out caves in behind you
+    denRoom.sealed = true;
+    rubble.gone = false;
+    burst(rubble.x, rubble.y - 12, '140,140,140', 24);
+    addShake(3);
+    sfx.crunch();
+  }
+  if (c.t >= 3.3 * k) endCine(true);
+}
+function endCine(fight) {
+  cine = null;
+  document.body.classList.remove('is-cine');
+  cineEl.classList.remove('show-card');
+  if (!fight) return;
+  Object.assign(moe, { state: 'face', t: 0, sink: 0, under: false, pops: 0, lunges: 0 });
+  quest.moe.introSeen = true;
+  markDirty();
+  bossBar(true);
+}
+// back to how it was before you walked in, after you die or leave
+function resetMoe() {
+  if (cine) endCine(false);
+  denRoom.sealed = false;
+  rubble.gone = true;
+  bossBar(false);
+  if (moe.dead) return;
+  Object.assign(moe, { x: moe.hx, y: moe.hy, hp: moe.def.hp, state: 'wait', t: 0, under: true, sink: 1, pops: 0, lunges: 0, aim: Math.PI / 2, hurtT: 0, tellK: null, spot: null, trail: [] });
+  moeLamp.off = moeBeam.off = true;
+}
+
+// the health bar across the top of the screen while you fight him. the
+// pale bar behind the red one is the damage you just did, catching up.
+const bossBarEl = $('#boss-bar'), bossFill = $('#boss-fill'), bossLag = $('#boss-lag');
+let bossLagHp = 0;
+function bossBar(on) {
+  bossBarEl.classList.toggle('is-on', on);
+  if (on) { $('#boss-name').textContent = moe.def.name; bossLagHp = moe.hp; }
+}
+function tickBossBar(dt) {
+  if (!bossBarEl.classList.contains('is-on')) return;
+  const f = clamp(moe.hp / moe.def.hp, 0, 1);
+  bossLagHp = Math.max(moe.hp, bossLagHp - moe.def.hp * dt * 0.35);
+  bossFill.style.width = `calc((100% - 6px) * ${f.toFixed(4)})`;
+  bossLag.style.width = `calc((100% - 6px) * ${clamp(bossLagHp / moe.def.hp, 0, 1).toFixed(4)})`;
+  bossBarEl.classList.toggle('is-mad', moeMad(moe));
+}
+
+function drawMoe(c, toX, toY, t) {
+  if (c.state === 'wait' || (c.under && c.state !== 'dying') || c.sink >= 1) return;
+  let img = moeFrame(c, t);
+  const base = img;
+  if (c.hurtT > 0) img = MOE_FRAMES.white.get(img) || img;
+  const shake = ['windup', 'dazed', 'dying'].includes(c.state) ? Math.round(Math.sin(t / 25)) : 0;
+  const sinkPx = Math.round(c.sink * (MOE_H - 4));
+  const left = c.x - Math.floor(MOE_W / 2) + shake, top = c.y - MOE_H + 2 + sinkPx;
+  if (sinkPx === 0) {
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(toX(c.x - 18), toY(c.y - 1), 36 * S, 2 * S);
+  }
+  const hand = moePoint(c, MOE_HAND, base);
+  hand.x += shake;
+  const k = ((Math.round((c.aim / (Math.PI * 2)) * DRILL_STEPS) % DRILL_STEPS) + DRILL_STEPS) % DRILL_STEPS;
+  const drill = () => ctx.drawImage(DRILL_ROT[Math.floor(c.spin) % 3][k], toX(hand.x - DRILL_D / 2), toY(hand.y - DRILL_D / 2), DRILL_D * S, DRILL_D * S);
+  // pointing up, the drill goes behind him
+  const behind = Math.sin(c.aim) < -0.35;
+  ctx.save();
+  // whatever's below the floor line is down the hole
+  if (sinkPx > 0) { ctx.beginPath(); ctx.rect(0, 0, canvas.width, toY(c.y + 1)); ctx.clip(); }
+  if (behind) drill();
+  if (c.flip) {
+    ctx.translate(toX(left) + MOE_W * S, toY(top));
+    ctx.scale(-1, 1);
+    ctx.drawImage(img, 0, 0, MOE_W * S, MOE_H * S);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  } else ctx.drawImage(img, toX(left), toY(top), MOE_W * S, MOE_H * S);
+  if (!behind) drill();
+  ctx.restore();
+  // the tell before a lunge, same red "!" as everything else
+  if (c.state === 'windup') {
+    const fs = Math.max(16, 8 * Math.round((S * 5.3) / 8)), mw = Math.round(fs * 0.9);
+    const mx = toX(c.x) - mw / 2, my = toY(top - 6) - mw;
+    ctx.fillStyle = '#ff4d3d';
+    ctx.fillRect(mx, my, mw, mw);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `${fs}px Silkscreen, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('!', mx + mw / 2, my + mw / 2 + 1);
+  }
+  // stars going round his head while he's stuck or dazed
+  if ((c.state === 'stuck' || c.state === 'dazed') && !reduceMotion) {
+    for (let i = 0; i < 3; i++) {
+      const a = t / 220 + (i * Math.PI * 2) / 3, sx = c.x + Math.cos(a) * 12, sy = top + 4 + Math.sin(a) * 4;
+      ctx.fillStyle = i ? '#ffd23f' : '#ffffff';
+      ctx.fillRect(toX(sx) - S, toY(sy), S * 3, S);
+      ctx.fillRect(toX(sx), toY(sy) - S, S, S * 3);
+    }
+  }
+}
+// cracks for the tell: a few jagged lines out from the middle, worked out once
+const CRACKS = (() => {
+  const r = mulberry32(4242), out = [];
+  for (let k = 0; k < 7; k++) {
+    let a = (k / 7) * Math.PI * 2 + r() * 0.5, x = 0, y = 0;
+    const line = [];
+    for (let s = 0; s < 9; s++) { a += (r() - 0.5) * 0.9; x += Math.cos(a) * 2.2; y += Math.sin(a) * 1.3; line.push([Math.round(x), Math.round(y)]); }
+    out.push(line);
+  }
+  return out;
+})();
+function drawMoeFloor(o, toX, toY, t) {
+  const c = moe;
+  if (c.gone || c.state === 'wait') return;
+  const P = (x, y, col, w = 1, h = 1) => { ctx.fillStyle = col; ctx.fillRect(toX(x), toY(y), w * S, h * S); };
+  // the hole he's standing in
+  if (!c.under && c.sink > 0.02) {
+    for (let y = -5; y <= 5; y++) {
+      const half = Math.round(Math.sqrt(1 - (y / 5.5) ** 2) * 20);
+      P(c.x - half, c.y - 2 + y, Math.abs(y) >= 4 ? '#4e3a28' : '#0d0a08', half * 2, 1);
+    }
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2;
+      P(c.x + Math.cos(a) * 22, c.y - 2 + Math.sin(a) * 6.5, i % 2 ? '#8a6a4c' : '#6b5038', 3, 2);
+    }
+  }
+  // the furrow he leaves behind under the floor, and the bulge where he is
+  if (c.state === 'under' || c.state === 'tell') {
+    c.trail.forEach(([x, y], i) => P(x, y, `rgba(42,30,20,${0.25 + (0.5 * i) / c.trail.length})`, 2, 1));
+  }
+  if (c.state === 'under') {
+    const j = reduceMotion ? 0 : Math.round(Math.sin(t / 40));
+    for (let y = -3; y <= 1; y++) {
+      const half = Math.round(Math.sqrt(1 - ((y + 1) / 3) ** 2) * 9);
+      P(c.mx - half + j, c.my - 2 + y, y < -1 ? '#a8865f' : '#8a6a4c', half * 2, 1);
+    }
+  }
+  // the tell: cracks spreading and a red ring pulsing where he'll come up
+  if (c.tellK !== null && c.spot) {
+    const k = c.tellK, sx = c.spot.x, sy = c.spot.y - 2;
+    CRACKS.forEach(line => line.slice(0, Math.ceil(line.length * Math.min(1, k * 1.3))).forEach(([x, y]) => P(sx + x, sy + y, '#1e140c')));
+    const pulse = reduceMotion ? 1 : 0.5 + 0.5 * Math.sin(t / 55);
+    for (let i = 0; i < 40; i++) {
+      const a = (i / 40) * Math.PI * 2;
+      P(sx + Math.cos(a) * MOE.popR, sy + Math.sin(a) * MOE.popR * 0.6, `rgba(255,70,50,${(0.3 + 0.6 * pulse) * Math.min(1, k * 2)})`);
+    }
+    ctx.fillStyle = `rgba(255,60,40,${0.1 * k})`;
+    for (let y = -10; y <= 10; y++) {
+      const half = Math.round(Math.sqrt(Math.max(0, 1 - (y / 10.8) ** 2)) * MOE.popR);
+      ctx.fillRect(toX(sx - half), toY(sy + y), half * 2 * S, S);
+    }
+  }
+}
+
+// moe's drill in your hands: hold right click and it spins up. whatever's in
+// front of the bit takes a steady grind of damage, and if nothing is, it bores
+// into the block you're pointing at (at the speeds in mineInfo). let go,
+// switch slots or open a menu and it winds down.
+const DRILL = { reach: 2, tick: 0.12, dmg: 0.5, cone: 0.7 };
+let drilling = null;
+function startDrill() {
+  if (drilling || player.dead || cine) return;
+  drilling = { t: 0, hitT: 0, buzzT: 0, slot: inv.sel };
+}
+function stopDrill() {
+  if (!drilling) return;
+  drilling = null;
+  if (mining && mining.thing) mining.thing.shake = 0;
+  mining = null;
+}
+function tickDrill(dt) {
+  if (!drilling) return;
+  const s = heldItem();
+  if (ui || player.dead || sleeping || cine || inv.sel !== drilling.slot || !s || ITEMS[s.id].tool !== 'drill') { stopDrill(); return; }
+  drilling.t += dt;
+  drilling.hitT -= dt;
+  drilling.buzzT -= dt;
+  const a = aimAngle(), o = aimOrigin();
+  faceAngle(a);
+  const tip = { x: o.x + Math.cos(a) * 18, y: o.y + Math.sin(a) * 18 };
+  if (drilling.buzzT <= 0) { drilling.buzzT = 0.09; sfx.drill(); }
+  const victims = creatures.filter(c => inArc(c, a, DRILL, DRILL.cone));
+  if (victims.length) {
+    if (mining) { if (mining.thing) mining.thing.shake = 0; mining = null; }
+    if (drilling.hitT <= 0) {
+      drilling.hitT = DRILL.tick;
+      victims.forEach(c => hurtCreature(c, DRILL.dmg, a, 'drill'));
+      burst(tip.x, tip.y, '255,220,140', 2);
+    }
+    return;
+  }
+  const tgt = targetAt(mouseWorld());
+  if (tgt && !CLICK_ONLY.has(tgt.type) && tgt.type !== 'bed' && inReach(tgt)) {
+    mineStep(tgt, dt);
+    if (mining && Math.random() < dt * 30) burst(tgt.cx, tgt.cy, tgt.cls === 'ore' ? '220,220,220' : '150,150,150', 1);
+  } else if (mining) {
+    if (mining.thing) mining.thing.shake = 0;
+    mining = null;
+  }
+}
+
 checkRecipeUnlocks();
 
 const playerBox = () => ({ x0: player.x - 6, x1: player.x + 6, y0: player.y - 20, y1: player.y });
@@ -1415,9 +2465,13 @@ function faceAngle(a) {
   else player.face = cy < 0 ? 'up' : 'down';
 }
 const creatureCenter = c => ({ x: c.x, y: c.y - c.def.box.h / 2 });
+// is it in the same place as you (the overworld, or the room you're in), and
+// can it be hit at all? moe can't be while he's underground.
+const here = c => (c.room || null) === room;
+const hittable = c => !c.dead && !c.gone && !c.dormant && !c.under && here(c);
 
-function inArc(c, a, tool) {
-  if (room || c.dead || c.gone) return false;
+function inArc(c, a, tool, cone = 1.15) {
+  if (!hittable(c)) return false;
   const o = aimOrigin(), b = creatureBox(c);
   // distance to the nearest point of its hitbox, not its centre, so big
   // animals are as easy to reach as their size suggests
@@ -1428,7 +2482,7 @@ function inArc(c, a, tool) {
   const cc = creatureCenter(c);
   let diff = Math.atan2(cc.y - o.y, cc.x - o.x) - a;
   diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-  return Math.abs(diff) < 1.15;
+  return Math.abs(diff) < cone;
 }
 
 function attack() {
@@ -1444,7 +2498,17 @@ function attack() {
   if (hit) wearHeld(1);
 }
 
-function hurtCreature(c, dmg, a) {
+// how it was hit matters to moe (see bossHit): 'melee', 'arrow' or 'drill'.
+// the drill grinds away several times a second, so it skips the numbers and
+// the thwack.
+function hurtCreature(c, dmg, a, how = 'melee') {
+  let col = '#ffd1d1';
+  if (c.def.boss) {
+    const hit = bossHit(c, dmg, how);
+    if (!hit.dmg) return;
+    dmg = Math.round(hit.dmg * 100) / 100;
+    col = hit.col || col;
+  }
   c.hp = Math.max(0, c.hp - dmg);
   c.hurtT = 0.16;
   c.sinceHit = 0;
@@ -1455,18 +2519,22 @@ function hurtCreature(c, dmg, a) {
     c.ky = Math.sin(a) * c.def.knock;
   }
   const cc = creatureCenter(c);
-  floatText(`-${dmg}`, cc.x, cc.y - 12, '#ffd1d1');
-  burst(cc.x, cc.y, c.def.chip, 6);
-  sfx.hit();
+  if (how !== 'drill') {
+    floatText(`-${dmg}`, cc.x, cc.y - 12, col);
+    sfx.hit();
+  }
+  burst(cc.x, cc.y, c.def.chip, how === 'drill' ? 2 : 6);
   // livestock just bolts; hunters turn on you
   if (c.def.passive) { c.state = 'flee'; c.t = 0; c.path = null; c.pathT = 0; }
-  else if (!['windup', 'lunge', 'recover'].includes(c.state)) aggro(c);
-  if (c.hp <= 0) killCreature(c);
+  else if (!c.def.boss && !['windup', 'lunge', 'recover'].includes(c.state)) aggro(c);
+  if (c.hp <= 0) { if (c.def.boss) bossDown(c); else killCreature(c); }
 }
 
 function aggro(c) {
   if (c.state === 'chase' || c.dead) return;
   if (c.state === 'sleep') sfx.roar();
+  // a mole bursts up out of its mound
+  if (c.state === 'burrowed') { burst(c.x, c.y - 6, '138,106,76', 14); sfx.crunch(); }
   c.state = 'chase';
   if (!quest.seen[c.kind]) {
     quest.seen[c.kind] = true;
@@ -1494,12 +2562,14 @@ function dropLoot(id, n, chance, x, y) {
 function killCreature(c) {
   c.dead = true;
   c.gone = true;
-  if (c.def.passive || c.def.nightly) {
+  if (c.def.passive || c.def.nightly || c.def.minion) {
     const cc = creatureCenter(c);
     burst(cc.x, cc.y, c.def.chip, 14);
     c.def.drops.forEach(([id, a, b, chance], line) => dropLoot(id, rand(a, b), chance, cc.x, cc.y - 10 - line * 10));
     creatures.splice(creatures.indexOf(c), 1);
-    things.splice(things.indexOf(c), 1);
+    const list = c.room ? c.room.things : things;
+    list.splice(list.indexOf(c), 1);
+    if (c.onDeath) c.onDeath();
     return;
   }
   quest.killed[c.kind] = true;
@@ -1593,6 +2663,7 @@ function moveBody(o, mx, my) {
 
 function updateCreature(c, dt) {
   if (c.dead || c.dormant) return;
+  if (c.def.boss) { updateMoe(c, dt); return; }
   const def = c.def;
   if (def.burns) burnInDaylight(c, dt);
   if (c.dead) return;
@@ -1626,8 +2697,10 @@ function updateCreature(c, dt) {
   };
   // straight at the target when nothing's in the way, otherwise along a tile
   // path around the rocks, re-planned a couple of times a second as you move
+  // (indoors there's nothing to path round, and the tile paths are for the
+  // overworld anyway, so a creature in a room just heads straight for you)
   const steer = (tx, ty, speed) => {
-    if (clearLine(c.x, c.y, tx, ty)) { c.path = null; walk(tx, ty, speed); return; }
+    if (c.room || clearLine(c.x, c.y, tx, ty)) { c.path = null; walk(tx, ty, speed); return; }
     if (!c.path || !c.path.length || c.pathT <= 0) {
       c.path = pathToward(c, Math.floor(tx / TILE), Math.floor((ty - 2) / TILE), 20);
       c.pathT = 0.6;
@@ -1637,6 +2710,7 @@ function updateCreature(c, dt) {
 
   switch (c.state) {
     case 'sleep':
+    case 'burrowed':
       if (alive && d < def.aggro * TILE) aggro(c);
       break;
     case 'prowl':
@@ -1695,14 +2769,14 @@ function updateCreature(c, dt) {
   // touching it hurts, whatever it's doing. a sleeping bear you walk into
   // wakes up swinging.
   if (alive && overlap(playerBox(), creatureBox(c))) {
-    if (c.state === 'sleep' || c.state === 'prowl') aggro(c);
+    if (['sleep', 'prowl', 'burrowed'].includes(c.state)) aggro(c);
     if (c.state !== 'return') hurtPlayer(def.dmg, c.x, c.y);
     if (c.burning) ignite();
   }
   if (c.moving) c.anim += dt;
 }
 
-const inWater = o => tiles[idx(clamp(Math.floor(o.x / TILE), 0, W - 1), clamp(Math.floor((o.y - 2) / TILE), 0, H - 1))] === T.WATER;
+const inWater = o => !(o.room || (o === player && room)) && tiles[idx(clamp(Math.floor(o.x / TILE), 0, W - 1), clamp(Math.floor((o.y - 2) / TILE), 0, H - 1))] === T.WATER;
 
 // zombies catch fire in daylight (unless they're standing in water) and lose
 // half a heart a second until they're gone
@@ -1786,7 +2860,8 @@ function updateProjectiles(dt) {
     const p = projectiles[i];
     const sx = p.vx * dt, sy = p.vy * dt;
     p.x += sx; p.y += sy; p.dist += Math.hypot(sx, sy);
-    if (p.dist > p.range || solidTile(Math.floor(p.x / TILE), Math.floor((p.y + 10) / TILE))) {
+    const wall = room ? room.blocked(p.x, p.y + 10) : solidTile(Math.floor(p.x / TILE), Math.floor((p.y + 10) / TILE));
+    if (p.dist > p.range || wall) {
       burst(p.x, p.y, p.kind === 'snow' ? '240,244,252' : '160,102,58', 4);
       projectiles.splice(i, 1);
       continue;
@@ -1798,10 +2873,10 @@ function updateProjectiles(dt) {
       }
       continue;
     }
-    const c = creatures.find(k => !k.dead && !k.gone && !k.dormant && pointIn(p, creatureBox(k), 3));
+    const c = creatures.find(k => hittable(k) && pointIn(p, creatureBox(k), 3));
     if (!c) continue;
     if (p.kind === 'snow') snowHit(c, p.a);
-    else hurtCreature(c, Math.round(p.dmg * (1 + 0.15 * Math.min(1, p.dist / (ARROW_FULL * TILE))) * 100) / 100, p.a);
+    else hurtCreature(c, Math.round(p.dmg * (1 + 0.15 * Math.min(1, p.dist / (ARROW_FULL * TILE))) * 100) / 100, p.a, 'arrow');
     projectiles.splice(i, 1);
   }
 }
@@ -1812,19 +2887,21 @@ function snowHit(c, a) {
   burst(cc.x, cc.y, '240,244,252', 8);
   sfx.snow();
   if (c.def.fiery) { hurtCreature(c, 1, a); return; }
-  if (!c.def.icy) {
+  if (!c.def.icy && !c.def.steady) {
     const k = Math.max(45, c.def.knock * 0.6);
     c.kx = Math.cos(a) * k;
     c.ky = Math.sin(a) * k;
   }
   if (c.def.passive) { c.state = 'flee'; c.t = 0; c.path = null; c.pathT = 0; }
-  else if (['sleep', 'prowl'].includes(c.state)) aggro(c);
+  else if (['sleep', 'prowl', 'burrowed'].includes(c.state)) aggro(c);
 }
 // left click with something you throw or shoot. a snowball goes where you
-// point, a bow fires the best arrow you're carrying. nothing flies indoors.
+// point, a bow fires the best arrow you're carrying. nothing flies indoors,
+// except in the mole holes, where there's fighting to do.
 let noArrowT = 0;
+const shootsHere = () => !room || !!room.fight;
 function useRanged(it) {
-  if (vitals.atkCD > 0 || room) return;
+  if (vitals.atkCD > 0 || !shootsHere()) return;
   const a = aimAngle(), o = aimOrigin();
   faceAngle(a);
   player.swing = 0;
@@ -1850,7 +2927,7 @@ const BOW = { draw: 1, minMult: 0.3, maxMult: 1.2, minSpeed: 180, maxSpeed: 380,
 let bowDraw = null;
 const bowCharge = () => (bowDraw ? Math.min(1, bowDraw.t / BOW.draw) : 0);
 function startBowDraw() {
-  if (room || bowDraw || vitals.atkCD > 0 || player.dead) return;
+  if (!shootsHere() || bowDraw || vitals.atkCD > 0 || player.dead || cine) return;
   if (!bestArrow()) {
     if (noArrowT <= 0) { floatText('No arrows', player.x, player.y - 34, '#cfcfcf'); noArrowT = 1.5; }
     return;
@@ -1861,7 +2938,7 @@ function startBowDraw() {
 function tickBow(dt) {
   if (!bowDraw) return;
   const s = heldItem();
-  if (ui || player.dead || sleeping || room || inv.sel !== bowDraw.slot || !s || !ITEMS[s.id].ranged) { bowDraw = null; return; }
+  if (ui || player.dead || sleeping || cine || !shootsHere() || inv.sel !== bowDraw.slot || !s || !ITEMS[s.id].ranged) { bowDraw = null; return; }
   bowDraw.t += dt;
   faceAngle(aimAngle());
 }
@@ -2071,6 +3148,11 @@ function updateSpawning(dt) {
 
 function drawCreature(c, toX, toY, t) {
   const F = c.frames;
+  if (c.state === 'burrowed') {
+    const m = F.mound[Math.floor(t / 900 + c.hx) % 3 ? 1 : 0];
+    ctx.drawImage(m, toX(c.x - 12), toY(c.y - 10), m.width * S, m.height * S);
+    return;
+  }
   let img = F.walk[0];
   if (c.state === 'sleep') img = F.sleep;
   else if (c.state === 'windup') img = F.crouch;
@@ -2164,18 +3246,22 @@ function mineInfo(tgt) {
   // picking a bed back up is quick and free
   if (tgt.type === 'bed') return { time: 0.6, drops: true, cost: 0 };
   if (CLICK_ONLY.has(tgt.type)) return { time: Infinity };
-  // snow is the one thing you can dig anywhere, cleared or not
-  if (tgt.cls === 'snow') return { time: MINE_TIME.snow, drops: true, cost: 0 };
+  // snow is the one thing you can dig anywhere, cleared or not. moe's drill
+  // just packs it down.
+  if (tgt.cls === 'snow') {
+    return it && it.tool === 'drill' ? { time: Infinity, hint: ['Too soft', 'Snow', 'The drill just packs it down. Use your hands.'] } : { time: MINE_TIME.snow, drops: true, cost: 0 };
+  }
   const where = room ? null : regionAt(tgt.cx / TILE, tgt.cy / TILE);
   if (where && !biomeOpen(where)) return { time: Infinity, locked: where };
   if (tgt.type === 'tree') {
     if (!tgt.great && !quest.greatTree) return { time: Infinity };
     const base = MINE_TIME.wood * (tgt.great ? 1.4 : 1);
     const time = it && it.tool === 'axe' ? base / it.speed
-      : it && ['sword', 'pickaxe', 'dagger'].includes(it.tool) ? base * TREE_TOOL_SLOW : base * TREE_HAND_SLOW;
+      : it && ['sword', 'pickaxe', 'dagger', 'drill'].includes(it.tool) ? base * TREE_TOOL_SLOW : base * TREE_HAND_SLOW;
     return { time, drops: true, cost: 1 };
   }
-  const pick = it && it.tool === 'pickaxe' ? it : null;
+  // moe's drill counts as a pickaxe, a very fast one
+  const pick = it && (it.tool === 'pickaxe' || it.tool === 'drill') ? it : null;
   if (tgt.cls === 'stone') {
     return pick ? { time: MINE_TIME.stone / pick.speed, drops: true, cost: 1 } : { time: MINE_TIME.stone * 2, drops: false, cost: 1 };
   }
@@ -2184,7 +3270,7 @@ function mineInfo(tgt) {
   // diamonds and the pickaxe is done
   const cost = pick && pick.mat === 'iron' && tgt.ore === 'diamond' ? Math.ceil(pick.dur / 3) : 1;
   return {
-    time: harvest ? MINE_TIME.ore / pick.speed : MINE_TIME.ore * NO_HARVEST_SLOW,
+    time: harvest ? MINE_TIME.ore / ((pick.slowOn && pick.slowOn[tgt.ore]) || pick.speed) : MINE_TIME.ore * NO_HARVEST_SLOW,
     drops: harvest, cost
   };
 }
@@ -2195,7 +3281,8 @@ function mineStep(tgt, dt) {
   if (info.time === Infinity) {
     if (info.locked) lockedToast(info.locked);
     else if (lockHintT <= 0) {
-      toast('Too sturdy', 'Not yet', 'The Great Tree in the Meadows has to come down first');
+      if (info.hint) toast(...info.hint);
+      else toast('Too sturdy', 'Not yet', 'The Great Tree in the Meadows has to come down first');
       sfx.deny();
       lockHintT = 2.5;
     }
@@ -2216,7 +3303,8 @@ function mineStep(tgt, dt) {
   mining.need = info.time;
   mining.t += dt;
   if (tgt.thing) tgt.thing.shake = 1;
-  if (player.swing < 0) {
+  // (the drill doesn't swing, it just keeps boring in)
+  if (player.swing < 0 && !drilling) {
     player.swing = 0;
     faceAngle(Math.atan2(tgt.cy - (player.y - 10), tgt.cx - player.x));
     sfx.chip();
@@ -2367,6 +3455,7 @@ function useRight() {
   const s = heldItem();
   if (s && s.id === 'bed') { placeBed(); return; }
   if (s && ITEMS[s.id].ranged) { startBowDraw(); return; }
+  if (s && ITEMS[s.id].tool === 'drill') { startDrill(); return; }
   eat();
 }
 
@@ -2711,11 +3800,14 @@ function slotHTML(ref, stack, extra = '') {
   </button>`;
 }
 
-// which chest is open, the one at home or the cave's
-let openChest = chestSlots;
+// which chest is open (home, the cave, a burrow or moe's) and where it is
+let openChest = chestSlots, openWhere = 'at home';
 function openUI(kind, st) {
   ui = kind;
   openChest = (st && st.slots) || chestSlots;
+  openWhere = (st && st.where) || 'at home';
+  if (st && st === denChest && !quest.moe.chestOpened) { quest.moe.chestOpened = true; markDirty(); }
+  stopDrill();
   bookOpen = false;
   mining = null;
   mouse.down = false;
@@ -2777,7 +3869,7 @@ function stationHTML() {
     </div>`;
   }
   if (ui === 'chest') {
-    return `<div class="st-chest"><p class="inv-label">Chest <span>${openChest === chestSlots ? 'at home' : 'in the cave'}</span></p>
+    return `<div class="st-chest"><p class="inv-label">Chest <span>${openWhere}</span></p>
       <div class="chest-grid">${openChest.map((st, i) => slotHTML(`chest:${i}`, st)).join('')}</div></div>`;
   }
   if (ui === 'furnace') {
@@ -2875,7 +3967,7 @@ function renderHUD() {
     </button>`).join('');
   const s = heldItem();
   $('#held-name').textContent = s
-    ? `${ITEMS[s.id].name}${ITEMS[s.id].food ? ' | right-click to eat' : ''}${ITEMS[s.id].throw ? ' | click to throw' : ''}${ITEMS[s.id].ranged ? ` | hold right-click to draw | ${countArrows()} arrows` : ''}${ITEMS[s.id].dur ? ` | ${s.dur}/${ITEMS[s.id].dur}` : ''}`
+    ? `${ITEMS[s.id].name}${ITEMS[s.id].food ? ' | right-click to eat' : ''}${ITEMS[s.id].throw ? ' | click to throw' : ''}${ITEMS[s.id].ranged ? ` | hold right-click to draw | ${countArrows()} arrows` : ''}${ITEMS[s.id].tool === 'drill' ? ' | hold right-click to drill' : ''}${ITEMS[s.id].dur ? ` | ${s.dur}/${ITEMS[s.id].dur}` : ''}`
     : 'Bare hands';
 }
 
@@ -2899,16 +3991,25 @@ const QUEST_STEPS = [
   { done: () => false, title: 'Meadows complete' }
 ];
 const meadowsComplete = () => QUEST_STEPS.slice(0, -1).every(q => q.done());
+// the mines so far: find the holes, beat moe, open his chest. the other four
+// bosses come later.
+const MINES_STEPS = [
+  { done: () => quest.burrows.some(b => b && b.visited) || !!quest.moe.introSeen, title: 'Search the mole holes' },
+  { done: () => !!quest.moe.dead, title: () => (quest.moe.introSeen ? 'Defeat Moe the Mole' : 'Find what\'s doing all the digging') },
+  { done: () => !!quest.moe.chestOpened, title: 'Open Moe\'s chest' },
+  { done: () => false, title: 'More bosses coming soon' }
+];
 let questKey = '';
 function renderQuest() {
-  const step = QUEST_STEPS.find(q => !q.done());
-  const n = QUEST_STEPS.indexOf(step);
+  const mines = meadowsComplete(), steps = mines ? MINES_STEPS : QUEST_STEPS;
+  const step = steps.find(q => !q.done());
+  const n = steps.indexOf(step);
   const title = typeof step.title === 'function' ? step.title() : step.title;
-  const key = `${n}|${title}`;
+  const key = `${mines}|${n}|${title}`;
   if (key === questKey) return;
   const first = questKey === '';
   questKey = key;
-  $('#quest-step').textContent = 'The Meadows';
+  $('#quest-step').textContent = mines ? 'The Mines' : 'The Meadows';
   $('#quest-title').textContent = title;
   if (!first) {
     const q = $('#quest');
@@ -2954,7 +4055,12 @@ Object.assign(sfx, {
   bow:    () => { tone(420, 0.05, 'triangle', 0.05); noiseBurst(0.06, 3200, 0.06); },
   draw:   () => { tone(180, 0.25, 'triangle', 0.025); tone(240, 0.3, 'triangle', 0.02, 0.1); },
   ignite: () => { noiseBurst(0.3, 700, 0.12); tone(110, 0.2, 'sawtooth', 0.04); },
-  die:    () => { tone(330, 0.15, 'triangle', 0.05); tone(247, 0.15, 'triangle', 0.05, 0.15); tone(165, 0.35, 'triangle', 0.05, 0.3); }
+  die:    () => { tone(330, 0.15, 'triangle', 0.05); tone(247, 0.15, 'triangle', 0.05, 0.15); tone(165, 0.35, 'triangle', 0.05, 0.3); },
+  boom:   () => { noiseBurst(0.5, 380, 0.22); tone(55, 0.4, 'sawtooth', 0.06); },
+  rumble: () => { noiseBurst(0.45, 200, 0.1); tone(48, 0.4, 'triangle', 0.04); },
+  rev:    () => { tone(90, 0.2, 'sawtooth', 0.03); tone(140, 0.25, 'sawtooth', 0.03, 0.15); tone(210, 0.3, 'sawtooth', 0.03, 0.35); },
+  clang:  () => { tone(880, 0.06, 'square', 0.04); tone(1320, 0.1, 'triangle', 0.03, 0.02); noiseBurst(0.05, 4000, 0.06); },
+  drill:  () => { tone(70 + Math.random() * 30, 0.1, 'sawtooth', 0.018); if (mining) noiseBurst(0.06, 3000, 0.035); }
 });
 
 // the in-game sprite sheet has its dagger erased (img/player-swing.png), so
@@ -2987,15 +4093,19 @@ function playDrawHeld(dx, dy, row, col, front) {
   // a drawn bow is turned so its string runs across your aim, the way you'd
   // actually hold it
   if (bowDraw && it.ranged) a = (aimAngle() * 180) / Math.PI - 90;
+  // the drill points where you're drilling, spins, and shudders in your hands
+  const spinning = drilling && it.tool === 'drill';
+  if (spinning) a = (aimAngle() * 180) / Math.PI;
   // tools are held by the handle and point along the swing, anything else is
-  // just a smaller copy of its icon sitting in your hand
-  const k = it.tool ? 0.72 : 0.55;
+  // just a smaller copy of its icon sitting in your hand. the drill is a big
+  // thing, so it's held bigger.
+  const k = it.tool === 'drill' ? 0.9 : it.tool ? 0.72 : 0.55;
   ctx.save();
   if (player.blink) ctx.globalAlpha = 0.4;
-  ctx.translate(dx + x * S, dy + pose.y * S);
+  ctx.translate(dx + x * S + (spinning ? Math.round(Math.random() - 0.5) * S : 0), dy + pose.y * S);
   if (it.tool) {
     ctx.rotate(((a + 45) * Math.PI) / 180);
-    ctx.drawImage(img, -3 * k * S, -13 * k * S, 16 * k * S, 16 * k * S);
+    ctx.drawImage(spinning && Math.floor(drilling.t * 30) % 2 ? DRILL_SPIN : img, -3 * k * S, -13 * k * S, 16 * k * S, 16 * k * S);
   } else {
     ctx.drawImage(img, -8 * k * S, -8 * k * S, 16 * k * S, 16 * k * S);
   }
@@ -3047,7 +4157,11 @@ const prevBiome = id => regionById[CHAPTERS[CHAPTERS.indexOf(id) - 1]].biome;
 function playRegionNote(id) { return biomeOpen(id) ? '' : `Sealed. Clear ${prevBiome(id)} first.`; }
 // a landmark in a biome that isn't open yet is sealed: you can see it from a
 // distance but it can't be found until the biome before it is fully cleared
-function playSealNote(p) { return biomeOpen(p.region) ? '' : `Sealed. Clear ${prevBiome(p.region)} first.`; }
+function playSealNote(p) {
+  if (!biomeOpen(p.region)) return `Sealed. Clear ${prevBiome(p.region)} first.`;
+  const why = mineSealReason(p);
+  return why ? `Sealed. ${why}` : '';
+}
 const sealHinted = new Set();
 function lockedToast(id) {
   if (lockHintT > 0) return;
@@ -3071,7 +4185,7 @@ function checkChapters() {
     if (sealHinted.has(p.id) || found.has(p.id) || p.thing.gone || !playSealNote(p)) return;
     if (Math.hypot(p.thing.x - player.x, p.thing.y - player.y) < TILE * 3.4) {
       sealHinted.add(p.id);
-      toast('Sealed', '? ? ?', `Clear ${prevBiome(p.region)} first`);
+      toast('Sealed', '? ? ?', playSealNote(p).replace(/^Sealed\. /, ''));
       sfx.deny();
     }
   });
@@ -3115,9 +4229,20 @@ function enterRoom(r, quiet) {
   particles.length = 0;
   projectiles.length = 0;
   keys.clear();
-  Object.assign(cam, { x: room.w / 2 - focusX / S, y: room.h / 2 - focusY / S });
+  // the den's door is a long way below moe, so you start a few steps in
+  if (r === denRoom) {
+    player.y = r.h - 34;
+    if (!moe.dead) startMoeIntro();
+  }
+  Object.assign(cam, roomCam());
   if (quiet) return;
   sfx.region();
+  if (r.burrow !== undefined && !quest.burrows[r.burrow].visited) {
+    quest.burrows[r.burrow].visited = true;
+    toast('Underground', 'A mole hole', 'Something with big teeth lives down here');
+    markDirty();
+  }
+  if (r === denRoom && moe.dead) toast('Inside', 'Moe\'s den', 'All quiet now');
   if (r === caveRoom && !quest.cave.visited) {
     quest.cave.visited = true;
     toast('Inside', 'The Cave', 'It smells like bear in here');
@@ -3131,7 +4256,9 @@ function enterRoom(r, quiet) {
 }
 function playLeaveRoom(quiet) {
   const r = room;
+  if (r === denRoom) resetMoe();
   room = null;
+  projectiles.length = 0;
   player.x = r.exit.x;
   player.y = r.exit.y;
   player.face = 'down';
@@ -3143,11 +4270,19 @@ function playLeaveRoom(quiet) {
 }
 const buildingOpen = b => biomeOpen(regionAt(b.tile[0] + 0.5, b.tile[1] + 0.5));
 // walking up into an open doorway takes you in, same as clicking the building
+// a mole hole you just walk into (you have to actually be walking, so
+// stepping back out of one doesn't drop you straight back in)
 function checkDoors() {
   if (room || player.dead) return;
   const pushing = keys.has('KeyW') || keys.has('ArrowUp');
-  if (!pushing) return;
   for (const b of BUILDINGS) {
+    if (b.hole) {
+      if (!player.moving || Math.abs(player.x - b.thing.x) > 9 || Math.abs(player.y - (b.thing.y - 9)) > 5) continue;
+      if (buildingOpen(b)) enterRoom(b.room);
+      else lockedToast(regionAt(b.tile[0] + 0.5, b.tile[1] + 0.5));
+      return;
+    }
+    if (!pushing) continue;
     const doorX = b.tile[0] * TILE + 8, doorY = b.tile[1] * TILE;
     if (Math.abs(player.x - doorX) < 7 && player.y < doorY + 7 && player.y > doorY && b.open() && buildingOpen(b)) { enterRoom(b.room); return; }
   }
@@ -3239,7 +4374,7 @@ function coreMotes(dt) {
   particles.push({ x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, vx: -Math.cos(a) * d * 1.6, vy: -Math.sin(a) * d * 1.6, g: 0, life: 0.6, t: 0, col: Math.random() < 0.5 ? '#7ff7ff' : '#c08bff', size: 1 });
 }
 
-function playFrozen() { return ui !== null || player.dead || !!sleeping; }
+function playFrozen() { return ui !== null || player.dead || !!sleeping || !!cine; }
 // which layer of img/player-armor.png to paint over you, or -1 for none
 const ARMOR_LAYERS = ['hide', 'wool', 'gold', 'marble', 'iron', 'emerald', 'diamond'];
 function playArmorIndex() {
@@ -3286,17 +4421,22 @@ function playUpdate(dt, t) {
     }
   }
 
-  // the overworld waits while you're indoors
+  // only what's where you are moves: the overworld waits while you're indoors,
+  // and a room's creatures wait while you're out
+  creatures.forEach(c => { if (here(c)) updateCreature(c, dt); });
+  updateProjectiles(dt);
   if (!room) {
-    creatures.forEach(c => updateCreature(c, dt));
     for (let i = creatures.length - 1; i >= 0; i--) {
       if (creatures[i].despawn) { things.splice(things.indexOf(creatures[i]), 1); creatures.splice(i, 1); }
     }
     updateSpawning(dt);
     updateNightSpawns(dt);
-    updateProjectiles(dt);
     checkDoors();
-  } else if (player.y > room.h - 3) playLeaveRoom();
+  } else if (!room.sealed && player.y > room.h - 3) playLeaveRoom();
+  shakeAmp = Math.max(0, shakeAmp - dt * 10);
+  tickCine(dt);
+  tickBossBar(dt);
+  tickDrill(dt);
   noArrowT -= dt;
   tickSecretRock(dt);
   coreMotes(dt);
@@ -3312,12 +4452,12 @@ function playUpdate(dt, t) {
   // (holding a snowball throws it instead of swinging, unless you're pointing
   // at something you can dig or chop right in front of you. the bow is drawn
   // with the right button, see startBowDraw.)
-  if (mouse.down && !ui && !player.dead) {
+  if (mouse.down && !ui && !player.dead && !cine && !drilling) {
     const tool = heldTool();
     const a = aimAngle();
     const tgt = targetAt(mouseWorld());
     const held = heldItem() && ITEMS[heldItem().id];
-    const ranged = !room && held && held.throw;
+    const ranged = shootsHere() && held && held.throw;
     const diggable = tgt && !CLICK_ONLY.has(tgt.type) && inReach(tgt) && (!ranged || mineInfo(tgt).time !== Infinity);
     const fighting = !ranged && creatures.some(c => inArc(c, a, tool));
     if (!fighting && diggable) mineStep(tgt, dt);
@@ -3327,7 +4467,7 @@ function playUpdate(dt, t) {
       if (ranged) useRanged(held);
       else attack();
     }
-  } else if (mining) {
+  } else if (mining && !drilling) {
     if (mining.thing) mining.thing.shake = 0;
     mining = null;
   }
@@ -3357,6 +4497,8 @@ function playUpdate(dt, t) {
 // what you can actually see in the dark: everything by day, and at night (or in
 // the mines) only what's near you or near a flame, same idea as the signs
 function visibleInDark(x, y) {
+  // rooms are small and have their own lights, so everything in one counts
+  if (room) return true;
   const night = nightAmount() > 0.5, mine = amb.mines > 0.5;
   if (!night && !mine) return true;
   if (Math.hypot(x - player.x, y - player.y) < TILE * (night ? 3.6 : 6)) return true;
@@ -3449,7 +4591,7 @@ function playRenderOverlay(toX, toY, t) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   creatures.forEach(c => {
-    if (room || c.dead || c.gone) return;
+    if (!here(c) || c.dead || c.gone || c.def.boss || c.state === 'burrowed') return;
     // in the dark you only see what's lit, so no health bars or tells out
     // there, just a night mob's eyes glinting back at you
     if (!visibleInDark(c.x, c.y)) { if (EYES[c.kind]) drawEyes(c, toX, toY, t); return; }
@@ -3489,7 +4631,7 @@ function playRenderOverlay(toX, toY, t) {
   if (!room) BUILDINGS.forEach(b => { if (b.hint() && b.open() && Math.hypot(b.thing.x - player.x, b.thing.y - player.y) < TILE * 4) bubble(b.thing, 'CLICK TO ENTER'); });
 
   // things in flight, each with a little shadow on the ground under it
-  if (!room) projectiles.forEach(p => {
+  if (shootsHere()) projectiles.forEach(p => {
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.fillRect(toX(p.x - 1), toY(p.y + 10), 2 * S, S);
     if (p.kind === 'snow') {
@@ -3563,7 +4705,7 @@ canvas.addEventListener('pointermove', e => {
 canvas.addEventListener('pointerleave', () => { mouse.inCanvas = false; });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('pointerdown', e => {
-  if (!started || ui || player.dead) return;
+  if (!started || ui || player.dead || cine) return;
   mouse.x = e.clientX; mouse.y = e.clientY; mouse.inCanvas = true;
   mouse.touch = e.pointerType === 'touch';
   if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
@@ -3573,6 +4715,7 @@ canvas.addEventListener('pointerdown', e => {
   if (tgt && CLICK_ONLY.has(tgt.type)) {
     const name = tgt.type === 'station' ? { craft: 'Crafting Table', furnace: 'Furnace', chest: 'Chest' }[tgt.st.kind] : tgt.type === 'building' ? tgt.b.name : '???';
     if (!inReach(tgt)) toast('Too far', name, 'Walk up to it first');
+    else if (tgt.type === 'station' && tgt.st.locked) { toast('Locked', 'Moe\'s chest', 'Defeat Moe the Mole first'); sfx.deny(); }
     else if (tgt.type === 'station') openUI(tgt.st.kind, tgt.st);
     else if (tgt.type === 'building') useBuilding(tgt.b);
     else takePart();
@@ -3591,8 +4734,8 @@ canvas.addEventListener('pointerdown', e => {
   }
   mouse.down = true;
 });
-window.addEventListener('pointerup', e => { if (e.button === 2) releaseBow(); else mouse.down = false; });
-window.addEventListener('blur', () => { mouse.down = false; bowDraw = null; });
+window.addEventListener('pointerup', e => { if (e.button === 2) { releaseBow(); stopDrill(); } else mouse.down = false; });
+window.addEventListener('blur', () => { mouse.down = false; bowDraw = null; stopDrill(); });
 canvas.addEventListener('wheel', e => {
   if (!started || ui) return;
   e.preventDefault();

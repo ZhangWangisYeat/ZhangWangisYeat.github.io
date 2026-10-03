@@ -787,8 +787,9 @@ function generate() {
     }
   };
 
-  // carve a wandering trail from camp to every landmark so nothing is walled
-  // off. only solid tiles get carved, which is why lakes survive the trail.
+  // carve a wandering trail from camp to every landmark (and every mole hole)
+  // so nothing is walled off. only solid tiles get carved, which is why lakes
+  // survive the trail.
   [...POIS.map(p => p.at), ...MOLE_HOLES].forEach(([px, py], n) => {
     const steps = Math.ceil(Math.hypot(px - CAMP.x, py - CAMP.y) * 1.6);
     const nx = -(py - CAMP.y), ny = px - CAMP.x, nl = Math.hypot(nx, ny) || 1;

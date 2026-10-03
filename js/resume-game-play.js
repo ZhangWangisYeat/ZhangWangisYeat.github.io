@@ -90,6 +90,9 @@ const ARMOR_SLOTS = [
   { key: 'feet', piece: 'boots', name: 'Boots', share: 0.15 }
 ];
 const SLOT_OF = Object.fromEntries(ARMOR_SLOTS.map(a => [a.key, a]));
+// the marble sword is polished stone and shows it: a glossy icon, a glint in
+// the hotbar and inventory, and a sparkle running up the blade in your hand
+ITEMS['marble-sword'].shiny = true;
 Object.keys(ARMORS).forEach(m => ARMOR_SLOTS.forEach(a => {
   ITEMS[`${m}-${a.piece}`] = { name: `${ARMORS[m].name} ${a.name}`, armor: m, slot: a.key, mat: m, dur: ARMORS[m].dur };
 }));
@@ -285,6 +288,16 @@ function swordIcon(G, P) {
   pxLine(G, 4, 9, 7, 12, '#3b3f47');
   pxLine(G, 2, 14, 5, 11, HANDLE[0], 2);
 }
+// the marble sword: a pale blade with a hard white edge of light along it, a
+// thin blue-grey vein through the middle, a cool sheen on the far edge and a
+// bright point at the tip
+function marbleSwordIcon(G) {
+  swordIcon(G, ['#f4f1ea', '#e2ddd4', '#c3cedc']);
+  pxLine(G, 6, 10, 14, 2, '#ffffff');
+  [[9, 8, '#9fb0c6'], [11, 6, '#9fb0c6'], [12, 5, '#b8c6d8'], [8, 9, '#dfe6f0']].forEach(([x, y, c]) => G.set(x, y, c));
+  G.set(15, 1, '#ffffff');
+  G.set(14, 1, '#e6f2ff');
+}
 function pickIcon(G, P) {
   pxLine(G, 3, 13, 11, 5, HANDLE[0], 2);
   pxLine(G, 4, 14, 11, 7, HANDLE[1]);
@@ -386,7 +399,8 @@ function makeCoreSprite() {
 function makeIcon(id) {
   const G = pixelGrid(16, 16);
   const it = ITEMS[id];
-  if (it.tool && it.mat) ({ sword: swordIcon, pickaxe: pickIcon, axe: axeIcon })[it.tool](G, MAT_PAL[it.mat]);
+  if (id === 'marble-sword') marbleSwordIcon(G);
+  else if (it.tool && it.mat) ({ sword: swordIcon, pickaxe: pickIcon, axe: axeIcon })[it.tool](G, MAT_PAL[it.mat]);
   else if (it.armor) ({ head: helmetIcon, chest: armorIcon, legs: leggingsIcon, feet: bootsIcon })[it.slot](G, MAT_PAL[it.armor]);
   else if (it.arrow) arrowIcon(G, MAT_PAL[it.arrow]);
   else switch (id) {
@@ -4005,7 +4019,7 @@ function slotHTML(ref, stack, extra = '', ghost = '') {
   const it = stack && ITEMS[stack.id];
   const label = it ? `${it.name}${stack.n > 1 ? ` ×${stack.n}` : ''}` : '';
   return `<button type="button" class="slot ${extra}" data-ref="${ref}"${label ? ` data-tip="${label}"` : ''} aria-label="${label || 'Empty'}">
-    ${it ? `<i style="background-image:url(${ICON[stack.id]})"></i>${stack.n > 1 ? `<b>${stack.n}</b>` : ''}${durBar(stack)}` : ghost ? `<i class="ghost" style="background-image:url(${ghost})"></i>` : ''}
+    ${it ? `<i${it.shiny ? ' class="shine"' : ''} style="background-image:url(${ICON[stack.id]})"></i>${stack.n > 1 ? `<b>${stack.n}</b>` : ''}${durBar(stack)}` : ghost ? `<i class="ghost" style="background-image:url(${ghost})"></i>` : ''}
   </button>`;
 }
 // faint outlines for the empty armor slots, so you can tell which is which
@@ -4191,7 +4205,7 @@ function renderHUD() {
   $('#hotbar').innerHTML = inv.slots.slice(0, 6).map((s, i) => `
     <button type="button" class="hb-slot${i === inv.sel ? ' is-sel' : ''}" data-hotbar="${i}"${s ? ` data-tip="${ITEMS[s.id].name}${s.n > 1 ? ` ×${s.n}` : ''}"` : ''} aria-label="${s ? ITEMS[s.id].name : 'Empty'}">
       <span class="hb-key">${i + 1}</span>
-      ${s ? `<i style="background-image:url(${ICON[s.id]})"></i>${s.n > 1 ? `<b>${s.n}</b>` : ''}${durBar(s)}` : ''}
+      ${s ? `<i${ITEMS[s.id].shiny ? ' class="shine"' : ''} style="background-image:url(${ICON[s.id]})"></i>${s.n > 1 ? `<b>${s.n}</b>` : ''}${durBar(s)}` : ''}
     </button>`).join('');
   const s = heldItem();
   $('#held-name').textContent = s
@@ -4333,6 +4347,18 @@ function playDrawHeld(dx, dy, row, col, front) {
   if (it.tool) {
     ctx.rotate(((a + 45) * Math.PI) / 180);
     ctx.drawImage(spinning && Math.floor(drilling.t * 30) % 2 ? DRILL_SPIN : img, -3 * k * S, -13 * k * S, 16 * k * S, 16 * k * S);
+    // a shiny blade: every so often a four-point glint runs from the guard to
+    // the tip (drawn upright, whatever angle the blade's at)
+    const ph = (performance.now() % 1500) / 1500;
+    if (it.shiny && !reduceMotion && ph < 0.4) {
+      const u = ph / 0.4, glow = 1 - Math.abs(u - 0.5) * 2;
+      ctx.translate((-3 + 7 + u * 7) * k * S, (-13 + 9 - u * 7) * k * S);
+      ctx.rotate((-(a + 45) * Math.PI) / 180);
+      ctx.fillStyle = `rgba(255,255,255,${0.35 + 0.65 * glow})`;
+      ctx.fillRect(-S / 2, -1.5 * S, S, 3 * S);
+      ctx.fillRect(-1.5 * S, -S / 2, 3 * S, S);
+      if (glow > 0.6) { ctx.fillRect(-S / 2, -2.5 * S, S, S); ctx.fillRect(-S / 2, 1.5 * S, S, S); }
+    }
   } else {
     ctx.drawImage(img, -8 * k * S, -8 * k * S, 16 * k * S, 16 * k * S);
   }

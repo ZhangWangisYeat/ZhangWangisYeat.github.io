@@ -993,6 +993,14 @@ body.is-title .toast { opacity: 0; pointer-events: none; }
 .armor-bar.is-tier1 i:nth-child(3), .armor-bar.is-tier2 i:nth-child(3) { animation-delay: 0.24s; }
 .armor-bar.is-tier1 i:nth-child(4), .armor-bar.is-tier2 i:nth-child(4) { animation-delay: 0.36s; }
 .armor-bar.is-tier1 i:nth-child(5), .armor-bar.is-tier2 i:nth-child(5) { animation-delay: 0.48s; }
+.slot i.shine,
+.hb-slot i.shine { animation: item-shine 2.2s steps(1) infinite; }
+@keyframes item-shine {
+  0%, 82% { filter: none; }
+  86% { filter: brightness(1.35) drop-shadow(0 0 2px rgba(255, 255, 255, 0.9)); }
+  90% { filter: brightness(1.7) drop-shadow(0 0 4px rgba(220, 235, 255, 0.9)); }
+  94% { filter: brightness(1.2); }
+}
 @keyframes armor-shine {
   0%, 84% { filter: none; }
   88% { filter: brightness(1.5) drop-shadow(0 0 3px rgba(143, 248, 255, 0.8)); }

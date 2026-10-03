@@ -4215,7 +4215,6 @@ const QUEST_STEPS = [
   { done: () => quest.killed.hyena, title: () => (quest.seen.hyena ? 'Defeat the marble hyena' : 'Find the next landmark') },
   { done: craftedWeapon, title: 'Craft a weapon' },
   { done: () => quest.killed.bear, title: 'Defeat the grizzly' },
-  { done: () => quest.crafted['hide-armor'] || ARMOR_SLOTS.some(a => quest.crafted[`hide-${a.piece}`]), title: 'Craft hide armor' },
   { done: () => false, title: 'Meadows complete' }
 ];
 const meadowsComplete = () => QUEST_STEPS.slice(0, -1).every(q => q.done());
@@ -4401,8 +4400,9 @@ let wasComplete = null;
 function checkChapters() {
   const done = meadowsComplete();
   if (wasComplete === false && done) {
-    toast('Meadows complete', 'The Mines are open', 'Fast travel works in the Meadows now');
-    sfx.found();
+    // the grizzly is the last step, and its own landmark and "defeated" toasts
+    // go first, so this one waits its turn instead of wiping them off
+    setTimeout(() => { toast('Meadows complete', 'The Mines are open', 'Fast travel works in the Meadows now'); sfx.found(); }, 4600);
     renderJournal(journalRegion);
     paintMinimap();
   }

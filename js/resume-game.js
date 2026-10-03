@@ -2173,7 +2173,7 @@ function buildTitleBg() {
   // like the reference, curling up and down as they spread, a third forking
   const cols = ['255,214,120', '255,214,120', '255,190,100', '255,170,80', '255,170,80', '255,236,200', '255,236,200', '255,130,70', '120,215,255', '190,140,255', '255,120,190'];
   tv.strands = [];
-  for (let k = 0; k < 230; k++) {
+  for (let k = 0; k < 150; k++) {
     const side = r() < 0.5 ? -1 : 1, sx = cx + side * r() * W2 * 0.06, sy = cy + (r() - 0.5) * 3;
     const reach = W2 * (0.25 + r() * 0.6), spread = (r() - 0.5) * H2 * (0.25 + r() * 0.9);
     const p = [sx, sy, sx + side * reach * 0.3, sy + spread * 0.1 + (r() - 0.5) * 10, sx + side * reach * 0.65, sy + spread * (0.4 + r() * 0.4),
@@ -2218,6 +2218,7 @@ function sizeHero() {
   tv.buf = mk(tv.w, tv.h);
   tv.g = tv.buf.getContext('2d');
   tv.bg = null;
+  tv.flow = null;
 }
 
 // a see-through copy of each frame in cold blue, for the afterimages
@@ -2241,6 +2242,111 @@ function buildTitle() {
   const r = mulberry32(SEED + 99);
   tv.sparks = Array.from({ length: 110 }, () => ({ a: r(), sp: 0.05 + r() * 0.12, side: r() < 0.5 ? -1 : 1, rise: (r() - 0.5) * 0.9, ph: r() }));
   tv.wisps = Array.from({ length: 6 }, (_, k) => ({ r: 0.55 + r() * 0.35, a0: r() * 6.28, span: 0.8 + r() * 1.4, sp: (r() < 0.5 ? -1 : 1) * (0.4 + r() * 0.6), ph: r() * 6.28, cyan: k % 2 }));
+}
+
+// the timelines in motion: an endless stream of them born along the core on
+// the horizon, racing out towards the screen and branching as they come. each
+// one is a curve in 3d: it starts far away (z = FLOW.far) and every second its
+// leading end gets FLOW.speed closer, while drifting outwards in its own
+// direction. drawn in perspective (screen = centre + x * focal / z) that makes
+// it creep out of the vanishing point, then spread and thicken faster and
+// faster until it whips past the edge of the screen, which is what makes them
+// feel like they're coming at you. partway along a strand can split into a
+// new one heading off at an angle, and those can split again, in every
+// direction, and a fifth of the strands are aimed right at you. anything
+// nearer the camera than you are is drawn in front of you, so strands fly past
+// on both sides. they're plotted pixel by pixel (no smoothing) to stay crisp.
+const FLOW = { far: 60, near: 1.4, focal: 120, speed: 15, len: 34, roots: 26, playerZ: 9 };
+const FLOW_COLS = ['255,214,120', '255,214,120', '255,190,100', '255,170,80', '255,236,200', '255,236,200', '255,130,70', '120,215,255', '190,140,255', '255,120,190'];
+function flowStrand(r, born, opts) {
+  const { cx, cy, fx, fy } = titleLayout();
+  let ang = r() * Math.PI * 2, mag = 0.12 + r() * 1.1;
+  // a fifth of them head straight for you
+  if (r() < 0.2) { ang = Math.atan2(fy - cy, fx - cx || 0.01) + (r() - 0.5) * 0.6; mag = 0.03 + r() * 0.2; }
+  const s = {
+    s0: 0, born, depth: 0,
+    x0: (r() - 0.5) * (tv.w * 0.5) * FLOW.far / FLOW.focal, y0: (r() - 0.5) * 0.6,
+    ux: Math.cos(ang) * mag, uy: Math.sin(ang) * mag * 0.7,
+    wob: (r() - 0.5) * 7, wf: 0.06 + r() * 0.1, wph: r() * 6.28,
+    col: FLOW_COLS[(r() * FLOW_COLS.length) | 0], forks: [], ...opts
+  };
+  // where along itself it'll split, and how many times
+  const n = s.depth === 0 ? 1 + (r() < 0.6 ? 1 : 0) + (r() < 0.25 ? 1 : 0) : s.depth === 1 ? (r() < 0.8 ? 1 : 0) : s.depth === 2 && r() < 0.4 ? 1 : 0;
+  for (let k = 0; k < n; k++) s.forks.push(s.s0 + 4 + r() * 26);
+  return s;
+}
+function flowPoint(s, at) {
+  const d = at - s.s0, ease = Math.min(1, d / 8);
+  return [s.x0 + s.ux * d + s.wob * Math.sin(d * s.wf + s.wph) * ease, s.y0 + s.uy * d + s.wob * 0.5 * Math.cos(d * s.wf * 1.3 + s.wph) * ease, FLOW.far - at];
+}
+function flowStep(secs) {
+  const r = Math.random;
+  if (!tv.flow) {
+    // start with the screen already full, as if they'd been coming for a while
+    tv.flow = [];
+    for (let k = 0; k < FLOW.roots; k++) tv.flow.push(flowStrand(r, secs - r() * (FLOW.far + FLOW.len) / FLOW.speed, {}));
+  }
+  const kids = [];
+  tv.flow = tv.flow.filter(s => {
+    const head = s.s0 + FLOW.speed * (secs - s.born);
+    // split off a new branch when the leading end reaches a fork point
+    s.forks = s.forks.filter(at => {
+      if (head < at) return true;
+      const [X, Y] = flowPoint(s, at), turn = (r() < 0.5 ? -1 : 1) * (0.3 + r() * 0.6);
+      const c = Math.cos(turn), sn = Math.sin(turn), m = 0.7 + r() * 0.6;
+      kids.push(flowStrand(r, s.born + (at - s.s0) / FLOW.speed, {
+        s0: at, x0: X, y0: Y, depth: s.depth + 1, col: r() < 0.7 ? s.col : FLOW_COLS[(r() * FLOW_COLS.length) | 0],
+        ux: (s.ux * c - s.uy * sn) * m, uy: (s.ux * sn + s.uy * c) * m
+      }));
+      return false;
+    });
+    return head - FLOW.len < FLOW.far - FLOW.near;
+  });
+  tv.flow.push(...kids);
+  const roots = tv.flow.filter(s => s.depth === 0).length;
+  for (let k = roots; k < FLOW.roots; k++) tv.flow.push(flowStrand(r, secs - r() * 0.4, {}));
+}
+// draw every strand's stretch that's further away than `minZ` and nearer than
+// `maxZ`, so the ones behind you go down before you and the rest after
+function flowDraw(g, secs, minZ, maxZ) {
+  const { cx, cy } = titleLayout(), W2 = tv.w, H2 = tv.h;
+  g.globalCompositeOperation = 'lighter';
+  tv.flow.forEach(s => {
+    const head = s.s0 + FLOW.speed * (secs - s.born), tail = Math.max(s.s0, head - FLOW.len);
+    if (head <= s.s0) return;
+    let prev = null;
+    for (let at = tail; at <= head; ) {
+      const [X, Y, Z] = flowPoint(s, at);
+      const step = Math.max(0.25, Z * 0.06);
+      if (Z < FLOW.near) break;
+      const px = cx + (X * FLOW.focal) / Z, py = cy + (Y * FLOW.focal) / Z;
+      if (Z >= minZ && Z < maxZ && prev) {
+        // brighter towards the leading end, faded at the tail, thicker up close
+        const fade = Math.min(1, (at - tail) / 8) * (0.6 + 0.4 * Math.min(1, 8 / Z));
+        const w = Z < 3 ? 3 : Z < 8 ? 2 : 1, tip = head - at < 1.2;
+        const dx = px - prev[0], dy = py - prev[1], n = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy))));
+        if (n < 600) {
+          // a soft glow under the near ones, then the strand itself
+          if (w > 1) {
+            g.fillStyle = `rgba(${s.col},${fade * 0.18})`;
+            for (let i = 1; i <= n; i += 2) {
+              const x = Math.round(prev[0] + (dx * i) / n), y = Math.round(prev[1] + (dy * i) / n);
+              g.fillRect(x - w, y - w, w * 2 + 1, w * 2 + 1);
+            }
+          }
+          g.fillStyle = tip ? `rgba(255,250,236,${Math.min(1, fade * 1.6)})` : `rgba(${s.col},${Math.min(1, fade)})`;
+          for (let i = 1; i <= n; i++) {
+            const x = Math.round(prev[0] + (dx * i) / n), y = Math.round(prev[1] + (dy * i) / n);
+            if (x > -4 && y > -4 && x < W2 + 4 && y < H2 + 4) g.fillRect(x - (w >> 1), y - (w >> 1), w, w);
+          }
+        }
+      }
+      prev = [px, py];
+      if (at === head) break;
+      at = Math.min(head, at + step);
+    }
+  });
+  g.globalCompositeOperation = 'source-over';
 }
 
 function renderHero(t) {
@@ -2293,6 +2399,9 @@ function renderHero(t) {
     });
   }
 
+  // the moving timelines behind you, then you, then the ones nearer than you
+  if (!reduceMotion) { flowStep(secs); flowDraw(g, secs, FLOW.playerZ, Infinity); }
+
   // you, falling. where you are and how you're tilted at any moment: you drop
   // in from above the screen on the way in (fast at first, then the camera
   // catches up and settles on you), then hang there at terminal velocity,
@@ -2335,6 +2444,7 @@ function renderHero(t) {
     });
   }
   g.drawImage(tv.frames[fi], ox, oy);
+  if (!reduceMotion) flowDraw(g, secs, 0, FLOW.playerZ);
 
   // a quick white flash when the page first opens, as you come through
   const intro = reduceMotion ? 0 : Math.max(0, 1 - secs / 0.5);

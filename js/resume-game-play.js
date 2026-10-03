@@ -179,9 +179,9 @@ const CREATURES = {
     name: 'Forest Guardian', hp: 4, speed: 46, aggro: 11, leash: 80, dmg: 0.5,
     knock: 110, h: 36, box: { w: 16, h: 26 }, rest: 'prowl', regen: 0, chip: '138,96,52',
     nightly: true, shooter: { range: 7.5, keep: 4, cd: 2.4, speed: 190, dmg: 0.5, poison: 2 },
-    // the fourth number is a drop chance: half a percent for the heart, and
-    // it stops dropping once you have it
-    drops: [['stick', 1, 3], ['forest-heart', 1, 1, 0.005]], intro: ['Night', 'It keeps its distance and throws poison tipped sticks.']
+    // the fourth number is a drop chance: 3% for the heart, and it stops
+    // dropping once you have it
+    drops: [['stick', 1, 3], ['forest-heart', 1, 1, 0.03]], intro: ['Night', 'It keeps its distance and throws poison tipped sticks.']
   },
   // passive livestock: wander, graze, and run when you hit them
   cow: {

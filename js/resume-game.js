@@ -1987,166 +1987,81 @@ const heroCtx = hero.getContext('2d');
 const tv = { w: 0, h: 0, s: 1, bg: null, buf: null, g: null, fig: null, aura: [], strands: [], sparks: [], wisps: [] };
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16);
 
-// you, exactly as you are in the game: these are the six frames of the player
-// sprite's walk cycle facing the camera, copied pixel for pixel out of
-// img/player.png (the sheet can't be read back when the page is opened
-// straight from disk, so the pixels live here as text, one letter per colour,
-// the drop shadow left out). they're turned head down and blown up by a whole
-// number with no smoothing, the same way the game draws you, so every pixel is
-// the sprite's own. cycling the walk frames while you fall makes your arms and
-// legs flail.
-const WALK_FRONT = [
-  [
-    '.....KKKK.KK........',
-    '.....KhhHKhKKK......',
-    '.....KKhhHhhhHK.....',
-    '....KHhhhhhhhhK.....',
-    '...KHhhhhHhhhhHK....',
-    '...KhhhHHHHhhhhK....',
-    '...KhhhHssssHhhK....',
-    '...KhhHssssssHhK....',
-    '...KHhsSeeeSsHK.....',
-    '....KheSeeeSesK.....',
-    '....KseeeeeeesK.....',
-    '....KHseeeeesHK.....',
-    '.....KHsssssHK......',
-    '.....KHHbbbhHK......',
-    '.....KHhbBBhhK......',
-    '....KehhggghhsK.....',
-    '....KeGggggggsK.....',
-    '.....KgggGgghhK.....',
-    '.....KgggKHhhhK.....',
-    '.....KhhHKKKKK......',
-    '.....KhhK...........'
-  ],
-  [
-    '....................',
-    '.....KKKK.KK........',
-    '.....KhhHKhKKK......',
-    '.....KKhhHhhhHK.....',
-    '....KHhhhhhhhhK.....',
-    '...KHhhhhHhhhhHK....',
-    '...KhhhHHHHhhhhK....',
-    '...KhhhHssssHhhK....',
-    '...KhhHssssssHhK....',
-    '...KHhsSeeeSsHK.....',
-    '....KheSeeeSesK.....',
-    '....KseeeeeeesK.....',
-    '....KHseeeeesHK.....',
-    '.....KHsssssHK......',
-    '....KKHHbbbHHK......',
-    '...KeeHhbBBhHsK.....',
-    '...KeehhggghhsK.....',
-    '....KKGggggggK......',
-    '.....KHhhKgggK......',
-    '......KKKKHhhhK.....',
-    '..........KhhhK.....'
-  ],
-  [
-    '....................',
-    '....................',
-    '.....KKKK.KK........',
-    '.....KhhHKhKKK......',
-    '.....KKhhHhhhHK.....',
-    '....KHhhhhhhhhK.....',
-    '...KHhhhhHhhhhHK....',
-    '...KhhhHHHHhhhhK....',
-    '...KhhhHssssHhhK....',
-    '...KhhHssssssHhK....',
-    '...KHhsSeeeSsHK.....',
-    '....KheSeeeSesK.....',
-    '....KseeeeeeesK.....',
-    '....KHseeeeesHK.....',
-    '.....KHsssssHK......',
-    '.....KHhbbbhHK......',
-    '.....KhhbBBhhK......',
-    '....KeehggghhsK.....',
-    '....KeeGgGgggsK.....',
-    '.....KHHHKhhhK......',
-    '......KKKKhhKK......'
-  ],
-  [
-    '.....KKKK.KK........',
-    '.....KhhHKhKKK......',
-    '.....KKhhHhhhHK.....',
-    '....KHhhhhhhhhK.....',
-    '...KHhhhhHhhhhHK....',
-    '...KhhhHHHHhhhhK....',
-    '...KhhhHssssHhhK....',
-    '...KhhHssssssHhK....',
-    '...KHhsSeeeSsHK.....',
-    '....KheSeeeSesK.....',
-    '....KseeeeeeesK.....',
-    '....KHseeeeesHK.....',
-    '.....KHsssssHK......',
-    '.....KHhbbbHHK......',
-    '.....KhhbBBhHK......',
-    '....KshhggghheK.....',
-    '....KsggGgghheK.....',
-    '....KhhGGGggGK......',
-    '....KhhhHKgggK......',
-    '.....KKKKKHhhK......',
-    '..........KhhK......'
-  ],
-  [
-    '....................',
-    '.....KKKK.KK........',
-    '.....KhhHKhKKK......',
-    '.....KKhhHhhhHK.....',
-    '....KHhhhhhhhhK.....',
-    '...KHhhhhHhhhhHK....',
-    '...KhhhHHHHhhhhK....',
-    '...KhhhHssssHhhK....',
-    '...KhhHssssssHhK....',
-    '...KHhsSeeeSsHK.....',
-    '....KheSeeeSesK.....',
-    '....KseeeeeeesK.....',
-    '....KHseeeeesHK.....',
-    '.....KHsssssHK......',
-    '.....KHhbbbhHK......',
-    '....KKhhbBBheeK.....',
-    '....KKhhggggeeK.....',
-    '.....KggggghhK......',
-    '.....KgggKhhhK......',
-    '....KhhhHKKKK.......',
-    '....KhhhK...........'
-  ],
-  [
-    '....................',
-    '....................',
-    '.....KKKK.KK........',
-    '.....KhhHKhKKK......',
-    '.....KKhhHhhhHK.....',
-    '....KHhhhhhhhhK.....',
-    '...KHhhhhHhhhhHK....',
-    '...KhhhHHHHhhhhK....',
-    '...KhhhHssssHhhK....',
-    '...KhhHssssssHhK....',
-    '...KHhsSeeeSsHK.....',
-    '....KheSeeeSesK.....',
-    '....KseeeeeeesK.....',
-    '....KHseeeeesHK.....',
-    '.....KHsssssHK......',
-    '.....KHhbbbhHK......',
-    '.....KHhbBBhHK......',
-    '....KshhgggheeK.....',
-    '....KsgggGgGeeK.....',
-    '.....KghhKHHHK......',
-    '.....KKhhKKKK.......'
-  ]
+// you, exactly as you are in the game: the player sprite's front facing idle
+// frame, copied pixel for pixel out of img/player.png (the sheet can't be read
+// back when the page is opened straight from disk, so the pixels live here as
+// text, one letter per colour, the drop shadow left out). it's turned head
+// down and blown up by a whole number with no smoothing, the same way the game
+// draws you. no walk cycle: the falling comes from how you move, see
+// renderHero.
+const IDLE_FRONT = [
+  '.....KKKK.KK........',
+  '.....KhhHKhKKK......',
+  '.....KKhhHhhhHK.....',
+  '....KHhhhhhhhhK.....',
+  '...KHhhhhHhhhhHK....',
+  '...KhhhHHHHhhhhK....',
+  '...KhhhHssssHhhK....',
+  '...KhhHssssssHhK....',
+  '...KHhsSeeeSsHK.....',
+  '....KheSeeeSeeK.....',
+  '....KseeeeeeesK.....',
+  '.....KseeeeesK......',
+  '.....KHsssssHK......',
+  '.....KHhbbbhHK......',
+  '.....KhhbBBhhK......',
+  '....KeehgggheeK.....',
+  '....KeeggGggeeK.....',
+  '.....KggGKGggK......',
+  '.....KHhK.KhHK......'
 ];
 const SPRITE_PAL = { K: '#000000', h: '#573a23', H: '#402717', s: '#ac7b5d', S: '#21110d', e: '#c1ac8f', b: '#787e97', B: '#a4a8b5', g: '#2c65b5', G: '#1d438a' };
 let FIG_W = 0, FIG_H = 0;
-function spriteFrame(rows) {
-  const w = rows[0].length, h = rows.length, c = mk(w, h), g = c.getContext('2d');
+
+// scale2x on a grid of colour strings (null is see-through)
+function epx2(src, w, h) {
+  const out = new Array(w * 2 * h * 2), at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? null : src[y * w + x]);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const ch = rows[y][x];
-    if (ch === '.') continue;
-    g.fillStyle = SPRITE_PAL[ch];
-    g.fillRect(w - 1 - x, h - 1 - y, 1, 1);
+    const P = at(x, y), A = at(x, y - 1), B = at(x + 1, y), C = at(x - 1, y), D = at(x, y + 1);
+    let e0 = P, e1 = P, e2 = P, e3 = P;
+    if (C === A && C !== D && A !== B) e0 = A;
+    if (A === B && A !== C && B !== D) e1 = B;
+    if (D === C && D !== B && C !== A) e2 = C;
+    if (B === D && B !== A && D !== C) e3 = D;
+    const o = y * 2 * w * 2 + x * 2;
+    out[o] = e0; out[o + 1] = e1; out[o + w * 2] = e2; out[o + w * 2 + 1] = e3;
+  }
+  return out;
+}
+// the sprite, head down and tilted by a few degrees. tilting pixel art
+// straight leaves it ragged, so this is rotsprite: scale it up 8x with scale2x
+// three times (which keeps the shapes clean), rotate that, and sample each
+// original sized pixel back from the middle of its block. small tilts change
+// only a few edge pixels, so it's still your sprite.
+function spriteAt(deg) {
+  const w = IDLE_FRONT[0].length, h = IDLE_FRONT.length, pad = 5, pw = w + pad * 2, ph = h + pad * 2;
+  const src = new Array(pw * ph).fill(null);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const ch = IDLE_FRONT[y][x];
+    if (ch !== '.') src[(y + pad) * pw + x + pad] = SPRITE_PAL[ch];
+  }
+  let big = src, bw = pw, bh = ph;
+  for (let k = 0; k < 3; k++) { big = epx2(big, bw, bh); bw *= 2; bh *= 2; }
+  const a = ((180 + deg) * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
+  const c = mk(pw, ph), g = c.getContext('2d');
+  for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) {
+    const bx = (x + 0.5) * 8 - bw / 2, by = (y + 0.5) * 8 - bh / 2;
+    const sx = Math.floor(bx * ca + by * sa + bw / 2), sy = Math.floor(-bx * sa + by * ca + bh / 2);
+    if (sx < 0 || sy < 0 || sx >= bw || sy >= bh) continue;
+    const col = big[sy * bw + sx];
+    if (!col) continue;
+    g.fillStyle = col;
+    g.fillRect(x, y, 1, 1);
   }
   return c;
 }
+// the tilts the sway passes through, two degrees apart
+const SWAY = [-12, -10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10, 12];
 function scaleUp(c, k) {
   const out = mk(c.width * k, c.height * k), g = out.getContext('2d');
   g.imageSmoothingEnabled = false;
@@ -2316,7 +2231,7 @@ function tintCopy(c, colr) {
   return t;
 }
 function buildTitle() {
-  tv.base = WALK_FRONT.map(spriteFrame);
+  tv.base = SWAY.map(spriteAt);
   tv.fig = tv.base[0];
   // stars rushing up past you in three layers: far ones slow and short, near
   // ones fast and stretched into streaks, which is most of what sells the fall
@@ -2356,29 +2271,51 @@ function renderHero(t) {
   }
   g.globalCompositeOperation = 'source-over';
 
+  // how far you've fallen. the first moments after the page opens are you
+  // dropping in under gravity, so the speed ramps up from nothing to full over
+  // DROP seconds (and distance is the area under that ramp); after that
+  // you're at terminal velocity and everything streams past at a steady rate
+  const DROP = 1.8;
+  const fallen = reduceMotion ? 0 : secs < DROP ? (secs * secs) / (2 * DROP) : secs - DROP / 2;
   // space rushing up past you
   if (!reduceMotion) {
     const SPEED = [26, 90, 240], LEN = [1, 3, 10], ALPHA = [0.55, 0.75, 0.9];
+    const ramp = Math.min(1, secs / DROP);
     tv.rush.forEach(st => {
-      const y = ((st.y * H2 - secs * SPEED[st.layer]) % H2 + H2) % H2;
+      const y = ((st.y * H2 - fallen * SPEED[st.layer]) % H2 + H2) % H2;
       g.fillStyle = `rgba(235,240,255,${ALPHA[st.layer]})`;
-      g.fillRect(Math.round(st.x * W2), Math.round(y), 1, LEN[st.layer]);
+      g.fillRect(Math.round(st.x * W2), Math.round(y), 1, Math.max(1, Math.round(LEN[st.layer] * ramp)));
     });
     tv.lines.forEach(l => {
-      const span = H2 + 60, y = ((l.y * span - secs * 420 * l.sp) % span + span) % span - 30;
+      const span = H2 + 60, y = ((l.y * span - fallen * 420 * l.sp) % span + span) % span - 30;
       g.fillStyle = 'rgba(200,225,255,0.28)';
       g.fillRect(Math.round(fx + l.x * FIG_W * 0.6), Math.round(y), 1, Math.round(l.len));
     });
   }
 
-  // you, tumbling slowly, inside your aura, with afterimages streaming above
-  const bob = reduceMotion ? 0 : Math.round(Math.sin(secs * 1.1) * 2);
-  const fi = reduceMotion ? 0 : Math.floor(secs * 7) % tv.frames.length;
-  const ox = Math.round(fx - FIG_W / 2), oy = Math.round(fy - FIG_H / 2) + bob;
+  // you, falling. where you are and how you're tilted at any moment: you drop
+  // in from above the screen on the way in (fast at first, then the camera
+  // catches up and settles on you), then hang there at terminal velocity,
+  // swinging slowly side to side like a pendulum with a faster wobble on top,
+  // drifting a little, and getting knocked a pixel now and then by the wind
+  const pose = when => {
+    const k = clamp(when / DROP, 0, 1), settle = 1 - (1 - k) * (1 - k) * (1 - k);
+    const enter = (1 - settle) * (fy + FIG_H);
+    const tilt = Math.sin(when * 0.9) * 8 + Math.sin(when * 2.3 + 1) * 3;
+    const drift = Math.sin(when * 0.55) * 5;
+    const buffet = Math.floor(when * 12) % 7 === 0 ? (Math.floor(when * 12) % 2 ? 1 : -1) : 0;
+    return { x: fx + drift + buffet, y: fy - enter + Math.sin(when * 1.6) * 1.5, tilt };
+  };
+  const frameFor = tilt => Math.max(0, Math.min(SWAY.length - 1, Math.round((tilt - SWAY[0]) / 2)));
+  const now = pose(reduceMotion ? DROP : secs);
+  const fi = frameFor(reduceMotion ? 0 : now.tilt);
+  const ox = Math.round(now.x - FIG_W / 2), oy = Math.round(now.y - FIG_H / 2);
+  // afterimages where you were a moment ago, stretched upwards by the fall
   if (!reduceMotion) {
-    [3, 2, 1].forEach(k => {
-      g.globalAlpha = 0.09 * (4 - k);
-      g.drawImage(tv.ghosts[fi], ox, oy - k * 9);
+    [4, 3, 2, 1].forEach(k => {
+      const then = pose(secs - k * 0.045);
+      g.globalAlpha = 0.07 * (5 - k);
+      g.drawImage(tv.ghosts[frameFor(then.tilt)], Math.round(then.x - FIG_W / 2), Math.round(then.y - FIG_H / 2) - k * 7);
     });
   }
   const flick = reduceMotion ? 0 : Math.floor(secs * 8) % 2;
@@ -2391,7 +2328,7 @@ function renderHero(t) {
       const R = FIG_H * w.r * 0.42, a0 = w.a0 + secs * w.sp;
       for (let k = 0; k < 40; k++) {
         const a = a0 + (k / 40) * w.span, jitter = Math.sin(k * 1.7 + secs * 9 + w.ph) * 2.2;
-        const x = fx + Math.cos(a) * (R + jitter) * 0.8, y = fy + bob + Math.sin(a) * (R + jitter);
+        const x = now.x + Math.cos(a) * (R + jitter) * 0.8, y = now.y + Math.sin(a) * (R + jitter);
         g.fillStyle = w.cyan ? `rgba(150,235,255,${0.75 * Math.sin((k / 40) * Math.PI)})` : `rgba(255,248,225,${0.85 * Math.sin((k / 40) * Math.PI)})`;
         g.fillRect(Math.round(x), Math.round(y), 1, 1);
       }
@@ -2399,8 +2336,8 @@ function renderHero(t) {
   }
   g.drawImage(tv.frames[fi], ox, oy);
 
-  // a white flash when the page first opens, as you come through
-  const intro = reduceMotion ? 0 : Math.max(0, 1 - secs / 1.2);
+  // a quick white flash when the page first opens, as you come through
+  const intro = reduceMotion ? 0 : Math.max(0, 1 - secs / 0.5);
   if (intro > 0) { g.fillStyle = `rgba(255,246,230,${intro})`; g.fillRect(0, 0, W2, H2); }
   heroCtx.drawImage(tv.buf, 0, 0, W2 * tv.s, H2 * tv.s);
 }

@@ -754,13 +754,6 @@ body.is-title .toast { opacity: 0; pointer-events: none; }
   image-rendering: pixelated;
   box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.3);
 }
-.title-lede {
-  margin-top: 22px;
-  max-width: 46ch;
-  font-size: 1.02rem;
-  line-height: 1.6;
-  color: var(--ink-2);
-}
 .title-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
 .title-actions .px-btn { font-size: 0.74rem; padding: 14px 18px; }
 .blink { animation: blink 1s steps(1) infinite; }
@@ -850,7 +843,6 @@ body.is-title .toast { opacity: 0; pointer-events: none; }
   }
   .title-hero::after { background: linear-gradient(180deg, rgba(7, 6, 11, 0) 30%, rgba(7, 6, 11, 0.82) 62%); }
   .wordmark { font-size: clamp(2.4rem, 13vw, 4rem); margin-top: 10px; }
-  .title-lede { font-size: 0.92rem; }
   .title-controls { display: none; }
 }
 

@@ -1987,137 +1987,170 @@ const heroCtx = hero.getContext('2d');
 const tv = { w: 0, h: 0, s: 1, bg: null, buf: null, g: null, fig: null, aura: [], strands: [], sparks: [], wisps: [] };
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16);
 
-// you, as the character from the game, redrawn in high definition: same chibi
-// proportions (a big head on a small body), same shoulder length brown hair with
-// the swept fringe, side locks and cowlick, the same big dark oval eyes, grey
-// t-shirt, blue jeans and brown boots, in the sprite's own colours. it's built
-// upright from rounded shapes (capsules for limbs, ellipses for the head), each
-// lit as a cylinder or a ball and snapped to four tones per material, with a
-// dark line wherever one part crosses in front of another. the pose is a dive:
-// arms swept back, one knee bent, and long hair, which when you turn the whole
-// thing head down streams up behind you like you're plummeting. the tilted
-// copies for the tumble are made the rotsprite way (scale2x, rotate, sample
-// back down) so the tilt stays as crisp as the rest.
-const RAMPS = {
-  skin: ['#e2cdb0', '#c1ac8f', '#ac7b5d', '#7d553d'],
-  hair: ['#7f5636', '#573a23', '#402717', '#28170c'],
-  shirt: ['#d0d3dc', '#a4a8b5', '#787e97', '#545a70'],
-  jeans: ['#5088d6', '#2c65b5', '#1d438a', '#132c5e'],
-  boot: ['#7f5636', '#573a23', '#402717', '#28170c']
-};
+// you, exactly as you are in the game: these are the six frames of the player
+// sprite's walk cycle facing the camera, copied pixel for pixel out of
+// img/player.png (the sheet can't be read back when the page is opened
+// straight from disk, so the pixels live here as text, one letter per colour,
+// the drop shadow left out). they're turned head down and blown up by a whole
+// number with no smoothing, the same way the game draws you, so every pixel is
+// the sprite's own. cycling the walk frames while you fall makes your arms and
+// legs flail.
+const WALK_FRONT = [
+  [
+    '.....KKKK.KK........',
+    '.....KhhHKhKKK......',
+    '.....KKhhHhhhHK.....',
+    '....KHhhhhhhhhK.....',
+    '...KHhhhhHhhhhHK....',
+    '...KhhhHHHHhhhhK....',
+    '...KhhhHssssHhhK....',
+    '...KhhHssssssHhK....',
+    '...KHhsSeeeSsHK.....',
+    '....KheSeeeSesK.....',
+    '....KseeeeeeesK.....',
+    '....KHseeeeesHK.....',
+    '.....KHsssssHK......',
+    '.....KHHbbbhHK......',
+    '.....KHhbBBhhK......',
+    '....KehhggghhsK.....',
+    '....KeGggggggsK.....',
+    '.....KgggGgghhK.....',
+    '.....KgggKHhhhK.....',
+    '.....KhhHKKKKK......',
+    '.....KhhK...........'
+  ],
+  [
+    '....................',
+    '.....KKKK.KK........',
+    '.....KhhHKhKKK......',
+    '.....KKhhHhhhHK.....',
+    '....KHhhhhhhhhK.....',
+    '...KHhhhhHhhhhHK....',
+    '...KhhhHHHHhhhhK....',
+    '...KhhhHssssHhhK....',
+    '...KhhHssssssHhK....',
+    '...KHhsSeeeSsHK.....',
+    '....KheSeeeSesK.....',
+    '....KseeeeeeesK.....',
+    '....KHseeeeesHK.....',
+    '.....KHsssssHK......',
+    '....KKHHbbbHHK......',
+    '...KeeHhbBBhHsK.....',
+    '...KeehhggghhsK.....',
+    '....KKGggggggK......',
+    '.....KHhhKgggK......',
+    '......KKKKHhhhK.....',
+    '..........KhhhK.....'
+  ],
+  [
+    '....................',
+    '....................',
+    '.....KKKK.KK........',
+    '.....KhhHKhKKK......',
+    '.....KKhhHhhhHK.....',
+    '....KHhhhhhhhhK.....',
+    '...KHhhhhHhhhhHK....',
+    '...KhhhHHHHhhhhK....',
+    '...KhhhHssssHhhK....',
+    '...KhhHssssssHhK....',
+    '...KHhsSeeeSsHK.....',
+    '....KheSeeeSesK.....',
+    '....KseeeeeeesK.....',
+    '....KHseeeeesHK.....',
+    '.....KHsssssHK......',
+    '.....KHhbbbhHK......',
+    '.....KhhbBBhhK......',
+    '....KeehggghhsK.....',
+    '....KeeGgGgggsK.....',
+    '.....KHHHKhhhK......',
+    '......KKKKhhKK......'
+  ],
+  [
+    '.....KKKK.KK........',
+    '.....KhhHKhKKK......',
+    '.....KKhhHhhhHK.....',
+    '....KHhhhhhhhhK.....',
+    '...KHhhhhHhhhhHK....',
+    '...KhhhHHHHhhhhK....',
+    '...KhhhHssssHhhK....',
+    '...KhhHssssssHhK....',
+    '...KHhsSeeeSsHK.....',
+    '....KheSeeeSesK.....',
+    '....KseeeeeeesK.....',
+    '....KHseeeeesHK.....',
+    '.....KHsssssHK......',
+    '.....KHhbbbHHK......',
+    '.....KhhbBBhHK......',
+    '....KshhggghheK.....',
+    '....KsggGgghheK.....',
+    '....KhhGGGggGK......',
+    '....KhhhHKgggK......',
+    '.....KKKKKHhhK......',
+    '..........KhhK......'
+  ],
+  [
+    '....................',
+    '.....KKKK.KK........',
+    '.....KhhHKhKKK......',
+    '.....KKhhHhhhHK.....',
+    '....KHhhhhhhhhK.....',
+    '...KHhhhhHhhhhHK....',
+    '...KhhhHHHHhhhhK....',
+    '...KhhhHssssHhhK....',
+    '...KhhHssssssHhK....',
+    '...KHhsSeeeSsHK.....',
+    '....KheSeeeSesK.....',
+    '....KseeeeeeesK.....',
+    '....KHseeeeesHK.....',
+    '.....KHsssssHK......',
+    '.....KHhbbbhHK......',
+    '....KKhhbBBheeK.....',
+    '....KKhhggggeeK.....',
+    '.....KggggghhK......',
+    '.....KgggKhhhK......',
+    '....KhhhHKKKK.......',
+    '....KhhhK...........'
+  ],
+  [
+    '....................',
+    '....................',
+    '.....KKKK.KK........',
+    '.....KhhHKhKKK......',
+    '.....KKhhHhhhHK.....',
+    '....KHhhhhhhhhK.....',
+    '...KHhhhhHhhhhHK....',
+    '...KhhhHHHHhhhhK....',
+    '...KhhhHssssHhhK....',
+    '...KhhHssssssHhK....',
+    '...KHhsSeeeSsHK.....',
+    '....KheSeeeSesK.....',
+    '....KseeeeeeesK.....',
+    '....KHseeeeesHK.....',
+    '.....KHsssssHK......',
+    '.....KHhbbbhHK......',
+    '.....KHhbBBhHK......',
+    '....KshhgggheeK.....',
+    '....KsgggGgGeeK.....',
+    '.....KghhKHHHK......',
+    '.....KKhhKKKK.......'
+  ]
+];
+const SPRITE_PAL = { K: '#000000', h: '#573a23', H: '#402717', s: '#ac7b5d', S: '#21110d', e: '#c1ac8f', b: '#787e97', B: '#a4a8b5', g: '#2c65b5', G: '#1d438a' };
 let FIG_W = 0, FIG_H = 0;
-function makeUprightHero() {
-  const W2 = 124, H2 = 142, parts = [];
-  const cap = (ax, ay, bx, by, r1, r2, mat) => parts.push({ t: 'c', ax, ay, bx, by, r1, r2, mat });
-  const ell = (cx, cy, rx, ry, mat) => parts.push({ t: 'e', cx, cy, rx, ry, mat });
-  // back to front: the long hair behind your head, legs, body, arms, head, the
-  // locks framing your face, the fringe and cowlick
-  ell(62, 48, 28, 26, 'hair');
-  cap(56, 100, 53, 122, 7, 6, 'jeans'); cap(53, 122, 52, 131, 6.4, 5.6, 'boot');
-  cap(68, 100, 74, 114, 7, 6, 'jeans'); cap(74, 114, 86, 124, 6, 5.4, 'jeans'); cap(86, 124, 92, 129, 5.6, 5, 'boot');
-  cap(62, 96, 62, 101, 12.5, 12.5, 'jeans');
-  cap(62, 76, 62, 97, 14, 13, 'shirt');
-  // arms flung out to the sides, like the poster
-  cap(50, 79, 40, 84, 6.5, 5.5, 'shirt'); cap(40, 84, 22, 90, 4.6, 4, 'skin'); ell(19, 91, 5, 4.8, 'skin');
-  cap(74, 79, 84, 84, 6.5, 5.5, 'shirt'); cap(84, 84, 102, 90, 4.6, 4, 'skin'); ell(105, 91, 5, 4.8, 'skin');
-  cap(62, 70, 62, 77, 5.5, 5.5, 'skin');
-  ell(62, 46, 25, 24, 'skin');
-  cap(40, 42, 39, 66, 6.5, 4, 'hair'); cap(84, 42, 85, 66, 6.5, 4, 'hair');
-  ell(62, 30, 27, 17, 'hair');
-  [[44, 36, 41, 50, 5.5], [53, 38, 52, 51, 5.5], [62, 39, 64, 50, 5.5], [71, 38, 75, 49, 5], [79, 35, 83, 46, 4.5]].forEach(([ax, ay, bx, by, r]) => cap(ax, ay, bx, by, r, 1, 'hair'));
-  cap(64, 14, 71, 4, 3.4, 0.6, 'hair'); cap(58, 14, 53, 6, 3, 0.6, 'hair');
-
-  const owner = new Int16Array(W2 * H2).fill(-1), col = new Array(W2 * H2).fill(null);
-  // lit from the lower right here, which is the upper left once you're turned
-  // head down
-  const L = [0.5, 0.6, 0.62], ll = Math.hypot(...L);
-  for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
-    for (let i = parts.length - 1; i >= 0; i--) {
-      const p = parts[i];
-      let nx, ny;
-      if (p.t === 'e') { nx = (x + 0.5 - p.cx) / p.rx; ny = (y + 0.5 - p.cy) / p.ry; }
-      else {
-        const vx = p.bx - p.ax, vy = p.by - p.ay, len2 = vx * vx + vy * vy;
-        const t = clamp(((x + 0.5 - p.ax) * vx + (y + 0.5 - p.ay) * vy) / len2, 0, 1);
-        const r = p.r1 + (p.r2 - p.r1) * t;
-        nx = (x + 0.5 - (p.ax + vx * t)) / r; ny = (y + 0.5 - (p.ay + vy * t)) / r;
-      }
-      const d = nx * nx + ny * ny;
-      if (d > 1) continue;
-      const nz = Math.sqrt(1 - d), lit = (nx * L[0] + ny * L[1] + nz * L[2]) / ll;
-      col[y * W2 + x] = RAMPS[p.mat][lit > 0.8 ? 0 : lit > 0.5 ? 1 : lit > 0.18 ? 2 : 3];
-      owner[y * W2 + x] = i;
-      break;
-    }
-  }
-  const px = new Array(W2 * H2).fill(null);
-  for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
-    const i = y * W2 + x, o = owner[i];
-    if (o < 0) continue;
-    const behind = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
-      const n = owner[(y + dy) * W2 + x + dx];
-      return n >= 0 && n < o && parts[n].mat !== parts[o].mat;
-    });
-    px[i] = behind ? '#1e110c' : col[i];
-  }
-  // the face: the sprite's tall dark eyes with a catchlight, a small mouth and
-  // a touch of blush
-  const F = (x, y, c) => { px[y * W2 + x] = c; };
-  [[51, 51], [70, 51]].forEach(([ex, ey]) => {
-    for (let y = 0; y < 8; y++) for (let x = 0; x < 4; x++) {
-      if ((y === 0 || y === 7) && (x === 0 || x === 3)) continue;
-      F(ex + x, ey + y, y > 5 ? '#3a1e14' : '#21110d');
-    }
-    F(ex + 1, ey + 1, '#ffffff'); F(ex + 2, ey + 1, '#ffffff'); F(ex + 1, ey + 2, '#ffffff');
-    F(ex + 2, ey + 5, '#6a3a24');
-  });
-  for (let x = 60; x <= 64; x++) F(x, 63, '#6e3426');
-  F(61, 64, '#9a5040'); F(62, 64, '#9a5040'); F(63, 64, '#9a5040');
-  [[46, 60], [47, 60], [48, 60], [76, 60], [77, 60], [78, 60]].forEach(([x, y]) => F(x, y, '#d89a80'));
-  return { px, w: W2, h: H2 };
-}
-
-function makeHdFrames(angles) {
-  const up = makeUprightHero();
-  const pad = 26, pw = up.w + pad * 2, ph = up.h + pad * 2, padded = new Array(pw * ph).fill(null);
-  for (let y = 0; y < up.h; y++) for (let x = 0; x < up.w; x++) padded[(y + pad) * pw + x + pad] = up.px[y * up.w + x];
-  const big = epx2(padded, pw, ph), BW = pw * 2, BH = ph * 2;
-  return angles.map(deg => {
-    // head down: half a turn, plus the tumble's tilt
-    const a = ((180 + deg) * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
-    const out = new Array(pw * ph).fill(null);
-    for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) {
-      const bx = x * 2 + 0.5 - BW / 2, by = y * 2 + 0.5 - BH / 2;
-      const sx = Math.round(bx * ca + by * sa + BW / 2), sy = Math.round(-bx * sa + by * ca + BH / 2);
-      if (sx >= 0 && sy >= 0 && sx < BW && sy < BH) out[y * pw + x] = big[sy * BW + sx];
-    }
-    const G = pixelGrid(pw, ph);
-    for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) {
-      const c = out[y * pw + x];
-      if (!c) continue;
-      // a warm rim on whichever edges face the core blazing behind you
-      const open = (dx, dy) => { const nx = x + dx, ny = y + dy; return nx < 0 || ny < 0 || nx >= pw || ny >= ph || !out[ny * pw + nx]; };
-      G.set(x, y, (open(1, 0) || open(1, 1)) && c !== '#1e110c' ? RIM[c] || c : c);
-    }
-    return G.outline(() => '#120a0c').canvas();
-  });
-}
-const RIM = {};
-Object.values(RAMPS).forEach(r => { RIM[r[1]] = '#ffd9a8'; RIM[r[2]] = '#f0b880'; RIM[r[3]] = '#d09060'; RIM[r[0]] = '#fff0d8'; });
-
-// scale2x on a grid of colour strings (null is see-through)
-function epx2(src, w, h) {
-  const out = new Array(w * 2 * h * 2), at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? null : src[y * w + x]);
+function spriteFrame(rows) {
+  const w = rows[0].length, h = rows.length, c = mk(w, h), g = c.getContext('2d');
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const P = at(x, y), A = at(x, y - 1), B = at(x + 1, y), C = at(x - 1, y), D = at(x, y + 1);
-    let e0 = P, e1 = P, e2 = P, e3 = P;
-    if (C === A && C !== D && A !== B) e0 = A;
-    if (A === B && A !== C && B !== D) e1 = B;
-    if (D === C && D !== B && C !== A) e2 = C;
-    if (B === D && B !== A && D !== C) e3 = D;
-    const o = y * 2 * w * 2 + x * 2;
-    out[o] = e0; out[o + 1] = e1; out[o + w * 2] = e2; out[o + w * 2 + 1] = e3;
+    const ch = rows[y][x];
+    if (ch === '.') continue;
+    g.fillStyle = SPRITE_PAL[ch];
+    g.fillRect(w - 1 - x, h - 1 - y, 1, 1);
   }
+  return c;
+}
+function scaleUp(c, k) {
+  const out = mk(c.width * k, c.height * k), g = out.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.drawImage(c, 0, 0, c.width * k, c.height * k);
   return out;
 }
 
@@ -2168,7 +2201,18 @@ function titleLayout() {
 
 // the background: night, a nebula, the core, the timelines fraying out of it
 // and the big arcs sweeping past, all dithered down at the end
+// your frames at this window's size: the sprite scaled so you're about a third
+// of the screen tall, plus the aura and afterimage copies to match
+function buildTitleFrames() {
+  tv.k = Math.max(3, Math.round((tv.h * 0.34) / tv.base[0].height));
+  tv.frames = tv.base.map(c => scaleUp(c, tv.k));
+  FIG_W = tv.frames[0].width; FIG_H = tv.frames[0].height;
+  tv.auras = tv.frames.map(f => [0, 1].map(v => makeAura(f, v)));
+  tv.ghosts = tv.frames.map(f => tintCopy(f, '#8fdcff'));
+}
+
 function buildTitleBg() {
+  buildTitleFrames();
   const W2 = tv.w, H2 = tv.h, { cx, cy } = titleLayout();
   const c = mk(W2, H2), g = c.getContext('2d', { willReadFrequently: true });
   const img = g.createImageData(W2, H2), d = img.data;
@@ -2261,9 +2305,8 @@ function sizeHero() {
   tv.bg = null;
 }
 
-// the tilts the tumble swings through, and a see-through copy of each in
-// cold blue for the afterimages streaming off you as you fall
-const TUMBLE = [-30, -22, -14, -6, 2, 10];
+// a see-through copy of each frame in cold blue, for the afterimages
+// streaming off you as you fall
 function tintCopy(c, colr) {
   const t = mk(c.width, c.height), g = t.getContext('2d');
   g.drawImage(c, 0, 0);
@@ -2273,11 +2316,8 @@ function tintCopy(c, colr) {
   return t;
 }
 function buildTitle() {
-  tv.frames = makeHdFrames(TUMBLE);
-  FIG_W = tv.frames[0].width; FIG_H = tv.frames[0].height;
-  tv.fig = tv.frames[0];
-  tv.auras = tv.frames.map(f => [0, 1].map(v => makeAura(f, v)));
-  tv.ghosts = tv.frames.map(f => tintCopy(f, '#8fdcff'));
+  tv.base = WALK_FRONT.map(spriteFrame);
+  tv.fig = tv.base[0];
   // stars rushing up past you in three layers: far ones slow and short, near
   // ones fast and stretched into streaks, which is most of what sells the fall
   const rs = mulberry32(SEED + 77);
@@ -2333,7 +2373,7 @@ function renderHero(t) {
 
   // you, tumbling slowly, inside your aura, with afterimages streaming above
   const bob = reduceMotion ? 0 : Math.round(Math.sin(secs * 1.1) * 2);
-  const fi = reduceMotion ? 3 : Math.round((Math.sin(secs * 0.7) * 0.5 + 0.5) * (TUMBLE.length - 1));
+  const fi = reduceMotion ? 0 : Math.floor(secs * 7) % tv.frames.length;
   const ox = Math.round(fx - FIG_W / 2), oy = Math.round(fy - FIG_H / 2) + bob;
   if (!reduceMotion) {
     [3, 2, 1].forEach(k => {

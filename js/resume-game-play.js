@@ -79,9 +79,20 @@ TIER_ORDER.forEach(m => {
   ITEMS[`${m}-pickaxe`] = { name: `${t.name} Pickaxe`, tool: 'pickaxe', mat: m, dmg: t.pick, cd: 0.9, reach: 1.6, dur: t.dur, speed: t.speed, harvest: t.harvest };
   ITEMS[`${m}-axe`] = { name: `${t.name} Axe`, tool: 'axe', mat: m, dmg: t.axe, cd: 1.8, reach: 1.6, dur: t.dur, speed: t.speed };
 });
-Object.keys(ARMORS).forEach(m => {
-  ITEMS[`${m}-armor`] = { name: `${ARMORS[m].name} Armor`, armor: m, mat: m, dur: ARMORS[m].dur };
-});
+// armor comes in four pieces. a full set of one material blocks that
+// material's percentage, and each piece carries its share of it: the helmet
+// and boots the least (and the same as each other), the leggings a bit more,
+// and the chestplate the rest. every piece has the material's durability.
+const ARMOR_SLOTS = [
+  { key: 'head', piece: 'helmet', name: 'Helmet', share: 0.15 },
+  { key: 'chest', piece: 'chestplate', name: 'Chestplate', share: 0.45 },
+  { key: 'legs', piece: 'leggings', name: 'Leggings', share: 0.25 },
+  { key: 'feet', piece: 'boots', name: 'Boots', share: 0.15 }
+];
+const SLOT_OF = Object.fromEntries(ARMOR_SLOTS.map(a => [a.key, a]));
+Object.keys(ARMORS).forEach(m => ARMOR_SLOTS.forEach(a => {
+  ITEMS[`${m}-${a.piece}`] = { name: `${ARMORS[m].name} ${a.name}`, armor: m, slot: a.key, mat: m, dur: ARMORS[m].dur };
+}));
 // arrows, weakest to strongest. this is what one does fired from a full draw,
 // point blank (a part drawn bow does less, see BOW). it grows very slightly the
 // farther the arrow flies, up to 15% more at ARROW_FULL tiles.
@@ -141,10 +152,10 @@ TIER_ORDER.forEach(m => {
     { out: `${m}-axe`, shape: ['MM', 'MS', '.S'], key }
   );
 });
-RECIPES.push({ out: 'hide-armor', shape: ['HH.HH', 'HHHHH', '.HHH.', '.HHH.'], key: { H: 'hide' } });
-['wool', 'gold', 'iron', 'emerald', 'diamond'].forEach(m => {
-  RECIPES.push({ out: `${m}-armor`, shape: ['M.M', 'MMM', 'MMM'], key: { M: m } });
-});
+const ARMOR_SHAPES = { helmet: ['MMM', 'M.M'], chestplate: ['M.M', 'MMM', 'MMM'], leggings: ['MMM', 'M.M', 'M.M'], boots: ['M.M', 'M.M'] };
+Object.keys(ARMORS).forEach(m => Object.entries(ARMOR_SHAPES).forEach(([piece, shape]) => {
+  RECIPES.push({ out: `${m}-${piece}`, shape, key: { M: m } });
+}));
 RECIPES.push({ out: 'bed', shape: ['WWW', 'PPP'], key: { W: 'wool', P: 'wood' } });
 RECIPES.push({ out: 'stick', n: 4, shape: ['W'], key: { W: 'wood' } });
 // two arrows a craft: the material on the tip, a stick, a feather
@@ -207,7 +218,7 @@ const CREATURES = {
   },
   moe: {
     name: 'Moe the Mole', boss: true, steady: true, hp: 90, speed: 36, knock: 0, h: 50, box: { w: 34, h: 26 },
-    windup: 0.7, lunge: { speed: 320, time: 0.32 }, dmg: 1, lungeDmg: 3, popDmg: 5, regen: 0, rest: 'wait',
+    windup: 0.7, lunge: { speed: 320, time: 0.32 }, dmg: 1, lungeDmg: 3, popDmg: 5, drillDmg: 1, regen: 0, rest: 'wait',
     chip: '106,91,130', drops: []
   },
   // passive livestock: wander, graze, and run when you hit them
@@ -286,6 +297,30 @@ function axeIcon(G, P) {
     for (let x = 10; x <= 10 + span; x++) G.set(x, y, x === 10 + span ? P[2] : y < 4 ? P[0] : P[1]);
   }
 }
+function helmetIcon(G, P) {
+  for (let y = 3; y <= 11; y++) for (let x = 3; x <= 12; x++) {
+    if (y === 3 && (x < 5 || x > 10)) continue;
+    if (y === 4 && (x < 4 || x > 11)) continue;
+    // the face opening, with cheek guards down either side
+    if (y >= 8 && x >= 6 && x <= 9) continue;
+    if (y >= 10 && (x === 5 || x === 10)) continue;
+    G.set(x, y, y === 7 ? P[2] : x < 8 && y < 7 ? P[0] : P[1]);
+  }
+}
+function leggingsIcon(G, P) {
+  for (let y = 2; y <= 13; y++) for (let x = 3; x <= 12; x++) {
+    if (y >= 6 && x >= 7 && x <= 8) continue;
+    G.set(x, y, y <= 3 ? P[2] : x < 7 ? P[0] : P[1]);
+  }
+  G.set(7, 3, P[0]); G.set(8, 3, P[0]);
+}
+function bootsIcon(G, P) {
+  [[2, 1], [9, 1]].forEach(([x0, toe]) => {
+    for (let y = 6; y <= 12; y++) for (let x = x0; x <= x0 + 3; x++) G.set(x, y, y === 6 ? P[2] : x === x0 ? P[0] : P[1]);
+    for (let x = x0 + 3; x <= x0 + 4 + toe; x++) { G.set(x, 11, P[1]); G.set(x, 12, P[2]); }
+    for (let x = x0; x <= x0 + 4 + toe; x++) G.set(x, 13, P[2]);
+  });
+}
 function armorIcon(G, P) {
   for (let y = 3; y <= 13; y++) for (let x = 2; x <= 13; x++) {
     const sleeve = y <= 8 && (x <= 3 || x >= 12);
@@ -351,7 +386,7 @@ function makeIcon(id) {
   const G = pixelGrid(16, 16);
   const it = ITEMS[id];
   if (it.tool && it.mat) ({ sword: swordIcon, pickaxe: pickIcon, axe: axeIcon })[it.tool](G, MAT_PAL[it.mat]);
-  else if (it.armor) armorIcon(G, MAT_PAL[it.armor]);
+  else if (it.armor) ({ head: helmetIcon, chest: armorIcon, legs: leggingsIcon, feet: bootsIcon })[it.slot](G, MAT_PAL[it.armor]);
   else if (it.arrow) arrowIcon(G, MAT_PAL[it.arrow]);
   else switch (id) {
     case 'wood':
@@ -471,13 +506,18 @@ function makeIcon(id) {
       break;
     }
     case 'iron-ore':
+      // raw iron: one craggy lump, pale rusty beige with darker pits, like
+      // minecraft's (it used to be grey stone with flecks, same as raw gold,
+      // and the two were hard to tell apart)
+      [[8, 9, 5.8, 4.6], [5.5, 7.5, 3, 2.6], [10.5, 7, 2.8, 2.4]].forEach(([cx, cy, rx, ry]) =>
+        pxBlob(G, cx, cy, rx, ry, (dx, dy, x, y) => (hash2(x, y, 11) < 0.16 ? '#8a604c' : dx + dy < -0.6 ? '#f2d8c4' : dx + dy > 0.6 ? '#a8806a' : '#d4ae94')));
+      [[7, 10], [10, 9], [5, 8]].forEach(([x, y]) => G.set(x, y, '#6e4a3a'));
+      break;
     case 'gold-ore':
-      // a lump of stone with the metal showing through
-      pxBlob(G, 8, 9, 5.5, 4.5, (dx, dy) => (dy > 0.3 ? '#767676' : '#959595'));
-      [[6, 8], [9, 7], [10, 10], [5, 11], [8, 11]].forEach(([x, y]) => {
-        G.set(x, y, id === 'gold-ore' ? '#f2c84b' : '#e0b896');
-        G.set(x + 1, y, id === 'gold-ore' ? '#a8800f' : '#b08a6e');
-      });
+      // raw gold: a cluster of three bright yellow nuggets with white glints
+      [[5.5, 10, 3.4, 3], [10.5, 10.5, 3.6, 3.2], [8, 6, 3.4, 3]].forEach(([cx, cy, rx, ry]) =>
+        pxBlob(G, cx, cy, rx, ry, (dx, dy) => (dx + dy < -0.7 ? '#fff6b8' : dx + dy > 0.5 ? '#c08a12' : '#f5c93a')));
+      [[7, 5], [4, 9], [9, 9]].forEach(([x, y]) => G.set(x, y, '#ffffff'));
       break;
     default:
       gemIcon(G, CRYSTAL_PAL[id] || CRYSTAL_PAL.crystal);
@@ -527,6 +567,28 @@ function makeHeart(kind) {
   return G.outline(() => '#1a0a0c').canvas().toDataURL();
 }
 const HEART = { full: makeHeart('full'), half: makeHeart('half'), empty: makeHeart('empty') };
+
+// armor points for the bar: a little chestplate, empty, then three fills for
+// the three runs of 5 points. the first is plain steel, the second (past 5)
+// a bright reinforced cyan with a gold trim, the third (past 10, for boss
+// armor later) violet and white.
+function makeArmorPoint(kind) {
+  const rows = ['.XX...XX.', 'XXXX.XXXX', 'XXXXXXXXX', '.XXXXXXX.', '.XXXXXXX.', '.XXXXXXX.', '.XXXXXXX.', '..XXXXX..'];
+  const P = {
+    empty: ['#2e3038', '#2e3038', '#26272e', '#26272e'],
+    steel: ['#ffffff', '#d6dbe3', '#a3abb8', '#7a8291'],
+    reinforced: ['#ffffff', '#8ff8ff', '#3fc8d8', '#e0b14a'],
+    mythic: ['#ffffff', '#e6c8ff', '#a86ce8', '#ffffff']
+  }[kind];
+  const G = pixelGrid(11, 10);
+  rows.forEach((row, y) => [...row].forEach((ch, x) => {
+    if (ch !== 'X') return;
+    const edge = x === 0 || x === 8 || y === 7 || row[x - 1] !== 'X' || row[x + 1] !== 'X';
+    G.set(x + 1, y + 1, (x === 1 || x === 2) && y === 1 ? P[0] : edge ? P[3] : x < 4 ? P[1] : P[2]);
+  }));
+  return G.outline(() => '#0c0d12').canvas().toDataURL();
+}
+const ARMOR_PT = ['empty', 'steel', 'reinforced', 'mythic'].reduce((o, k) => ({ ...o, [k]: makeArmorPoint(k) }), {});
 
 // drumsticks for the hunger bar: full, half, empty
 function makeDrum(kind) {
@@ -1067,7 +1129,7 @@ const framesFor = kind => FRAME_CACHE[kind] || (FRAME_CACHE[kind] = creatureFram
 const CORE = makeCoreSprite();
 
 const SAVE_KEY = 'dm-save';
-const inv = { slots: new Array(24).fill(null), armor: null, sel: 0 };   // slots 0-5 are the hotbar
+const inv = { slots: new Array(24).fill(null), armor: { head: null, chest: null, legs: null, feet: null }, sel: 0 };   // slots 0-5 are the hotbar
 const craftGrid = new Array(25).fill(null);
 const furnaceState = { input: null, fuel: null, output: null, burn: 0, prog: 0 };
 const quest = { greatTree: false, chopped: [], mined: [], killed: {}, seen: {}, crafted: {}, recipes: [], beds: [], spawnBed: null, day: 1, cave: {}, parts: [], caveChest: null, moe: {}, burrows: [], denChest: null };
@@ -1111,6 +1173,9 @@ function makeStack(id, n = 1) {
 inv.slots[0] = makeStack('dagger');
 
 function validStack(s) {
+  // armor used to be one item per material. one of those sitting in a bag or
+  // a chest comes back as that material's chestplate.
+  if (s && /-armor$/.test(s.id) && ITEMS[s.id.replace(/-armor$/, '-chestplate')]) s = { ...s, id: s.id.replace(/-armor$/, '-chestplate') };
   if (!s || !ITEMS[s.id] || !(s.n > 0)) return null;
   const out = { id: s.id, n: Math.min(s.n, maxStack(s.id)) };
   if (ITEMS[s.id].dur) out.dur = clamp(+s.dur || ITEMS[s.id].dur, 1, ITEMS[s.id].dur);
@@ -1120,7 +1185,17 @@ function loadSave() {
   const data = store.read(SAVE_KEY, null);
   if (!data || ![1, 2, 3].includes(data.v)) return;
   if (Array.isArray(data.inv?.slots)) data.inv.slots.slice(0, 24).forEach((s, i) => { inv.slots[i] = validStack(s); });
-  inv.armor = validStack(data.inv?.armor);
+  // a worn old-style armor becomes a full set of that material, same wear
+  const worn = data.inv?.armor;
+  if (worn && worn.id && /-armor$/.test(worn.id)) {
+    const m = worn.id.replace(/-armor$/, '');
+    if (ARMORS[m]) ARMOR_SLOTS.forEach(a => { inv.armor[a.key] = validStack({ id: `${m}-${a.piece}`, n: 1, dur: worn.dur }); });
+  } else if (worn && typeof worn === 'object') {
+    ARMOR_SLOTS.forEach(a => {
+      const st = validStack(worn[a.key]);
+      inv.armor[a.key] = st && ITEMS[st.id].slot === a.key ? st : null;
+    });
+  }
   inv.sel = clamp(data.inv?.sel | 0, 0, 5);
   if (data.quest) Object.assign(quest, data.quest);
   quest.recipes = Array.isArray(quest.recipes) ? quest.recipes.filter(id => ITEMS[id]) : [];
@@ -1239,18 +1314,37 @@ function wearHeld(cost) {
   markDirty();
   renderHUD();
 }
-// every hit that lands costs the armor one point, whether it was a hyena nip or
-// a full bear swipe, same as a sword losing one per swing no matter what it hits
+// every hit that lands costs each worn piece one point, whether it was a hyena
+// nip or a full bear swipe, same as a sword losing one per swing no matter what
+// it hits. pieces break on their own.
 function wearArmor() {
-  const s = inv.armor;
-  if (!s) return;
-  s.dur -= 1;
-  if (s.dur <= 0) {
-    inv.armor = null;
-    toast('Broken', ITEMS[s.id].name, 'Craft another at Base Camp');
+  ARMOR_SLOTS.forEach(a => {
+    const st = inv.armor[a.key];
+    if (!st) return;
+    st.dur -= 1;
+    if (st.dur > 0) return;
+    inv.armor[a.key] = null;
+    toast('Broken', ITEMS[st.id].name, 'Craft another at Base Camp');
     sfx.snap();
     burst(player.x, player.y - 20, '200,200,200', 14);
-  }
+  });
+}
+// add up something about each worn piece, weighted by that piece's share
+function armorSum(f) {
+  return ARMOR_SLOTS.reduce((n, a) => {
+    const st = inv.armor[a.key];
+    return st ? n + a.share * f(ARMORS[ITEMS[st.id].armor]) : n;
+  }, 0);
+}
+const armorBlock = () => armorSum(A => A.block);
+// armor points for the bar over your hearts. they follow how much longer you
+// last rather than the raw percentage (block / (1 - block)), scaled so a full
+// set of hide is exactly half the bar: wool 0.4, gold 1.1, hide 2.5, iron 3.9,
+// emerald 6.7, diamond 9.4. past 5 the bar starts over in a shinier colour, and
+// again past 10, for the boss armor still to come.
+function armorPoints() {
+  const b = Math.min(0.99, armorBlock());
+  return Math.round(((5 / 3) * (b / (1 - b))) * 100) / 100;
 }
 const rand = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
@@ -1871,7 +1965,7 @@ function rollDenLoot() {
   add(0.12, 'emerald', 1, 1);
   const tier = () => { const r = Math.random(); return r < 0.03 ? 'diamond' : r < 0.12 ? 'emerald' : 'iron'; };
   if (Math.random() < 0.2) out.push(makeStack(`${tier()}-sword`));
-  if (Math.random() < 0.1) out.push(makeStack(`${tier()}-armor`));
+  if (Math.random() < 0.1) out.push(makeStack(`${tier()}-${ARMOR_SLOTS[(Math.random() * 4) | 0].piece}`));
   return Array.from({ length: 12 }, (_, i) => out[i] || null);
 }
 
@@ -2025,7 +2119,7 @@ function updateMoe(c, dt) {
   c.hurtT = Math.max(0, c.hurtT - dt);
   c.t += dt;
   c.moving = false;
-  c.spin += dt * (['windup', 'lunge', 'dig', 'pop'].includes(c.state) ? 30 : 12);
+  c.spin += dt * (['windup', 'lunge', 'dig', 'pop', 'stuck'].includes(c.state) ? 30 : 12);
   const img = moeFrame(c, performance.now());
   const hand = moePoint(c, MOE_HAND, img);
   const toYou = Math.atan2(player.y - 10 - hand.y, player.x - hand.x);
@@ -2135,13 +2229,16 @@ function updateMoe(c, dt) {
       c.aim = -Math.PI / 2;
       if (c.t >= MOE.pop) {
         c.state = 'stuck'; c.t = 0;
-        bossHint('stuck', 'He\'s stuck', 'Hit him now', 'Swings do the most damage while he\'s in the ground');
+        bossHint('stuck', 'He\'s stuck', 'Hit him now', 'Swings do the most damage while he\'s in the ground. Stay off his drill.');
       }
       break;
     case 'stuck':
-      // half out of the hole and dizzy: he can't hurt you, so make it count
+      // half out of the hole and dizzy, but the drill he came up with is still
+      // spinning over his head: stand on top of him and it keeps chewing on
+      // you (see below). hit him from just outside the hole.
       c.aim = -Math.PI / 2;
       c.flip = player.x < c.x;
+      if (Math.random() < dt * 20) burst(c.x + (Math.random() - 0.5) * 6, c.y - MOE_H + Math.round(c.sink * (MOE_H - 4)) - 16, '255,220,140', 1);
       if (c.t >= (mad ? MOE.stuckMad : MOE.stuck)) {
         c.pops++;
         if (c.pops >= (mad ? MOE.popsMad : MOE.pops)) { c.state = 'climb'; c.t = 0; }
@@ -2163,10 +2260,13 @@ function updateMoe(c, dt) {
       if (c.t >= 1.8) finishMoe(c);
       break;
   }
-  // touching him above ground hurts, and a lunge hurts a lot. half buried he
-  // can't do anything to you.
+  // touching him above ground hurts, and a lunge hurts a lot. half buried,
+  // the drill still turning over him hurts anyone standing in his hole.
   if (!player.dead && !c.under && ['face', 'windup', 'lunge', 'recover', 'climb'].includes(c.state) && overlap(playerBox(), creatureBox(c))) {
     hurtPlayer(c.state === 'lunge' ? def.lungeDmg : def.dmg, c.x, c.y - 10);
+  }
+  if (!player.dead && (c.state === 'pop' || c.state === 'stuck') && Math.hypot(player.x - c.x, (player.y - c.y) * 1.3) < MOE.popR) {
+    hurtPlayer(def.drillDmg, c.x, c.y + 6);
   }
   if (c.moving) c.anim += dt;
   // the lamp follows his helmet, and the beam goes the way the drill points
@@ -2331,6 +2431,8 @@ function drawMoe(c, toX, toY, t) {
   }
   const hand = moePoint(c, MOE_HAND, base);
   hand.x += shake;
+  // stuck, he holds the drill up over his head, still spinning
+  if (c.state === 'stuck' || c.state === 'pop') hand.y -= 16;
   const k = ((Math.round((c.aim / (Math.PI * 2)) * DRILL_STEPS) % DRILL_STEPS) + DRILL_STEPS) % DRILL_STEPS;
   const drill = () => ctx.drawImage(DRILL_ROT[Math.floor(c.spin) % 3][k], toX(hand.x - DRILL_D / 2), toY(hand.y - DRILL_D / 2), DRILL_D * S, DRILL_D * S);
   // pointing up, the drill goes behind him
@@ -2634,7 +2736,7 @@ function killCreature(c) {
 // armor takes its percentage off the top. two decimals is plenty; the hearts
 // round it visually anyway.
 function afterArmor(dmg) {
-  const block = inv.armor ? ARMORS[ITEMS[inv.armor.id].armor].block : 0;
+  const block = armorBlock();
   return Math.round(dmg * (1 - block) * 100) / 100;
 }
 
@@ -3642,7 +3744,7 @@ function takeCraft(toBag) {
   if (!quest.crafted[r.out]) {
     quest.crafted[r.out] = true;
     const it = ITEMS[r.out];
-    toast('Crafted', it.name, it.armor ? 'Put it in your armor slot (E)' : '');
+    toast('Crafted', it.name, it.armor ? 'Wear it from your inventory (E)' : '');
   }
   sfx.craft();
   markDirty();
@@ -3688,7 +3790,7 @@ function takeItem(id, n) {
 function slotGet(ref) {
   const [box, i] = ref.split(':');
   if (box === 'inv') return inv.slots[+i];
-  if (box === 'armor') return inv.armor;
+  if (box === 'armor') return inv.armor[i];
   if (box === 'craft') return craftGrid[+i];
   if (box === 'chest') return openChest[+i];
   if (box === 'out') { const r = matchRecipe(); return r ? { id: r.out, n: r.n } : null; }
@@ -3697,20 +3799,21 @@ function slotGet(ref) {
 function slotSet(ref, stack) {
   const [box, i] = ref.split(':');
   if (box === 'inv') inv.slots[+i] = stack;
-  else if (box === 'armor') inv.armor = stack;
+  else if (box === 'armor') inv.armor[i] = stack;
   else if (box === 'craft') craftGrid[+i] = stack;
   else if (box === 'chest') openChest[+i] = stack;
   else furnaceState[box] = stack;
 }
 // what each slot is allowed to hold, with the reason shown when it says no
 function slotRefuses(ref, id) {
-  const box = ref.split(':')[0], it = ITEMS[id];
+  const [box, i] = ref.split(':'), it = ITEMS[id];
   if (box === 'craft' && it.food) return 'Meat doesn\'t go on the crafting table';
   if (box === 'craft' && (it.tool || it.armor)) return 'Finished gear can\'t go back on the table';
   if (box === 'craft' && it.part) return 'That doesn\'t go on the table';
   if (box === 'input' && !it.cooksTo) return it.fuel ? 'That\'s fuel. It goes in the bottom slot.' : 'The furnace only cooks raw food and smelts raw ore';
   if (box === 'fuel' && !it.fuel) return 'Only wood and sticks burn';
   if (box === 'armor' && !it.armor) return 'That isn\'t armor';
+  if (box === 'armor' && it.slot !== i) return `That goes in the ${SLOT_OF[it.slot].name.toLowerCase()} slot`;
   if (box === 'output' || box === 'out') return 'You can only take from here';
   return '';
 }
@@ -3765,13 +3868,13 @@ function slotClick(ref, button, shift) {
 }
 
 // shift click moves things between your bag and whatever station is open
-// (or between your bag and the armor slot)
+// (or between your bag and the armor piece's slot)
 function quickMove(ref, cur) {
   const box = ref.split(':')[0];
   if (box === 'inv' && ui === 'inv' && !ITEMS[cur.id].armor) { bagToHotbar(ref, cur); return; }
   if (box === 'inv') {
     let dest = null;
-    if (ITEMS[cur.id].armor) dest = 'armor:0';
+    if (ITEMS[cur.id].armor) dest = `armor:${ITEMS[cur.id].slot}`;
     else if (ui === 'furnace') dest = ITEMS[cur.id].cooksTo ? 'input' : ITEMS[cur.id].fuel ? 'fuel' : null;
     else if (ui === 'chest') {
       const same = openChest.findIndex(st => st && st.id === cur.id && st.n < maxStack(cur.id));
@@ -3785,7 +3888,7 @@ function quickMove(ref, cur) {
     if (!dest) { hint(slotRefuses(ui === 'furnace' ? 'input' : 'craft:0', cur.id) || 'Nowhere to put that'); return; }
     const there = slotGet(dest);
     if (!there) { slotSet(dest, cur); slotSet(ref, null); }
-    else if (dest === 'armor:0') { slotSet(dest, cur); slotSet(ref, there); }
+    else if (dest.startsWith('armor:')) { slotSet(dest, cur); slotSet(ref, there); }
     else if (there.id === cur.id) {
       const k = Math.min(maxStack(cur.id) - there.n, cur.n);
       there.n += k; cur.n -= k;
@@ -3837,13 +3940,21 @@ function durBar(stack) {
   const f = stack.dur / it.dur;
   return `<s style="width:${Math.max(6, f * 100)}%;background:${f > 0.5 ? '#6fe07a' : f > 0.2 ? '#ffd23f' : '#ff5a4a'}"></s>`;
 }
-function slotHTML(ref, stack, extra = '') {
+// the name goes in data-tip for the in-game tooltip (see showTip), not in a
+// title, which would pop up the browser's own grey box
+function slotHTML(ref, stack, extra = '', ghost = '') {
   const it = stack && ITEMS[stack.id];
-  const label = it ? `${it.name}${stack.n > 1 ? ` ×${stack.n}` : ''}` : 'Empty';
-  return `<button type="button" class="slot ${extra}" data-ref="${ref}" title="${label}" aria-label="${label}">
-    ${it ? `<i style="background-image:url(${ICON[stack.id]})"></i>${stack.n > 1 ? `<b>${stack.n}</b>` : ''}${durBar(stack)}` : ''}
+  const label = it ? `${it.name}${stack.n > 1 ? ` ×${stack.n}` : ''}` : '';
+  return `<button type="button" class="slot ${extra}" data-ref="${ref}"${label ? ` data-tip="${label}"` : ''} aria-label="${label || 'Empty'}">
+    ${it ? `<i style="background-image:url(${ICON[stack.id]})"></i>${stack.n > 1 ? `<b>${stack.n}</b>` : ''}${durBar(stack)}` : ghost ? `<i class="ghost" style="background-image:url(${ghost})"></i>` : ''}
   </button>`;
 }
+// faint outlines for the empty armor slots, so you can tell which is which
+const ARMOR_GHOST = Object.fromEntries(ARMOR_SLOTS.map(a => {
+  const G = pixelGrid(16, 16);
+  ({ head: helmetIcon, chest: armorIcon, legs: leggingsIcon, feet: bootsIcon })[a.key](G, ['#3a3d47', '#33363f', '#2c2e36']);
+  return [a.key, G.canvas().toDataURL()];
+}));
 
 // which chest is open (home, the cave, a burrow or moe's) and where it is
 let openChest = chestSlots, openWhere = 'at home';
@@ -3872,6 +3983,7 @@ function closeUI() {
   back.forEach(addStack);
   invWrap.hidden = true;
   heldEl.hidden = true;
+  tipEl.hidden = true;
   document.body.classList.remove('inv-open');
   markDirty();
   renderHUD();
@@ -3946,7 +4058,7 @@ function renderUI() {
       <div class="inv-body">
         <div class="inv-doll">
           <p class="inv-label">Armor</p>
-          ${slotHTML('armor:0', inv.armor, 'slot-armor')}
+          <div class="armor-slots">${ARMOR_SLOTS.map(a => slotHTML(`armor:${a.key}`, inv.armor[a.key], 'slot-armor', ARMOR_GHOST[a.key])).join('')}</div>
         </div>
         <div class="inv-slots">
           <p class="inv-label">Bag</p>
@@ -3960,6 +4072,7 @@ function renderUI() {
   const list = invWrap.querySelector('.rb-list');
   if (list) list.scrollTop = scroll;
   paintHeld();
+  showTip(mouse.x, mouse.y);
 }
 
 function paintHeld() {
@@ -3972,7 +4085,7 @@ function paintHeld() {
 
 let vitalsKey = '';
 function renderVitals() {
-  const key = `${vitals.hp}|${vitals.hunger.toFixed(2)}|${inv.armor && inv.armor.id}|${vitals.slowT > 0}|${!!vitals.burn}|${!!vitals.poison}|${nightAmount() > 0.5}|${quest.day}`;
+  const key = `${vitals.hp}|${vitals.hunger.toFixed(2)}|${ARMOR_SLOTS.map(a => inv.armor[a.key] && inv.armor[a.key].id).join()}|${vitals.slowT > 0}|${!!vitals.burn}|${!!vitals.poison}|${nightAmount() > 0.5}|${quest.day}`;
   if (key === vitalsKey) return;
   vitalsKey = key;
   const row = (val, set) => {
@@ -3990,8 +4103,19 @@ function renderVitals() {
     const f = clamp(vitals.hp - i, 0, 1);
     hearts += `<i style="background-image:url(${HEART.empty})"><b style="width:${(f * 100).toFixed(2)}%;background-image:url(${HEART.full})"></b></i>`;
   }
-  $('#hearts').innerHTML = `${hearts}<span class="hp-num">${vitals.hp.toFixed(2)}</span>`
-    + (inv.armor ? `<span class="hud-armor" title="${ITEMS[inv.armor.id].name}"><i style="background-image:url(${ICON[inv.armor.id]})"></i></span>` : '');
+  $('#hearts').innerHTML = `${hearts}<span class="hp-num">${vitals.hp.toFixed(2)}</span>`;
+  // the armor bar: each icon fills with steel for the first 5 points, then the
+  // shinier runs lay over the top of it, like minecraft's extra heart rows
+  const pts = armorPoints(), tier = pts > 10 ? 2 : pts > 5 ? 1 : 0;
+  let plates = '';
+  for (let i = 0; i < 5; i++) {
+    const layer = (k, img) => { const f = clamp(pts - k * 5 - i, 0, 1); return f > 0 ? `<b style="width:${(f * 100).toFixed(2)}%;background-image:url(${img})"></b>` : ''; };
+    plates += `<i style="background-image:url(${ARMOR_PT.empty})">${layer(0, ARMOR_PT.steel)}${layer(1, ARMOR_PT.reinforced)}${layer(2, ARMOR_PT.mythic)}</i>`;
+  }
+  const bar = $('#armor-bar');
+  bar.innerHTML = `${plates}<span class="armor-num">${pts.toFixed(2)}</span>`;
+  bar.className = `armor-bar${tier ? ` is-tier${tier}` : ''}`;
+  bar.setAttribute('aria-label', `Armor ${pts.toFixed(2)} points, blocks ${Math.round(armorBlock() * 100)}% of every hit`);
   $('#hearts').setAttribute('aria-label', `Health ${vitals.hp.toFixed(2)} of ${vitals.max}`);
   // saturation stays hidden, like minecraft's
   $('#hunger').innerHTML = `<span class="hunger-icons">${row(vitals.hunger, DRUM)}</span>`;
@@ -4006,7 +4130,7 @@ function renderHUD() {
   vitalsKey = '';
   renderVitals();
   $('#hotbar').innerHTML = inv.slots.slice(0, 6).map((s, i) => `
-    <button type="button" class="hb-slot${i === inv.sel ? ' is-sel' : ''}" data-hotbar="${i}" title="${s ? ITEMS[s.id].name : 'Empty'}">
+    <button type="button" class="hb-slot${i === inv.sel ? ' is-sel' : ''}" data-hotbar="${i}"${s ? ` data-tip="${ITEMS[s.id].name}${s.n > 1 ? ` ×${s.n}` : ''}"` : ''} aria-label="${s ? ITEMS[s.id].name : 'Empty'}">
       <span class="hb-key">${i + 1}</span>
       ${s ? `<i style="background-image:url(${ICON[s.id]})"></i>${s.n > 1 ? `<b>${s.n}</b>` : ''}${durBar(s)}` : ''}
     </button>`).join('');
@@ -4032,7 +4156,7 @@ const QUEST_STEPS = [
   { done: () => quest.killed.hyena, title: () => (quest.seen.hyena ? 'Defeat the marble hyena' : 'Find the next landmark') },
   { done: craftedWeapon, title: 'Craft a weapon' },
   { done: () => quest.killed.bear, title: 'Defeat the grizzly' },
-  { done: () => quest.crafted['hide-armor'], title: 'Craft hide armor' },
+  { done: () => quest.crafted['hide-armor'] || ARMOR_SLOTS.some(a => quest.crafted[`hide-${a.piece}`]), title: 'Craft hide armor' },
   { done: () => false, title: 'Meadows complete' }
 ];
 const meadowsComplete = () => QUEST_STEPS.slice(0, -1).every(q => q.done());
@@ -4430,12 +4554,17 @@ function coreMotes(dt) {
 function playFrozen() { return ui !== null || player.dead || !!sleeping || !!cine; }
 // which layer of img/player-armor.png to paint over you, or -1 for none
 const ARMOR_LAYERS = ['hide', 'wool', 'gold', 'marble', 'iron', 'emerald', 'diamond'];
+// (the sheet only has the torso, so it's the chestplate that shows)
 function playArmorIndex() {
-  return started && inv.armor ? ARMOR_LAYERS.indexOf(ITEMS[inv.armor.id].armor) : -1;
+  const chest = inv.armor.chest;
+  return started && chest ? ARMOR_LAYERS.indexOf(ITEMS[chest.id].armor) : -1;
 }
+// how much of you is in gold, for the shine
+const goldShare = () => armorSum(A => (A.shine ? 1 : 0));
 function playSpeedMult() {
-  const armor = inv.armor && ARMORS[ITEMS[inv.armor.id].armor];
-  return (vitals.slowT > 0 ? 0.55 : 1) * (armor && armor.slow ? armor.slow : 1)
+  // iron slows you down by its share: a full set is the old 85%
+  const slow = 1 - armorSum(A => 1 - (A.slow || 1));
+  return (vitals.slowT > 0 ? 0.55 : 1) * slow
     * (vitals.hunger <= 0.5 ? STARVING_SLOW : 1) * (eating ? 0.5 : 1);
 }
 
@@ -4467,9 +4596,9 @@ function playUpdate(dt, t) {
     if (vitals.slowT > 0 && Math.random() < dt * 14) {
       particles.push({ x: player.x + (Math.random() - 0.5) * 12, y: player.y - 18, vx: 0, vy: 20, g: 80, life: 0.4, t: 0, col: '#7ec3ff', size: 1 });
     }
-    // gold armor catches the light
-    const armor = inv.armor && ARMORS[ITEMS[inv.armor.id].armor];
-    if (armor && armor.shine && !reduceMotion && Math.random() < dt * 6) {
+    // gold armor catches the light, more the more of it you're wearing
+    const gold = goldShare();
+    if (gold > 0 && !reduceMotion && Math.random() < dt * 6 * gold) {
       particles.push({ x: player.x + (Math.random() - 0.5) * 14, y: player.y - 8 - Math.random() * 18, vx: 0, vy: -6, g: 0, life: 0.5, t: 0, col: '#fff3a0', size: 1 });
     }
   }
@@ -4581,13 +4710,13 @@ function playRenderOverlay(toX, toY, t) {
   if (!started) return;
   const fs = Math.max(16, 8 * Math.round((S * 5.3) / 8));
 
-  // gold armor gets a soft warm halo
-  const armor = inv.armor && ARMORS[ITEMS[inv.armor.id].armor];
-  if (armor && armor.shine && !player.dead) {
+  // gold armor gets a soft warm halo, brighter the more of it you're wearing
+  const gold = goldShare();
+  if (gold > 0 && !player.dead) {
     const gx = toX(player.x), gy = toY(player.y - 12), rad = TILE * S * 1.6;
     ctx.globalCompositeOperation = 'lighter';
     const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, rad);
-    g.addColorStop(0, `rgba(255,214,90,${0.18 + Math.sin(t / 300) * 0.05})`);
+    g.addColorStop(0, `rgba(255,214,90,${(0.18 + Math.sin(t / 300) * 0.05) * gold})`);
     g.addColorStop(1, 'rgba(255,214,90,0)');
     ctx.fillStyle = g;
     ctx.fillRect(gx - rad, gy - rad, rad * 2, rad * 2);
@@ -4850,6 +4979,23 @@ $('#hotbar').addEventListener('click', e => {
   const b = e.target.closest('[data-hotbar]');
   if (b) { selectSlot(+b.dataset.hotbar); if (e.detail) b.blur(); }
 });
+// item names on hover, in the game's own pixel font and panel instead of the
+// browser's tooltip. anything with a data-tip shows it, next to the cursor.
+// it's checked on every move (and after the inventory redraws under a still
+// mouse) rather than on mouseover/out, because a redraw swaps the element out
+// from under the cursor without telling anyone.
+const tipEl = $('#tip');
+function showTip(x, y) {
+  const el = !heldStack && document.elementFromPoint(x, y)?.closest('[data-tip]');
+  if (!el) { tipEl.hidden = true; return; }
+  tipEl.textContent = el.dataset.tip;
+  tipEl.hidden = false;
+  const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
+  tipEl.style.left = `${Math.min(x + 14, window.innerWidth - w - 6)}px`;
+  tipEl.style.top = `${y - h - 10 < 6 ? y + 18 : y - h - 10}px`;
+}
+document.addEventListener('mousemove', e => showTip(e.clientX, e.clientY));
+document.addEventListener('mouseleave', () => { tipEl.hidden = true; });
 window.addEventListener('pagehide', () => { if (saveDirty) saveNow(); });
 
 renderHUD();

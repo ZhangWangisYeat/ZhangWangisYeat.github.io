@@ -981,12 +981,40 @@ body.is-title .toast { opacity: 0; pointer-events: none; }
 .hunger-icons i { display: block; width: 20px; height: 20px; background-size: 100% 100%; image-rendering: pixelated; }
 .sat-bar { display: block; width: 100%; height: 4px; background: rgba(10, 10, 13, 0.75); box-shadow: inset 0 0 0 1px #3b2f2a; }
 .sat-bar i { display: block; height: 100%; background: #ffd23f; }
-.hearts i, .hud-armor i { display: block; width: 22px; height: 20px; background-size: 100% 100%; image-rendering: pixelated; }
+.hearts i { display: block; width: 22px; height: 20px; background-size: 100% 100%; image-rendering: pixelated; }
 .hearts i { position: relative; }
 .hearts i b { position: absolute; left: 0; top: 0; bottom: 0; background-size: 22px 20px; background-repeat: no-repeat; image-rendering: pixelated; }
 .hp-num { margin-left: 6px; font-family: var(--px); font-size: 0.6rem; color: #f2f0ea; text-shadow: 0 1px 0 #000; }
-.hud-armor { margin-left: 8px; padding: 2px; background: rgba(10, 10, 13, 0.7); }
-.hud-armor i { width: 20px; height: 20px; }
+.armor-bar { display: flex; gap: 3px; align-items: center; align-self: flex-start; }
+.armor-bar i { position: relative; display: block; width: 22px; height: 20px; background-size: 100% 100%; image-rendering: pixelated; }
+.armor-bar i b { position: absolute; left: 0; top: 0; bottom: 0; background-size: 22px 20px; background-repeat: no-repeat; image-rendering: pixelated; }
+.armor-num { margin-left: 6px; font-family: var(--px); font-size: 0.6rem; color: #d6dbe3; text-shadow: 0 1px 0 #000; }
+.armor-bar.is-tier1 .armor-num { color: #8ff8ff; }
+.armor-bar.is-tier2 .armor-num { color: #e6c8ff; }
+.armor-bar.is-tier1 i,
+.armor-bar.is-tier2 i { animation: armor-shine 2.4s steps(1) infinite; }
+.armor-bar.is-tier1 i:nth-child(2), .armor-bar.is-tier2 i:nth-child(2) { animation-delay: 0.12s; }
+.armor-bar.is-tier1 i:nth-child(3), .armor-bar.is-tier2 i:nth-child(3) { animation-delay: 0.24s; }
+.armor-bar.is-tier1 i:nth-child(4), .armor-bar.is-tier2 i:nth-child(4) { animation-delay: 0.36s; }
+.armor-bar.is-tier1 i:nth-child(5), .armor-bar.is-tier2 i:nth-child(5) { animation-delay: 0.48s; }
+@keyframes armor-shine {
+  0%, 84% { filter: none; }
+  88% { filter: brightness(1.5) drop-shadow(0 0 3px rgba(143, 248, 255, 0.8)); }
+  92% { filter: brightness(1.25); }
+}
+.tip {
+  --edge: #5a5d6b;
+  position: fixed;
+  z-index: 40;
+  padding: 7px 10px 6px;
+  background: rgba(14, 15, 20, 0.96);
+  font-family: var(--px);
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  color: #f2f0ea;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .hotbar { display: flex; gap: 4px; padding: 4px; background: rgba(10, 10, 13, 0.75); pointer-events: auto; }
 .hb-slot {
   position: relative;
@@ -1076,7 +1104,9 @@ body.is-title .hud-play { opacity: 0; pointer-events: none; }
 .slot.is-sel { box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 4px rgba(255, 255, 255, 0.15); }
 .slot-out { width: 56px; height: 56px; }
 .slot-out.is-ready { box-shadow: inset 0 0 0 2px #ffd23f; }
-.inv-doll .slot-armor { width: 56px; height: 56px; }
+.armor-slots { display: grid; gap: 4px; justify-content: start; }
+.inv-doll .slot-armor { width: 46px; height: 46px; }
+.slot i.ghost { opacity: 1; }
 .inv-stats { margin-top: 12px; display: grid; gap: 4px; }
 .inv-stats div { display: flex; justify-content: space-between; gap: 6px; font-size: 0.74rem; }
 .inv-stats dt { font-family: var(--px); font-size: 0.5rem; text-transform: uppercase; color: var(--muted); padding-top: 2px; }

@@ -1987,117 +1987,138 @@ const heroCtx = hero.getContext('2d');
 const tv = { w: 0, h: 0, s: 1, bg: null, buf: null, g: null, fig: null, aura: [], strands: [], sparks: [], wisps: [] };
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16);
 
-// you, drawn for this scene: head down with your face to the camera, knees
-// bent up, one arm flung out and the other reaching back. it's built from
-// rounded shapes (capsules for limbs, ellipses for the head), each lit as if it
-// were a cylinder or a ball, then snapped to four tones per material with a
-// dark line wherever one part sits in front of another, like cel shaded pixel
-// art. same colours as your sprite: brown hair, brown jacket over a blue shirt.
-const FIG_W = 180, FIG_H = 196;
-function makeFigure() {
-  const RAMP = {
-    skin: ['#f3dcc0', '#dbb894', '#b98a63', '#8c5d3f'],
-    hair: ['#a3744a', '#7d5434', '#5a3a23', '#3a2416'],
-    jacket: ['#8f6440', '#6c4729', '#4d301b', '#321e11'],
-    shirt: ['#6aa2e6', '#3f78cb', '#2c5aa6', '#1c3c74'],
-    pants: ['#5b4434', '#3e2c21', '#2a1c13', '#1a110b'],
-    shoe: ['#5e5e66', '#36363c', '#202024', '#0e0e10'],
-    sole: ['#f2eee6', '#d6d0c4', '#b0a898', '#8a8272']
-  };
-  const hx = 86, hy = 158;
-  const parts = [];
-  const cap = (ax, ay, bx, by, r1, r2, mat) => parts.push({ t: 'c', ax: hx + ax, ay: hy + ay, bx: hx + bx, by: hy + by, r1, r2, mat });
-  const ell = (cx, cy, rx, ry, mat) => parts.push({ t: 'e', cx: hx + cx, cy: hy + cy, rx, ry, mat });
-  // back to front. the far arm is flung up and back, the far leg is bent hard
-  // at the knee, the body arches, the near leg kicks up long, and the near arm
-  // reaches down past your head towards the camera.
-  cap(16, -26, 38, -38, 7, 6, 'jacket'); cap(38, -38, 48, -62, 6, 5, 'jacket'); ell(50, -67, 5, 5.5, 'skin');
-  cap(14, -66, 34, -92, 9, 7.5, 'pants'); cap(34, -92, 16, -112, 7.2, 5.4, 'pants'); cap(16, -112, 8, -121, 6, 4.5, 'shoe');
-  cap(16, -60, 25, -72, 7, 1.5, 'jacket');
-  cap(1, -13, 3, -20, 5, 5, 'skin');
-  ell(8, -66, 12, 7, 'pants');
-  cap(10, -44, 8, -64, 12.5, 11, 'torso');
-  cap(3, -19, 10, -44, 14, 12.5, 'torso');
-  cap(0, -60, -9, -72, 7, 1.5, 'jacket');
-  cap(2, -68, -14, -98, 9.5, 8, 'pants'); cap(-14, -98, -4, -128, 7.5, 5.6, 'pants'); cap(-4, -128, 4, -137, 6, 4.6, 'shoe');
-  cap(-8, -24, -28, -14, 7.5, 6.5, 'jacket'); cap(-28, -14, -34, 8, 6.5, 5.5, 'jacket'); ell(-35, 13, 5.5, 5, 'skin');
-  ell(-15, 1, 2.8, 4, 'skin'); ell(15, 1, 2.8, 4, 'skin');
-  ell(0, 0, 15, 15, 'skin');
-  // a big curly mop of hair, rounded so it reads as hair and not a beard,
-  // with a few curls of fringe falling (well, rising) over your forehead
-  ell(0, 14, 16.5, 9, 'hair');
-  [[-11, 18, 6.5, 5.5], [-4, 22, 6.5, 5], [5, 22, 6.5, 5], [12, 17, 6, 5.5], [-15, 11, 4.5, 5.5], [15, 10, 4.5, 5.5]].forEach(([x, y, rx, ry]) => ell(x, y, rx, ry, 'hair'));
-  [[-9, 9, 4.5, 2.6], [0, 9.5, 5, 2.6], [9, 9, 4.5, 2.6]].forEach(([x, y, rx, ry]) => ell(x, y, rx, ry, 'hair'));
+// you, as the character from the game, redrawn in high definition: same chibi
+// proportions (a big head on a small body), same shoulder length brown hair with
+// the swept fringe, side locks and cowlick, the same big dark oval eyes, grey
+// t-shirt, blue jeans and brown boots, in the sprite's own colours. it's built
+// upright from rounded shapes (capsules for limbs, ellipses for the head), each
+// lit as a cylinder or a ball and snapped to four tones per material, with a
+// dark line wherever one part crosses in front of another. the pose is a dive:
+// arms swept back, one knee bent, and long hair, which when you turn the whole
+// thing head down streams up behind you like you're plummeting. the tilted
+// copies for the tumble are made the rotsprite way (scale2x, rotate, sample
+// back down) so the tilt stays as crisp as the rest.
+const RAMPS = {
+  skin: ['#e2cdb0', '#c1ac8f', '#ac7b5d', '#7d553d'],
+  hair: ['#7f5636', '#573a23', '#402717', '#28170c'],
+  shirt: ['#d0d3dc', '#a4a8b5', '#787e97', '#545a70'],
+  jeans: ['#5088d6', '#2c65b5', '#1d438a', '#132c5e'],
+  boot: ['#7f5636', '#573a23', '#402717', '#28170c']
+};
+let FIG_W = 0, FIG_H = 0;
+function makeUprightHero() {
+  const W2 = 124, H2 = 142, parts = [];
+  const cap = (ax, ay, bx, by, r1, r2, mat) => parts.push({ t: 'c', ax, ay, bx, by, r1, r2, mat });
+  const ell = (cx, cy, rx, ry, mat) => parts.push({ t: 'e', cx, cy, rx, ry, mat });
+  // back to front: the long hair behind your head, legs, body, arms, head, the
+  // locks framing your face, the fringe and cowlick
+  ell(62, 48, 28, 26, 'hair');
+  cap(56, 100, 53, 122, 7, 6, 'jeans'); cap(53, 122, 52, 131, 6.4, 5.6, 'boot');
+  cap(68, 100, 74, 114, 7, 6, 'jeans'); cap(74, 114, 86, 124, 6, 5.4, 'jeans'); cap(86, 124, 92, 129, 5.6, 5, 'boot');
+  cap(62, 96, 62, 101, 12.5, 12.5, 'jeans');
+  cap(62, 76, 62, 97, 14, 13, 'shirt');
+  // arms flung out to the sides, like the poster
+  cap(50, 79, 40, 84, 6.5, 5.5, 'shirt'); cap(40, 84, 22, 90, 4.6, 4, 'skin'); ell(19, 91, 5, 4.8, 'skin');
+  cap(74, 79, 84, 84, 6.5, 5.5, 'shirt'); cap(84, 84, 102, 90, 4.6, 4, 'skin'); ell(105, 91, 5, 4.8, 'skin');
+  cap(62, 70, 62, 77, 5.5, 5.5, 'skin');
+  ell(62, 46, 25, 24, 'skin');
+  cap(40, 42, 39, 66, 6.5, 4, 'hair'); cap(84, 42, 85, 66, 6.5, 4, 'hair');
+  ell(62, 30, 27, 17, 'hair');
+  [[44, 36, 41, 50, 5.5], [53, 38, 52, 51, 5.5], [62, 39, 64, 50, 5.5], [71, 38, 75, 49, 5], [79, 35, 83, 46, 4.5]].forEach(([ax, ay, bx, by, r]) => cap(ax, ay, bx, by, r, 1, 'hair'));
+  cap(64, 14, 71, 4, 3.4, 0.6, 'hair'); cap(58, 14, 53, 6, 3, 0.6, 'hair');
 
-  const W2 = FIG_W, H2 = FIG_H;
   const owner = new Int16Array(W2 * H2).fill(-1), col = new Array(W2 * H2).fill(null);
-  const L = [-0.45, -0.55, 0.7], ll = Math.hypot(...L);
+  // lit from the lower right here, which is the upper left once you're turned
+  // head down
+  const L = [0.5, 0.6, 0.62], ll = Math.hypot(...L);
   for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
     for (let i = parts.length - 1; i >= 0; i--) {
       const p = parts[i];
-      let nx, ny, nz, mat = p.mat;
-      if (p.t === 'e') {
-        nx = (x + 0.5 - p.cx) / p.rx; ny = (y + 0.5 - p.cy) / p.ry;
-        const d = nx * nx + ny * ny;
-        if (d > 1) continue;
-        nz = Math.sqrt(1 - d);
-      } else {
+      let nx, ny;
+      if (p.t === 'e') { nx = (x + 0.5 - p.cx) / p.rx; ny = (y + 0.5 - p.cy) / p.ry; }
+      else {
         const vx = p.bx - p.ax, vy = p.by - p.ay, len2 = vx * vx + vy * vy;
         const t = clamp(((x + 0.5 - p.ax) * vx + (y + 0.5 - p.ay) * vy) / len2, 0, 1);
-        const qx = p.ax + vx * t, qy = p.ay + vy * t, r = p.r1 + (p.r2 - p.r1) * t;
-        nx = (x + 0.5 - qx) / r; ny = (y + 0.5 - qy) / r;
-        const d = nx * nx + ny * ny;
-        if (d > 1) continue;
-        nz = Math.sqrt(1 - d);
-        if (p.mat === 'torso') {
-          // an open jacket: the shirt shows down the middle of the chest
-          const side = (vx * (y + 0.5 - qy) - vy * (x + 0.5 - qx)) / Math.sqrt(len2) / r;
-          mat = Math.abs(side) < 0.34 && t > 0.08 ? 'shirt' : 'jacket';
-        }
-        if (p.mat === 'shoe' && t > 0.78) mat = 'sole';
+        const r = p.r1 + (p.r2 - p.r1) * t;
+        nx = (x + 0.5 - (p.ax + vx * t)) / r; ny = (y + 0.5 - (p.ay + vy * t)) / r;
       }
-      const lit = (nx * L[0] + ny * L[1] + nz * L[2]) / ll;
-      const tone = lit > 0.78 ? 0 : lit > 0.48 ? 1 : lit > 0.16 ? 2 : 3;
-      let c = RAMP[mat][tone];
-      // warm rim light on the right, from the core blazing behind you
-      if (nx > 0.74 && nz < 0.62) c = mat === 'hair' ? '#e8a868' : mat === 'skin' ? '#ffe2b8' : '#ffc884';
+      const d = nx * nx + ny * ny;
+      if (d > 1) continue;
+      const nz = Math.sqrt(1 - d), lit = (nx * L[0] + ny * L[1] + nz * L[2]) / ll;
+      col[y * W2 + x] = RAMPS[p.mat][lit > 0.8 ? 0 : lit > 0.5 ? 1 : lit > 0.18 ? 2 : 3];
       owner[y * W2 + x] = i;
-      col[y * W2 + x] = c;
       break;
     }
   }
-  const G = pixelGrid(W2, H2);
+  const px = new Array(W2 * H2).fill(null);
   for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
     const i = y * W2 + x, o = owner[i];
     if (o < 0) continue;
-    // a line wherever this part overlaps one behind it
     const behind = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
       const n = owner[(y + dy) * W2 + x + dx];
       return n >= 0 && n < o && parts[n].mat !== parts[o].mat;
     });
-    G.set(x, y, behind ? '#24140e' : col[i]);
+    px[i] = behind ? '#1e110c' : col[i];
   }
-  // your face, upside down: chin at the top, so the mouth is nearest your
-  // neck and the eyes sit just above the hairline, lids and brows on the hair
-  // side. each eye gets a white, a pupil, a catchlight and a dark lash line.
-  const F = (dx, dy, c) => G.set(hx + dx, hy + dy, c);
-  [[-11, -1], [5, 1]].forEach(([ex, side]) => {
-    for (let y = -1; y <= 2; y++) for (let x = 0; x < 6; x++) {
-      if ((y === -1 || y === 2) && (x === 0 || x === 5)) continue;
-      F(ex + x, y, '#f6f2ec');
+  // the face: the sprite's tall dark eyes with a catchlight, a small mouth and
+  // a touch of blush
+  const F = (x, y, c) => { px[y * W2 + x] = c; };
+  [[51, 51], [70, 51]].forEach(([ex, ey]) => {
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 4; x++) {
+      if ((y === 0 || y === 7) && (x === 0 || x === 3)) continue;
+      F(ex + x, ey + y, y > 5 ? '#3a1e14' : '#21110d');
     }
-    for (let y = -1; y <= 1; y++) for (let x = 2; x <= 3; x++) F(ex + x, y, y === -1 ? '#7a4e2c' : '#2a1a10');
-    F(ex + 3, 0, '#ffffff');
-    for (let x = -1; x <= 6; x++) F(ex + x, 3, '#2a1a10');
-    F(side < 0 ? ex - 2 : ex + 7, 4, '#2a1a10');
-    for (let x = 0; x <= 5; x++) F(ex + x, 5 + (x === (side < 0 ? 0 : 5) ? 1 : 0), '#4a2e1a');
+    F(ex + 1, ey + 1, '#ffffff'); F(ex + 2, ey + 1, '#ffffff'); F(ex + 1, ey + 2, '#ffffff');
+    F(ex + 2, ey + 5, '#6a3a24');
   });
-  F(0, -5, '#b98a63'); F(-1, -5, '#b98a63'); F(0, -6, '#8c5d3f'); F(-1, -6, '#d4a684');
-  for (let x = -3; x <= 3; x++) F(x, -10, '#6e3426');
-  F(-4, -9, '#6e3426'); F(4, -9, '#6e3426');
-  for (let x = -2; x <= 2; x++) F(x, -11, '#c4705e');
-  F(-11, -5, '#eaa08a'); F(-10, -5, '#eaa08a'); F(10, -5, '#eaa08a'); F(11, -5, '#eaa08a');
-  return G.outline(() => '#0e0810').canvas();
+  for (let x = 60; x <= 64; x++) F(x, 63, '#6e3426');
+  F(61, 64, '#9a5040'); F(62, 64, '#9a5040'); F(63, 64, '#9a5040');
+  [[46, 60], [47, 60], [48, 60], [76, 60], [77, 60], [78, 60]].forEach(([x, y]) => F(x, y, '#d89a80'));
+  return { px, w: W2, h: H2 };
+}
+
+function makeHdFrames(angles) {
+  const up = makeUprightHero();
+  const pad = 26, pw = up.w + pad * 2, ph = up.h + pad * 2, padded = new Array(pw * ph).fill(null);
+  for (let y = 0; y < up.h; y++) for (let x = 0; x < up.w; x++) padded[(y + pad) * pw + x + pad] = up.px[y * up.w + x];
+  const big = epx2(padded, pw, ph), BW = pw * 2, BH = ph * 2;
+  return angles.map(deg => {
+    // head down: half a turn, plus the tumble's tilt
+    const a = ((180 + deg) * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
+    const out = new Array(pw * ph).fill(null);
+    for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) {
+      const bx = x * 2 + 0.5 - BW / 2, by = y * 2 + 0.5 - BH / 2;
+      const sx = Math.round(bx * ca + by * sa + BW / 2), sy = Math.round(-bx * sa + by * ca + BH / 2);
+      if (sx >= 0 && sy >= 0 && sx < BW && sy < BH) out[y * pw + x] = big[sy * BW + sx];
+    }
+    const G = pixelGrid(pw, ph);
+    for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) {
+      const c = out[y * pw + x];
+      if (!c) continue;
+      // a warm rim on whichever edges face the core blazing behind you
+      const open = (dx, dy) => { const nx = x + dx, ny = y + dy; return nx < 0 || ny < 0 || nx >= pw || ny >= ph || !out[ny * pw + nx]; };
+      G.set(x, y, (open(1, 0) || open(1, 1)) && c !== '#1e110c' ? RIM[c] || c : c);
+    }
+    return G.outline(() => '#120a0c').canvas();
+  });
+}
+const RIM = {};
+Object.values(RAMPS).forEach(r => { RIM[r[1]] = '#ffd9a8'; RIM[r[2]] = '#f0b880'; RIM[r[3]] = '#d09060'; RIM[r[0]] = '#fff0d8'; });
+
+// scale2x on a grid of colour strings (null is see-through)
+function epx2(src, w, h) {
+  const out = new Array(w * 2 * h * 2), at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? null : src[y * w + x]);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const P = at(x, y), A = at(x, y - 1), B = at(x + 1, y), C = at(x - 1, y), D = at(x, y + 1);
+    let e0 = P, e1 = P, e2 = P, e3 = P;
+    if (C === A && C !== D && A !== B) e0 = A;
+    if (A === B && A !== C && B !== D) e1 = B;
+    if (D === C && D !== B && C !== A) e2 = C;
+    if (B === D && B !== A && D !== C) e3 = D;
+    const o = y * 2 * w * 2 + x * 2;
+    out[o] = e0; out[o + 1] = e1; out[o + w * 2] = e2; out[o + w * 2 + 1] = e3;
+  }
+  return out;
 }
 
 // the glow round you: crisp rings stepping out from white to gold to a violet
@@ -2240,9 +2261,28 @@ function sizeHero() {
   tv.bg = null;
 }
 
+// the tilts the tumble swings through, and a see-through copy of each in
+// cold blue for the afterimages streaming off you as you fall
+const TUMBLE = [-30, -22, -14, -6, 2, 10];
+function tintCopy(c, colr) {
+  const t = mk(c.width, c.height), g = t.getContext('2d');
+  g.drawImage(c, 0, 0);
+  g.globalCompositeOperation = 'source-in';
+  g.fillStyle = colr;
+  g.fillRect(0, 0, c.width, c.height);
+  return t;
+}
 function buildTitle() {
-  tv.fig = makeFigure();
-  tv.aura = [0, 1].map(v => makeAura(tv.fig, v));
+  tv.frames = makeHdFrames(TUMBLE);
+  FIG_W = tv.frames[0].width; FIG_H = tv.frames[0].height;
+  tv.fig = tv.frames[0];
+  tv.auras = tv.frames.map(f => [0, 1].map(v => makeAura(f, v)));
+  tv.ghosts = tv.frames.map(f => tintCopy(f, '#8fdcff'));
+  // stars rushing up past you in three layers: far ones slow and short, near
+  // ones fast and stretched into streaks, which is most of what sells the fall
+  const rs = mulberry32(SEED + 77);
+  tv.rush = Array.from({ length: 170 }, () => ({ x: rs(), y: rs(), layer: rs() < 0.55 ? 0 : rs() < 0.7 ? 1 : 2 }));
+  tv.lines = Array.from({ length: 12 }, () => ({ x: (rs() - 0.5) * 1.6, y: rs(), len: 14 + rs() * 22, sp: 0.8 + rs() * 0.6 }));
   const r = mulberry32(SEED + 99);
   tv.sparks = Array.from({ length: 110 }, () => ({ a: r(), sp: 0.05 + r() * 0.12, side: r() < 0.5 ? -1 : 1, rise: (r() - 0.5) * 0.9, ph: r() }));
   tv.wisps = Array.from({ length: 6 }, (_, k) => ({ r: 0.55 + r() * 0.35, a0: r() * 6.28, span: 0.8 + r() * 1.4, sp: (r() < 0.5 ? -1 : 1) * (0.4 + r() * 0.6), ph: r() * 6.28, cyan: k % 2 }));
@@ -2276,17 +2316,39 @@ function renderHero(t) {
   }
   g.globalCompositeOperation = 'source-over';
 
-  // you, tumbling slowly, inside your aura
+  // space rushing up past you
+  if (!reduceMotion) {
+    const SPEED = [26, 90, 240], LEN = [1, 3, 10], ALPHA = [0.55, 0.75, 0.9];
+    tv.rush.forEach(st => {
+      const y = ((st.y * H2 - secs * SPEED[st.layer]) % H2 + H2) % H2;
+      g.fillStyle = `rgba(235,240,255,${ALPHA[st.layer]})`;
+      g.fillRect(Math.round(st.x * W2), Math.round(y), 1, LEN[st.layer]);
+    });
+    tv.lines.forEach(l => {
+      const span = H2 + 60, y = ((l.y * span - secs * 420 * l.sp) % span + span) % span - 30;
+      g.fillStyle = 'rgba(200,225,255,0.28)';
+      g.fillRect(Math.round(fx + l.x * FIG_W * 0.6), Math.round(y), 1, Math.round(l.len));
+    });
+  }
+
+  // you, tumbling slowly, inside your aura, with afterimages streaming above
   const bob = reduceMotion ? 0 : Math.round(Math.sin(secs * 1.1) * 2);
+  const fi = reduceMotion ? 3 : Math.round((Math.sin(secs * 0.7) * 0.5 + 0.5) * (TUMBLE.length - 1));
   const ox = Math.round(fx - FIG_W / 2), oy = Math.round(fy - FIG_H / 2) + bob;
+  if (!reduceMotion) {
+    [3, 2, 1].forEach(k => {
+      g.globalAlpha = 0.09 * (4 - k);
+      g.drawImage(tv.ghosts[fi], ox, oy - k * 9);
+    });
+  }
   const flick = reduceMotion ? 0 : Math.floor(secs * 8) % 2;
   g.globalAlpha = reduceMotion ? 1 : 0.85 + Math.sin(secs * 3.3) * 0.15;
-  g.drawImage(tv.aura[flick], ox - 12, oy - 12);
+  g.drawImage(tv.auras[fi][flick], ox - 12, oy - 12);
   g.globalAlpha = 1;
   // electric wisps arcing round you, plotted pixel by pixel so they stay crisp
   if (!reduceMotion) {
     tv.wisps.forEach(w => {
-      const R = FIG_H * w.r * 0.5, a0 = w.a0 + secs * w.sp;
+      const R = FIG_H * w.r * 0.42, a0 = w.a0 + secs * w.sp;
       for (let k = 0; k < 40; k++) {
         const a = a0 + (k / 40) * w.span, jitter = Math.sin(k * 1.7 + secs * 9 + w.ph) * 2.2;
         const x = fx + Math.cos(a) * (R + jitter) * 0.8, y = fy + bob + Math.sin(a) * (R + jitter);
@@ -2295,7 +2357,7 @@ function renderHero(t) {
       }
     });
   }
-  g.drawImage(tv.fig, ox, oy);
+  g.drawImage(tv.frames[fi], ox, oy);
 
   // a white flash when the page first opens, as you come through
   const intro = reduceMotion ? 0 : Math.max(0, 1 - secs / 1.2);

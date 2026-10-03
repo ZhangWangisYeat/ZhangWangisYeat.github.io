@@ -112,8 +112,9 @@ ITEMS['exotic-core'] = { part: true, get name() { return partsComplete() ? PART_
 // can see from the start, because that's what alex called it.
 ITEMS['forest-heart'] = { part: true, name: 'Forest\'s Heart' };
 // moe's drill, off moe the mole. hold right click and it spins up (see
-// tickDrill). it's a mining tool, not a weapon: swinging it at something does
-// nothing at all (DRILL_SWING). it never wears out and takes anything
+// tickDrill). that's the only thing it does: left click with it in your hand
+// does nothing at all, and it never hurts a creature. it never wears out and
+// takes anything
 // an emerald pickaxe can. stone and trees go in a blink, but the harder the
 // ore the longer it grinds (oreSpeed): iron is still quick, diamond is about as
 // slow as an iron pickaxe. it just packs snow down, so that's still a job for
@@ -218,7 +219,7 @@ const CREATURES = {
   },
   moe: {
     name: 'Moe the Mole', boss: true, steady: true, hp: 90, speed: 36, knock: 0, h: 50, box: { w: 34, h: 26 },
-    windup: 0.7, lunge: { speed: 320, time: 0.32 }, dmg: 1, lungeDmg: 3, popDmg: 5, drillDmg: 1, regen: 0, rest: 'wait',
+    windup: 0.7, lunge: { speed: 320, time: 0.32 }, dmg: 1, lungeDmg: 3, popDmg: 5, drillDmg: 4, regen: 0, rest: 'wait',
     chip: '106,91,130', drops: []
   },
   // passive livestock: wander, graze, and run when you hit them
@@ -1294,12 +1295,9 @@ function gain(id, n, x, y) {
   sfx.pickup();
 }
 const heldItem = () => inv.slots[inv.sel];
-// moe's drill swings, but it's only for show: it never touches a creature
-const DRILL_SWING = { name: 'Moe\'s Drill', dmg: 0, cd: 0.45, reach: 1.4, cosmetic: true };
 function heldTool() {
   const s = heldItem();
-  if (s && ITEMS[s.id].tool === 'drill') return DRILL_SWING;
-  return s && ITEMS[s.id].tool ? ITEMS[s.id] : FIST;
+  return s && ITEMS[s.id].tool && ITEMS[s.id].tool !== 'drill' ? ITEMS[s.id] : FIST;
 }
 // knock durability off whatever's in your hand, and break it at zero
 function wearHeld(cost) {
@@ -1791,24 +1789,33 @@ function makeDrillGrid(spin) {
 // the edges stay clean, rotate, then sample back down at 1x. the pivot ends
 // up in the middle of each D x D canvas.
 function rotSet(G, px, py, D, steps) {
+  const P = rotPrep(G);
+  return Array.from({ length: steps }, (_, k) => rotDraw(P, px, py, D, (k / steps) * Math.PI * 2, 1));
+}
+function rotPrep(G) {
   const w = G.w, h = G.h, src = [];
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) src.push(G.get(x, y));
-  const big = epx2(epx2(src, w, h), w * 2, h * 2), BW = w * 4, BH = h * 4;
-  return Array.from({ length: steps }, (_, k) => {
-    const a = (k / steps) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
-    const c = mk(D, D), g = c.getContext('2d');
-    for (let oy = 0; oy < D; oy++) for (let ox = 0; ox < D; ox++) {
-      const vx = ox + 0.5 - D / 2, vy = oy + 0.5 - D / 2;
-      const bx = Math.floor((px + vx * ca + vy * sa) * 4), by = Math.floor((py - vx * sa + vy * ca) * 4);
-      if (bx < 0 || by < 0 || bx >= BW || by >= BH) continue;
-      const col = big[by * BW + bx];
-      if (col) { g.fillStyle = col; g.fillRect(ox, oy, 1, 1); }
-    }
-    return c;
-  });
+  return { big: epx2(epx2(src, w, h), w * 2, h * 2), BW: w * 4, BH: h * 4 };
+}
+// one angle, optionally blown up (scale) while staying on the 1x pixel grid
+function rotDraw(P, px, py, D, a, scale) {
+  const ca = Math.cos(a), sa = Math.sin(a), c = mk(D, D), g = c.getContext('2d');
+  for (let oy = 0; oy < D; oy++) for (let ox = 0; ox < D; ox++) {
+    const vx = (ox + 0.5 - D / 2) / scale, vy = (oy + 0.5 - D / 2) / scale;
+    const bx = Math.floor((px + vx * ca + vy * sa) * 4), by = Math.floor((py - vx * sa + vy * ca) * 4);
+    if (bx < 0 || by < 0 || bx >= P.BW || by >= P.BH) continue;
+    const col = P.big[by * P.BW + bx];
+    if (col) { g.fillStyle = col; g.fillRect(ox, oy, 1, 1); }
+  }
+  return c;
 }
 const DRILL_STEPS = 32, DRILL_D = 74;
 const DRILL_ROT = [0, 1, 2].map(spin => rotSet(makeDrillGrid(spin), 3.5, 7.5, DRILL_D, DRILL_STEPS));
+// when he comes up out of the floor the drill he's holding over his head is
+// bigger (1.6x), and it only ever points straight up, so that one angle is all
+// that's drawn
+const DRILL_BIG = 1.6, DRILL_BIG_D = 116;
+const DRILL_UP = [0, 1, 2].map(spin => rotDraw(rotPrep(makeDrillGrid(spin)), 3.5, 7.5, DRILL_BIG_D, -Math.PI / 2, DRILL_BIG));
 
 // a pile of rocks that comes down over the way out when the fight starts
 function makeRubble() {
@@ -2240,7 +2247,7 @@ function updateMoe(c, dt) {
       // you (see below). hit him from just outside the hole.
       c.aim = -Math.PI / 2;
       c.flip = player.x < c.x;
-      if (Math.random() < dt * 20) burst(c.x + (Math.random() - 0.5) * 6, c.y - MOE_H + Math.round(c.sink * (MOE_H - 4)) - 16, '255,220,140', 1);
+      if (Math.random() < dt * 30) burst(moePoint(c, MOE_HAND, img).x + (Math.random() - 0.5) * 6, moePoint(c, MOE_HAND, img).y - 16 - 34 * DRILL_BIG, Math.random() < 0.5 ? '255,220,140' : '255,140,60', 1);
       if (c.t >= (mad ? MOE.stuckMad : MOE.stuck)) {
         c.pops++;
         if (c.pops >= (mad ? MOE.popsMad : MOE.pops)) { c.state = 'climb'; c.t = 0; }
@@ -2263,7 +2270,9 @@ function updateMoe(c, dt) {
       break;
   }
   // touching him above ground hurts, and a lunge hurts a lot. half buried,
-  // the drill still turning over him hurts anyone standing in his hole.
+  // the big drill still roaring over him hurts anyone standing in his hole:
+  // a heart less than coming up under you did (drillDmg 4 to popDmg's 5), every
+  // time you're open to it.
   if (!player.dead && !c.under && ['face', 'windup', 'lunge', 'recover', 'climb'].includes(c.state) && overlap(playerBox(), creatureBox(c))) {
     hurtPlayer(c.state === 'lunge' ? def.lungeDmg : def.dmg, c.x, c.y - 10);
   }
@@ -2298,6 +2307,7 @@ function bossHit(c, dmg, how) {
 function bossDown(c) {
   c.state = 'dying'; c.t = 0; c.under = false;
   bossBar(false);
+  bossMusic(false);
   sfx.roar();
 }
 function finishMoe(c) {
@@ -2328,6 +2338,32 @@ function finishMoe(c) {
   renderHUD();
 }
 
+// moe's theme plays from the intro to the end of the fight, on a loop. it
+// follows the sound button like every other sound (off by default, and turning
+// sound off mid fight stops it), and it fades out when he goes down, when you
+// die or when you leave. the next fight starts it from the top.
+const moeMusic = new Audio('audio/moe-the-mole.mp3');
+moeMusic.loop = true;
+moeMusic.preload = 'auto';
+const MUSIC_VOL = 0.45;
+let musicOn = false;
+function bossMusic(on) {
+  musicOn = on;
+  if (on && soundOn) {
+    moeMusic.volume = MUSIC_VOL;
+    if (moeMusic.paused) moeMusic.play().catch(() => { /* blocked or missing, the fight goes on without it */ });
+  }
+}
+function tickMusic(dt) {
+  if (moeMusic.paused) return;
+  if (musicOn && soundOn) { moeMusic.volume = Math.min(MUSIC_VOL, moeMusic.volume + dt); return; }
+  const v = moeMusic.volume - dt * 0.5;
+  if (v > 0) { moeMusic.volume = v; return; }
+  moeMusic.pause();
+  moeMusic.currentTime = 0;
+}
+soundBtn.addEventListener('click', () => { if (musicOn) bossMusic(true); });
+
 // the intro, every time you walk in while he's alive: black bars, the camera
 // goes to the middle of the room, the floor cracks, he bursts up out of it and
 // revs the drill, his name comes up, and the rocks come down over the way you
@@ -2341,9 +2377,10 @@ function startMoeIntro() {
   bowDraw = null;
   stopDrill();
   eating = null;
+  bossMusic(true);
   $('#cine-eyebrow').textContent = 'The Mines | Boss';
   $('#cine-title').textContent = moe.def.name;
-  $('#cine-sub').textContent = 'He hears every step you take';
+  $('#cine-sub').textContent = 'Oops, wrong hole...';
   document.body.classList.add('is-cine');
 }
 function tickCine(dt) {
@@ -2394,6 +2431,7 @@ function endCine(fight) {
 // back to how it was before you walked in, after you die or leave
 function resetMoe() {
   if (cine) endCine(false);
+  bossMusic(false);
   denRoom.sealed = false;
   rubble.gone = true;
   bossBar(false);
@@ -2433,10 +2471,14 @@ function drawMoe(c, toX, toY, t) {
   }
   const hand = moePoint(c, MOE_HAND, base);
   hand.x += shake;
-  // stuck, he holds the drill up over his head, still spinning
-  if (c.state === 'stuck' || c.state === 'pop') hand.y -= 16;
+  // up out of the floor he holds the drill over his head, bigger, glowing hot
+  // at the tip and throwing sparks (see the glow after he's drawn)
+  const raised = c.state === 'stuck' || c.state === 'pop';
+  if (raised) hand.y -= 16;
   const k = ((Math.round((c.aim / (Math.PI * 2)) * DRILL_STEPS) % DRILL_STEPS) + DRILL_STEPS) % DRILL_STEPS;
-  const drill = () => ctx.drawImage(DRILL_ROT[Math.floor(c.spin) % 3][k], toX(hand.x - DRILL_D / 2), toY(hand.y - DRILL_D / 2), DRILL_D * S, DRILL_D * S);
+  const drill = raised
+    ? () => ctx.drawImage(DRILL_UP[Math.floor(c.spin) % 3], toX(hand.x - DRILL_BIG_D / 2), toY(hand.y - DRILL_BIG_D / 2), DRILL_BIG_D * S, DRILL_BIG_D * S)
+    : () => ctx.drawImage(DRILL_ROT[Math.floor(c.spin) % 3][k], toX(hand.x - DRILL_D / 2), toY(hand.y - DRILL_D / 2), DRILL_D * S, DRILL_D * S);
   // pointing up, the drill goes behind him
   const behind = Math.sin(c.aim) < -0.35;
   ctx.save();
@@ -2452,6 +2494,17 @@ function drawMoe(c, toX, toY, t) {
   if (!behind) drill();
   ctx.restore();
   if (sinkPx > 0) drawHoleRim(c, toX, toY, true);
+  if (raised) {
+    const tx = toX(hand.x), ty = toY(hand.y - 34 * DRILL_BIG), pulse = reduceMotion ? 0.8 : 0.7 + Math.sin(t / 45) * 0.3;
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(tx, ty, 0, tx, ty, 14 * S);
+    g.addColorStop(0, `rgba(255,236,170,${0.55 * pulse})`);
+    g.addColorStop(0.4, `rgba(255,140,50,${0.3 * pulse})`);
+    g.addColorStop(1, 'rgba(255,90,30,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(tx - 14 * S, ty - 14 * S, 28 * S, 28 * S);
+    ctx.globalCompositeOperation = 'source-over';
+  }
   // the tell before a lunge, same red "!" as everything else
   if (c.state === 'windup') {
     const fs = Math.max(16, 8 * Math.round((S * 5.3) / 8)), mw = Math.round(fs * 0.9);
@@ -2644,7 +2697,6 @@ function attack() {
   faceAngle(a);
   player.swing = 0;
   sfx.swing();
-  if (tool.cosmetic) return;
   let hit = false;
   creatures.forEach(c => { if (inArc(c, a, tool)) { hurtCreature(c, tool.dmg, a); hit = true; } });
   if (hit) wearHeld(1);
@@ -4473,14 +4525,15 @@ function useBuilding(b) {
   sfx.deny();
 }
 
-// the rock with the core under it looks and acts exactly like the other rocks:
-// it's never a target, so there's no outline, no hand cursor, no wobble and no
-// progress bar, and holding the mouse on it just swings at the air like
-// anywhere else. keep holding on it (in reach) for a few seconds and it rolls
-// aside, and that's the first sign anything was there. letting go starts the
-// count over.
-const ROCK_TIME = 2.6;
-let rockT = 0;
+// the rock with the core under it looks exactly like the other rocks: it's
+// never a target, so there's no outline, no hand cursor and no progress bar.
+// hold the mouse on it (in reach) and you stop swinging and lean on it. it
+// takes about 5 seconds, and from about 3 seconds in it starts to give: it
+// rocks harder and harder, dust shakes out from under it, and the core's
+// violet light leaks out round its edges. then it rolls aside. letting go
+// starts the count over.
+const ROCK_TIME = 5, ROCK_GIVE = 3;
+let rockT = 0, onRock = false;
 function tickSecretRock(dt) {
   if (quest.cave.rock) {
     // finish rolling it out of the way after it gives
@@ -4495,12 +4548,25 @@ function tickSecretRock(dt) {
   // small and there's nothing telling you you're on it
   const over = m.x >= secretRock.x - f.width / 2 - 4 && m.x <= secretRock.x + f.width / 2 + 4 && m.y >= secretRock.y - f.height - 4 && m.y <= secretRock.y + 4;
   const near = Math.hypot(secretRock.x - player.x, secretRock.y - 6 - (player.y - 8)) <= (REACH_TILES + 0.5) * TILE;
-  rockT = room === caveRoom && mouse.down && !ui && !player.dead && over && near ? rockT + dt : 0;
+  onRock = room === caveRoom && mouse.down && !ui && !player.dead && !cine && over && near;
+  rockT = onRock ? rockT + dt : 0;
+  if (onRock) faceAngle(Math.atan2(secretRock.y - 6 - (player.y - 10), secretRock.x - player.x));
+  const k = clamp((rockT - ROCK_GIVE) / (ROCK_TIME - ROCK_GIVE), 0, 1);
+  secretRock.shake = k > 0 ? 0.6 + k * 1.6 : 0;
+  coreGlow.off = !(k > 0);
+  coreGlow.strength = 0.12 + 0.45 * k;
+  if (k > 0 && !reduceMotion) {
+    if (Math.random() < dt * (6 + 14 * k)) particles.push({ x: secretRock.x + (Math.random() - 0.5) * 18, y: secretRock.y - 1, vx: (Math.random() - 0.5) * 20, vy: -8 - Math.random() * 10, g: 40, life: 0.5, t: 0, col: Math.random() < 0.5 ? '#8a8a8a' : '#6e6a64', size: 1 });
+    if (Math.random() < dt * (3 + 12 * k)) particles.push({ x: secretRock.x + (Math.random() - 0.5) * 20, y: secretRock.y - 2, vx: (Math.random() - 0.5) * 6, vy: -14 - Math.random() * 12, g: 0, life: 0.7, t: 0, col: Math.random() < 0.5 ? '#c08bff' : '#7ff7ff', size: 1 });
+  }
   if (rockT >= ROCK_TIME) moveRock();
 }
 function moveRock() {
   quest.cave.rock = true;
   rockT = 0;
+  onRock = false;
+  secretRock.shake = 0;
+  coreGlow.strength = 0.3;
   secretRock.slide = 0;
   hollowThing.gone = false;
   coreGlow.off = !!quest.cave.part;
@@ -4620,6 +4686,7 @@ function playUpdate(dt, t) {
   shakeAmp = Math.max(0, shakeAmp - dt * 10);
   tickCine(dt);
   tickBossBar(dt);
+  tickMusic(dt);
   tickDrill(dt);
   noArrowT -= dt;
   tickSecretRock(dt);
@@ -4635,15 +4702,17 @@ function playUpdate(dt, t) {
   // whatever's under the cursor, otherwise just swing at the air
   // (holding a snowball throws it instead of swinging, unless you're pointing
   // at something you can dig or chop right in front of you. the bow is drawn
-  // with the right button, see startBowDraw.)
-  if (mouse.down && !ui && !player.dead && !cine && !drilling) {
+  // with the right button, see startBowDraw, and moe's drill only works on the
+  // right button too, so left click with it does nothing. holding on the
+  // rock with the core under it doesn't swing either, see tickSecretRock.)
+  const held = heldItem() && ITEMS[heldItem().id];
+  if (mouse.down && !ui && !player.dead && !cine && !drilling && !onRock && !(held && held.tool === 'drill')) {
     const tool = heldTool();
     const a = aimAngle();
     const tgt = targetAt(mouseWorld());
-    const held = heldItem() && ITEMS[heldItem().id];
     const ranged = shootsHere() && held && held.throw;
     const diggable = tgt && !CLICK_ONLY.has(tgt.type) && inReach(tgt) && (!ranged || mineInfo(tgt).time !== Infinity);
-    const fighting = !ranged && !tool.cosmetic && creatures.some(c => inArc(c, a, tool));
+    const fighting = !ranged && creatures.some(c => inArc(c, a, tool));
     if (!fighting && diggable) mineStep(tgt, dt);
     else {
       if (mining && mining.thing) mining.thing.shake = 0;

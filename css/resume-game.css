@@ -707,8 +707,8 @@ body.map-closed .chip[data-panel="map"] { display: inline-flex; }
   align-items: center;
   gap: 40px;
   padding: 90px clamp(24px, 6vw, 96px) 60px;
-  background:
-    linear-gradient(90deg, rgba(9, 9, 12, 0.94) 0%, rgba(9, 9, 12, 0.82) 42%, rgba(9, 9, 12, 0.35) 100%);
+  background: #07060b;
+  overflow: hidden;
   transition: opacity 0.35s steps(6), visibility 0s linear 0.35s;
 }
 body:not(.is-title) .title { opacity: 0; visibility: hidden; pointer-events: none; }
@@ -773,13 +773,20 @@ body.is-title .toast { opacity: 0; pointer-events: none; }
   color: var(--muted);
   line-height: 2.2;
 }
-.title-hero { display: grid; place-items: center; }
+.title-copy { position: relative; z-index: 2; }
+.title-hero { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+.title-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(7, 6, 11, 0.86) 0%, rgba(7, 6, 11, 0.6) 34%, rgba(7, 6, 11, 0) 58%);
+}
 .on-touch { display: none; }
 @media (hover: none) and (pointer: coarse) {
   .on-keys { display: none; }
   .on-touch { display: inline; }
 }
-#hero { display: block; image-rendering: pixelated; box-shadow: 0 0 0 3px #0b0b0d, 0 0 0 5px rgba(255, 214, 120, 0.22), 0 30px 80px rgba(0, 0, 0, 0.6); }
+#hero { display: block; image-rendering: pixelated; }
 
 .noscript-note {
   position: fixed;
@@ -840,9 +847,8 @@ body.is-title .toast { opacity: 0; pointer-events: none; }
     gap: 8px;
     padding: 70px 22px 30px;
     overflow-y: auto;
-    background: rgba(9, 9, 12, 0.86);
   }
-  .title-hero { order: -1; }
+  .title-hero::after { background: linear-gradient(180deg, rgba(7, 6, 11, 0) 30%, rgba(7, 6, 11, 0.82) 62%); }
   .wordmark { font-size: clamp(2.4rem, 13vw, 4rem); margin-top: 10px; }
   .title-lede { font-size: 0.92rem; }
   .title-controls { display: none; }

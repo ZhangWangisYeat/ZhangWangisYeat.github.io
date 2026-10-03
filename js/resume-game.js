@@ -1972,338 +1972,341 @@ function drawLabels(toX, toY, t) {
   }
 }
 
-// the title screen: you, falling head first out of the sky toward the world,
-// with the multiverse's timelines blazing on the horizon where the universes
-// collided, fraying out across the sky and sweeping down past you. the land is
-// a little mode 7 scene: the real generated map laid out as a ground plane in
-// perspective and sampled pixel by pixel, so it's this exact world you're
-// falling into, with camp right under you. the camera drops the whole time so
-// the land zooms up at you, and every few seconds the timelines flare white and
-// the fall starts over. everything is drawn at 112 x 140 and scaled up, and the
-// glow is dithered down to a few colour levels so it reads as pixel art
-// instead of a smooth gradient.
+// the title screen: a full screen piece of pixel art. you, falling head first
+// through the multiverse, wrapped in a glowing aura, in front of the branching
+// timelines blazing out of a white hot core where the universes collided (the
+// loom reference), with big sweeping arcs of timeline curving past like the
+// spider-man poster alex sent. it's drawn at a low resolution that changes
+// with the window (around 250 pixels tall) and scaled up by a whole number so
+// every pixel stays square and crisp. the background is built once per window
+// size and dithered so its glow stays pixel art; only the sparks, the pulses
+// running along the timelines, the aura's flicker and your slow tumble are
+// drawn each frame.
 const hero = $('#hero');
 const heroCtx = hero.getContext('2d');
-const FALL_W = 112, FALL_H = 140, HORIZON = 46, FOCAL = 78, FALL_LOOP = 9;
-const VPX = FALL_W / 2;
-// two layers at scene resolution: the scene itself, which gets read back for
-// the dithering, and one on top for you and the clouds. the player sprite is a
-// file, and drawing a file image into a canvas you read pixels from blocks the
-// read (when the page is opened straight from disk), so it never goes in there.
-const fallBuf = mk(FALL_W, FALL_H);
-const fallG = fallBuf.getContext('2d', { willReadFrequently: true });
-const fallTop = mk(FALL_W, FALL_H);
-const topG = fallTop.getContext('2d');
-let worldMips = null, fallStrands = [], fallStars = [], fallClouds = [], fallSpeed = [], heroGlow = null;
+const tv = { w: 0, h: 0, s: 1, bg: null, buf: null, g: null, fig: null, aura: [], strands: [], sparks: [], wisps: [] };
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16);
 
-// the map at three sizes. from high up one screen pixel covers dozens of world
-// pixels, and sampling the full size map then shimmers like mad as you fall,
-// so far away ground reads from a shrunk (averaged) copy instead.
-function buildWorldMips() {
-  worldMips = [1, 4, 16].map(k => {
-    const w = Math.ceil((W * TILE) / k), h = Math.ceil((H * TILE) / k);
-    const c = mk(w, h), g = c.getContext('2d');
-    g.imageSmoothingEnabled = true;
-    g.imageSmoothingQuality = 'high';
-    g.drawImage(worldCanvas, 0, 0, w, h);
-    return { k, w, h, d: g.getImageData(0, 0, w, h).data };
+// you, drawn for this scene: head down with your face to the camera, knees
+// bent up, one arm flung out and the other reaching back. it's built from
+// rounded shapes (capsules for limbs, ellipses for the head), each lit as if it
+// were a cylinder or a ball, then snapped to four tones per material with a
+// dark line wherever one part sits in front of another, like cel shaded pixel
+// art. same colours as your sprite: brown hair, brown jacket over a blue shirt.
+const FIG_W = 180, FIG_H = 196;
+function makeFigure() {
+  const RAMP = {
+    skin: ['#f3dcc0', '#dbb894', '#b98a63', '#8c5d3f'],
+    hair: ['#a3744a', '#7d5434', '#5a3a23', '#3a2416'],
+    jacket: ['#8f6440', '#6c4729', '#4d301b', '#321e11'],
+    shirt: ['#6aa2e6', '#3f78cb', '#2c5aa6', '#1c3c74'],
+    pants: ['#5b4434', '#3e2c21', '#2a1c13', '#1a110b'],
+    shoe: ['#5e5e66', '#36363c', '#202024', '#0e0e10'],
+    sole: ['#f2eee6', '#d6d0c4', '#b0a898', '#8a8272']
+  };
+  const hx = 86, hy = 158;
+  const parts = [];
+  const cap = (ax, ay, bx, by, r1, r2, mat) => parts.push({ t: 'c', ax: hx + ax, ay: hy + ay, bx: hx + bx, by: hy + by, r1, r2, mat });
+  const ell = (cx, cy, rx, ry, mat) => parts.push({ t: 'e', cx: hx + cx, cy: hy + cy, rx, ry, mat });
+  // back to front. the far arm is flung up and back, the far leg is bent hard
+  // at the knee, the body arches, the near leg kicks up long, and the near arm
+  // reaches down past your head towards the camera.
+  cap(16, -26, 38, -38, 7, 6, 'jacket'); cap(38, -38, 48, -62, 6, 5, 'jacket'); ell(50, -67, 5, 5.5, 'skin');
+  cap(14, -66, 34, -92, 9, 7.5, 'pants'); cap(34, -92, 16, -112, 7.2, 5.4, 'pants'); cap(16, -112, 8, -121, 6, 4.5, 'shoe');
+  cap(16, -60, 25, -72, 7, 1.5, 'jacket');
+  cap(1, -13, 3, -20, 5, 5, 'skin');
+  ell(8, -66, 12, 7, 'pants');
+  cap(10, -44, 8, -64, 12.5, 11, 'torso');
+  cap(3, -19, 10, -44, 14, 12.5, 'torso');
+  cap(0, -60, -9, -72, 7, 1.5, 'jacket');
+  cap(2, -68, -14, -98, 9.5, 8, 'pants'); cap(-14, -98, -4, -128, 7.5, 5.6, 'pants'); cap(-4, -128, 4, -137, 6, 4.6, 'shoe');
+  cap(-8, -24, -28, -14, 7.5, 6.5, 'jacket'); cap(-28, -14, -34, 8, 6.5, 5.5, 'jacket'); ell(-35, 13, 5.5, 5, 'skin');
+  ell(-15, 1, 2.8, 4, 'skin'); ell(15, 1, 2.8, 4, 'skin');
+  ell(0, 0, 15, 15, 'skin');
+  // a big curly mop of hair, rounded so it reads as hair and not a beard,
+  // with a few curls of fringe falling (well, rising) over your forehead
+  ell(0, 14, 16.5, 9, 'hair');
+  [[-11, 18, 6.5, 5.5], [-4, 22, 6.5, 5], [5, 22, 6.5, 5], [12, 17, 6, 5.5], [-15, 11, 4.5, 5.5], [15, 10, 4.5, 5.5]].forEach(([x, y, rx, ry]) => ell(x, y, rx, ry, 'hair'));
+  [[-9, 9, 4.5, 2.6], [0, 9.5, 5, 2.6], [9, 9, 4.5, 2.6]].forEach(([x, y, rx, ry]) => ell(x, y, rx, ry, 'hair'));
+
+  const W2 = FIG_W, H2 = FIG_H;
+  const owner = new Int16Array(W2 * H2).fill(-1), col = new Array(W2 * H2).fill(null);
+  const L = [-0.45, -0.55, 0.7], ll = Math.hypot(...L);
+  for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      let nx, ny, nz, mat = p.mat;
+      if (p.t === 'e') {
+        nx = (x + 0.5 - p.cx) / p.rx; ny = (y + 0.5 - p.cy) / p.ry;
+        const d = nx * nx + ny * ny;
+        if (d > 1) continue;
+        nz = Math.sqrt(1 - d);
+      } else {
+        const vx = p.bx - p.ax, vy = p.by - p.ay, len2 = vx * vx + vy * vy;
+        const t = clamp(((x + 0.5 - p.ax) * vx + (y + 0.5 - p.ay) * vy) / len2, 0, 1);
+        const qx = p.ax + vx * t, qy = p.ay + vy * t, r = p.r1 + (p.r2 - p.r1) * t;
+        nx = (x + 0.5 - qx) / r; ny = (y + 0.5 - qy) / r;
+        const d = nx * nx + ny * ny;
+        if (d > 1) continue;
+        nz = Math.sqrt(1 - d);
+        if (p.mat === 'torso') {
+          // an open jacket: the shirt shows down the middle of the chest
+          const side = (vx * (y + 0.5 - qy) - vy * (x + 0.5 - qx)) / Math.sqrt(len2) / r;
+          mat = Math.abs(side) < 0.34 && t > 0.08 ? 'shirt' : 'jacket';
+        }
+        if (p.mat === 'shoe' && t > 0.78) mat = 'sole';
+      }
+      const lit = (nx * L[0] + ny * L[1] + nz * L[2]) / ll;
+      const tone = lit > 0.78 ? 0 : lit > 0.48 ? 1 : lit > 0.16 ? 2 : 3;
+      let c = RAMP[mat][tone];
+      // warm rim light on the right, from the core blazing behind you
+      if (nx > 0.74 && nz < 0.62) c = mat === 'hair' ? '#e8a868' : mat === 'skin' ? '#ffe2b8' : '#ffc884';
+      owner[y * W2 + x] = i;
+      col[y * W2 + x] = c;
+      break;
+    }
+  }
+  const G = pixelGrid(W2, H2);
+  for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+    const i = y * W2 + x, o = owner[i];
+    if (o < 0) continue;
+    // a line wherever this part overlaps one behind it
+    const behind = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+      const n = owner[(y + dy) * W2 + x + dx];
+      return n >= 0 && n < o && parts[n].mat !== parts[o].mat;
+    });
+    G.set(x, y, behind ? '#24140e' : col[i]);
+  }
+  // your face, upside down: chin at the top, so the mouth is nearest your
+  // neck and the eyes sit just above the hairline, lids and brows on the hair
+  // side. each eye gets a white, a pupil, a catchlight and a dark lash line.
+  const F = (dx, dy, c) => G.set(hx + dx, hy + dy, c);
+  [[-11, -1], [5, 1]].forEach(([ex, side]) => {
+    for (let y = -1; y <= 2; y++) for (let x = 0; x < 6; x++) {
+      if ((y === -1 || y === 2) && (x === 0 || x === 5)) continue;
+      F(ex + x, y, '#f6f2ec');
+    }
+    for (let y = -1; y <= 1; y++) for (let x = 2; x <= 3; x++) F(ex + x, y, y === -1 ? '#7a4e2c' : '#2a1a10');
+    F(ex + 3, 0, '#ffffff');
+    for (let x = -1; x <= 6; x++) F(ex + x, 3, '#2a1a10');
+    F(side < 0 ? ex - 2 : ex + 7, 4, '#2a1a10');
+    for (let x = 0; x <= 5; x++) F(ex + x, 5 + (x === (side < 0 ? 0 : 5) ? 1 : 0), '#4a2e1a');
   });
+  F(0, -5, '#b98a63'); F(-1, -5, '#b98a63'); F(0, -6, '#8c5d3f'); F(-1, -6, '#d4a684');
+  for (let x = -3; x <= 3; x++) F(x, -10, '#6e3426');
+  F(-4, -9, '#6e3426'); F(4, -9, '#6e3426');
+  for (let x = -2; x <= 2; x++) F(x, -11, '#c4705e');
+  F(-11, -5, '#eaa08a'); F(-10, -5, '#eaa08a'); F(10, -5, '#eaa08a'); F(11, -5, '#eaa08a');
+  return G.outline(() => '#0e0810').canvas();
 }
 
-function buildFall() {
-  const r = mulberry32(SEED + 1234);
-  // mostly the warm gold and amber of the reference, with the odd cool strand
-  const cols = ['255,214,120', '255,214,120', '255,190,100', '255,170,80', '255,170,80', '255,236,200', '255,236,200', '255,130,70', '120,215,255', '190,140,255', '255,120,190'];
-  const strand = (sx, sy, c1x, c1y, c2x, c2y, ex, ey, kind, a) => ({
-    pts: [sx, sy, c1x, c1y, c2x, c2y, ex, ey], kind,
-    col: cols[(r() * cols.length) | 0], a: a * (0.5 + r() * 0.8), w: 0.5 + r() * 0.7,
-    ph: r() * 6.28, sp: 0.6 + r() * 1.4, pulse: r(), pulseSp: 0.25 + r() * 0.35
-  });
-  // the main fray: long strands pouring sideways out of the core along the
-  // horizon, wavering as they go, like the timeline in the reference
-  for (let i = 0; i < 34; i++) {
-    const side = r() < 0.5 ? -1 : 1, sx = VPX + side * r() * 14, ex = VPX + side * (64 + r() * 50);
-    const sag = (r() - 0.5) * 30;
-    fallStrands.push(strand(sx, HORIZON + (r() - 0.5) * 2, sx + side * (16 + r() * 16), HORIZON + sag * 0.5,
-      ex - side * (14 + r() * 20), HORIZON - sag * 0.7, ex, HORIZON + sag * 0.6, 'flat', 0.5));
+// the glow round you: crisp rings stepping out from white to gold to a violet
+// haze, dithered rather than blurred so it stays clean pixel art. two versions
+// with the dither shifted, swapped back and forth so it shimmers.
+function makeAura(fig, variant) {
+  const pad = 12, w = fig.width + pad * 2, h = fig.height + pad * 2;
+  const src = fig.getContext('2d').getImageData(0, 0, fig.width, fig.height).data;
+  const dist = new Int16Array(w * h).fill(99), q = [];
+  for (let y = 0; y < fig.height; y++) for (let x = 0; x < fig.width; x++) {
+    if (src[(y * fig.width + x) * 4 + 3] > 0) { const i = (y + pad) * w + x + pad; dist[i] = 0; q.push(i); }
   }
-  // up into the sky: they leave the core sideways, then curl up and out
-  for (let i = 0; i < 30; i++) {
-    const side = r() < 0.5 ? -1 : 1, sx = VPX + (r() - 0.5) * 26, ex = VPX + side * (30 + r() * 80), ey = HORIZON - 10 - r() * 44;
-    fallStrands.push(strand(sx, HORIZON, sx + side * (18 + r() * 22), HORIZON - 2 - r() * 4,
-      ex - side * (6 + r() * 24), ey + 14 + r() * 18, ex, ey, 'sky', 0.34));
+  for (let head = 0; head < q.length; head++) {
+    const i = q[head], x = i % w, y = (i / w) | 0;
+    [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) return;
+      const n = ny * w + nx;
+      if (dist[n] > dist[i] + 1) { dist[n] = dist[i] + 1; if (dist[n] < 11) q.push(n); }
+    });
   }
-  // down over the land and on past you, bending as they come at the camera
-  for (let i = 0; i < 24; i++) {
-    const ex = VPX + (r() - 0.5) * 320, ey = FALL_H + 10 + r() * 60, sx = VPX + (r() - 0.5) * 30;
-    const bend = (r() - 0.5) * 60;
-    fallStrands.push(strand(sx, HORIZON + 1, sx + (ex - sx) * 0.2 + bend * 0.3, HORIZON + 4 + r() * 4,
-      sx + (ex - sx) * 0.55 - bend, HORIZON + (ey - HORIZON) * (0.3 + r() * 0.2), ex, ey, 'down', 0.3));
+  const c = mk(w, h), g = c.getContext('2d');
+  const RINGS = [null, ['#fffaf0', 1], ['#ffeab0', 1], ['#ffd27a', 0.8], ['#ffb04a', 0.55], ['#ff8a3a', 0.38], ['#ff6a4a', 0.26], ['#c060ff', 0.18], ['#a050ff', 0.12], ['#8040ff', 0.07], ['#6030e0', 0.04]];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const d = dist[y * w + x];
+    if (d < 1 || d > 10) continue;
+    const [colr, cover] = RINGS[d];
+    if (cover < 1 && BAYER[((y + variant) & 3) * 4 + ((x + variant * 2) & 3)] > cover) continue;
+    g.fillStyle = colr;
+    g.fillRect(x, y, 1, 1);
   }
-  // a third of them split partway into a thinner timeline of their own
-  fallStrands.slice().forEach(s => {
-    if (r() > 0.34) return;
-    const t = 0.35 + r() * 0.35, [sx, sy] = bezPt(s.pts, t), [ex, ey] = [s.pts[6], s.pts[7]];
-    const bend = (r() - 0.5) * (s.kind === 'down' ? 70 : 40);
-    fallStrands.push({ ...strand(sx, sy, sx + (ex - sx) * 0.3, sy + (ey - sy) * 0.3 + bend * 0.3, ex + bend * 0.6, ey - bend * 0.2, ex + bend, ey + (s.kind === 'down' ? 0 : bend * 0.3), s.kind), col: s.col, a: s.a * 0.7, w: s.w * 0.7 });
-  });
-  for (let i = 0; i < 60; i++) fallStars.push({ x: r() * FALL_W, y: r() * (HORIZON - 6), b: 0.3 + r() * 0.7, ph: r() * 6.28 });
-  // clouds and wind streaks rushing up past you, which is what sells the fall
-  for (let i = 0; i < 3; i++) fallClouds.push({ x: r() * FALL_W, y: r() * (FALL_H + 60), s: 0.6 + r() * 0.9, img: makeFallCloud(r) });
-  for (let i = 0; i < 16; i++) fallSpeed.push({ x: VPX + (r() - 0.5) * 70, y: r() * FALL_H, len: 4 + r() * 10, sp: 140 + r() * 120 });
-  // a warm copy of you, for the rim of light the timelines throw on you
-  heroGlow = mk(DIVER.width, DIVER.height);
+  return c;
 }
-function bezPt(p, t) {
+
+function bez(p, t) {
   const u = 1 - t;
   return [u * u * u * p[0] + 3 * u * u * t * p[2] + 3 * u * t * t * p[4] + t * t * t * p[6],
     u * u * u * p[1] + 3 * u * u * t * p[3] + 3 * u * t * t * p[5] + t * t * t * p[7]];
 }
-function makeFallCloud(r) {
-  const w = 28 + ((r() * 18) | 0), h = 10 + ((r() * 6) | 0);
-  const G = pixelGrid(w, h);
-  const blobs = Array.from({ length: 5 }, () => [4 + r() * (w - 8), h * 0.55 + (r() - 0.5) * 3, 3 + r() * 5]);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const inside = blobs.some(([bx, by, br]) => (x - bx) ** 2 + ((y - by) * 1.6) ** 2 < br * br);
-    if (inside) G.set(x, y, y < h * 0.45 ? '#e9e3f2' : y < h * 0.7 ? '#b9b2cf' : '#8a7ea8');
-  }
-  return G.canvas();
+
+// where things sit, so the art reframes itself for wide and narrow windows:
+// on a wide screen you're on the right, clear of the title text
+function titleLayout() {
+  const wide = tv.w / tv.h > 1.15;
+  return { cx: wide ? tv.w * 0.66 : tv.w * 0.5, cy: tv.h * (wide ? 0.5 : 0.4), fx: wide ? tv.w * 0.68 : tv.w * 0.5, fy: tv.h * (wide ? 0.52 : 0.42) };
 }
 
-// you, mid dive, drawn for this scene: the spider-man leap of faith, seen from
-// behind. feet trailing up top, legs a little apart, jacket flapping, arms
-// flung out wide, and your head leading the way down. same palette as your
-// sprite sheet (brown hair, brown jacket over a blue shirt), but proper body
-// proportions, because the chibi frames upside down just read as a big head.
-function makeDiver() {
-  const W2 = 34, H2 = 44;
-  const G = pixelGrid(W2, H2);
-  const C = {
-    hair: '#573a23', hairD: '#40271a', hairL: '#7a5232', hairH: '#9a6a42', skin: '#c1ac8f', skinD: '#ac7b5d',
-    jacket: '#40271a', jacketL: '#573a23', jacketH: '#7a5232', shirt: '#2c65b5', shirtD: '#1d438a',
-    pants: '#2b1c12', pantsL: '#4a3220', shoe: '#141414', sole: '#5c5c5c', rim: '#ffcf8a'
+// the background: night, a nebula, the core, the timelines fraying out of it
+// and the big arcs sweeping past, all dithered down at the end
+function buildTitleBg() {
+  const W2 = tv.w, H2 = tv.h, { cx, cy } = titleLayout();
+  const c = mk(W2, H2), g = c.getContext('2d', { willReadFrequently: true });
+  const img = g.createImageData(W2, H2), d = img.data;
+  for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+    const i = (y * W2 + x) * 4;
+    const dx = (x - cx) / W2, dy = (y - cy) / H2;
+    const neb = fbm(x / 40, y / 30, SEED + 21), neb2 = fbm(x / 22 + 9, y / 18, SEED + 22);
+    const glow = Math.exp(-(dx * dx * 5 + dy * dy * 26)), band = Math.exp(-(dy * dy * 900)) * Math.exp(-(dx * dx * 3));
+    d[i] = 6 + 40 * neb * neb + 255 * glow * 0.55 + 255 * band * 0.5;
+    d[i + 1] = 4 + 14 * neb + 150 * glow * 0.55 + 230 * band * 0.5;
+    d[i + 2] = 14 + 50 * neb2 * neb2 + 70 * glow * 0.55 + 190 * band * 0.5;
+    d[i + 3] = 255;
+  }
+  const r = mulberry32(SEED + 4321);
+  for (let k = 0; k < (W2 * H2) / 260; k++) {
+    const i = (((r() * H2) | 0) * W2 + ((r() * W2) | 0)) * 4, b = 80 + r() * 175;
+    d[i] += b; d[i + 1] += b; d[i + 2] += b * 1.1;
+  }
+  g.putImageData(img, 0, 0);
+  g.globalCompositeOperation = 'lighter';
+  g.lineCap = 'round';
+  const stroke = (p, col, w, a) => {
+    g.strokeStyle = `rgba(${col},${a})`;
+    g.lineWidth = w;
+    g.beginPath(); g.moveTo(p[0], p[1]); g.bezierCurveTo(p[2], p[3], p[4], p[5], p[6], p[7]); g.stroke();
   };
-  const line = (x0, y0, x1, y1, c) => {
-    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
-    for (let i = 0; i <= n; i++) G.set(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, c);
-  };
-  // legs: the left one straight up, the right kicked back with a bend at the knee
-  const leg = pts => {
-    for (let k = 0; k < pts.length - 1; k++) {
-      const [x0, y0] = pts[k], [x1, y1] = pts[k + 1];
-      line(x0, y0, x1, y1, C.pantsL); line(x0 + 1, y0, x1 + 1, y1, C.pants); line(x0 + 2, y0, x1 + 2, y1, C.pants);
-    }
-  };
-  leg([[13, 3], [13, 10], [14, 17]]);
-  leg([[22, 4], [21, 9], [18, 17]]);
-  // shoes, soles catching the light
-  [[12, 0], [21, 1]].forEach(([x, y]) => {
-    for (let dy = 0; dy < 3; dy++) for (let dx = 0; dx < 4; dx++) G.set(x + dx, y + dy, dy === 0 ? C.sole : C.shoe);
-  });
-  // jacket, open over the blue shirt, its tails flapping up in the wind
-  for (let y = 17; y <= 29; y++) {
-    const half = y < 20 ? 5 : y > 26 ? 6 : 5.5;
-    for (let x = Math.round(16.5 - half); x <= Math.round(16.5 + half); x++) {
-      let col = x < 13 ? C.jacket : C.jacketL;
-      if (x >= 15 && x <= 18 && y >= 19) col = x === 15 ? C.shirtD : C.shirt;
-      if (x === Math.round(16.5 + half)) col = C.jacketH;
-      G.set(x, y, col);
+  // the big sweeping arcs, like the poster's: bands of thin parallel timelines
+  // curving round past you, with a red and a cyan ghost either side of each
+  const arcCols = ['255,214,120', '255,170,80', '120,215,255', '190,140,255', '255,120,190', '255,236,200'];
+  for (let band = 0; band < 5; band++) {
+    const R = H2 * (0.55 + band * 0.22), ox = cx - W2 * 0.55 + band * 6, oy = cy + H2 * (0.9 + band * 0.08);
+    for (let k = 0; k < 7; k++) {
+      const rr = R + k * 2.2, a0 = -1.9 + r() * 0.15, a1 = -0.55 - r() * 0.2;
+      const pts = [ox + Math.cos(a0) * rr, oy + Math.sin(a0) * rr, ox + Math.cos(a0 + (a1 - a0) * 0.33) * rr * 1.04, oy + Math.sin(a0 + (a1 - a0) * 0.33) * rr * 1.04,
+        ox + Math.cos(a0 + (a1 - a0) * 0.66) * rr * 1.04, oy + Math.sin(a0 + (a1 - a0) * 0.66) * rr * 1.04, ox + Math.cos(a1) * rr, oy + Math.sin(a1) * rr];
+      const colr = arcCols[(band + k) % arcCols.length], a = 0.08 + r() * 0.12;
+      stroke(pts.map((v, j) => v + (j % 2 ? 0 : -1)), '255,60,60', 1, a * 0.5);
+      stroke(pts.map((v, j) => v + (j % 2 ? 0 : 1)), '60,220,255', 1, a * 0.5);
+      stroke(pts, colr, 1, a);
     }
   }
-  [[10, 16], [9, 15], [10, 17], [23, 16], [24, 15], [23, 17]].forEach(([x, y]) => G.set(x, y, C.jacket));
-  // arms flung out wide, swept back towards the legs by the rushing air
-  [[-1, 11], [1, 22]].forEach(([dir, sx]) => {
-    for (let i = 0; i <= 9; i++) {
-      const x = sx + dir * i, y = 27 - Math.round(i * 0.5);
-      G.set(x, y, i > 7 ? C.skin : C.jacketH);
-      G.set(x, y + 1, i > 7 ? C.skinD : C.jacket);
+  // the fray: hundreds of strands pouring out of the core, mostly sideways
+  // like the reference, curling up and down as they spread, a third forking
+  const cols = ['255,214,120', '255,214,120', '255,190,100', '255,170,80', '255,170,80', '255,236,200', '255,236,200', '255,130,70', '120,215,255', '190,140,255', '255,120,190'];
+  tv.strands = [];
+  for (let k = 0; k < 230; k++) {
+    const side = r() < 0.5 ? -1 : 1, sx = cx + side * r() * W2 * 0.06, sy = cy + (r() - 0.5) * 3;
+    const reach = W2 * (0.25 + r() * 0.6), spread = (r() - 0.5) * H2 * (0.25 + r() * 0.9);
+    const p = [sx, sy, sx + side * reach * 0.3, sy + spread * 0.1 + (r() - 0.5) * 10, sx + side * reach * 0.65, sy + spread * (0.4 + r() * 0.4),
+      sx + side * reach, sy + spread];
+    const colr = cols[(r() * cols.length) | 0], a = 0.1 + r() * 0.35, w = 0.5 + r() * 0.9;
+    stroke(p, colr, w * 3, a * 0.12);
+    stroke(p, colr, w, a);
+    if (r() < 0.33) {
+      const t = 0.3 + r() * 0.4, [fx, fy] = bez(p, t), bend = (r() - 0.5) * H2 * 0.4;
+      stroke([fx, fy, fx + side * reach * 0.2, fy + bend * 0.2, fx + side * reach * 0.45, fy + bend * 0.7, fx + side * reach * 0.6, fy + bend], colr, w * 0.7, a * 0.7);
     }
-    // a spread hand
-    const hx = sx + dir * 10, hy = 22;
-    G.set(hx, hy, C.skin); G.set(hx, hy - 1, C.skin); G.set(hx + dir, hy - 1, C.skinD); G.set(hx - dir, hy - 2, C.skinD);
-  });
-  // neck, then the back of your head leading the way down
-  for (let x = 15; x <= 18; x++) { G.set(x, 30, C.skinD); G.set(x, 31, C.skinD); }
-  for (let y = 31; y < H2 - 1; y++) for (let x = 9; x <= 24; x++) {
-    const dx = (x - 16.5) / 7.2, dy = (y - 37) / 6.2;
-    if (dx * dx + dy * dy > 1) continue;
-    // hair in diagonal locks, lit from the top left, darker underneath
-    const lock = (x + y * 2) % 5;
-    let col = lock === 0 ? C.hairD : lock === 3 ? C.hairL : C.hair;
-    if (dx < -0.3 && dy < -0.1 && lock !== 0) col = C.hairH;
-    if (dy > 0.6) col = C.hairD;
-    G.set(x, y, col);
+    if (k % 4 === 0) tv.strands.push({ p, colr, sp: 0.12 + r() * 0.2, ph: r() });
   }
-  // ears peeking out either side, and a few tufts flicked up by the wind
-  [[9, 36], [24, 36]].forEach(([x, y]) => { G.set(x, y, C.skinD); G.set(x, y + 1, C.skin); });
-  [[11, 31], [13, 30], [20, 30], [22, 31]].forEach(([x, y]) => G.set(x, y, C.hair));
-  G.outline(() => '#000000');
-  // a thin warm rim along the top edges, from the timelines blazing above
-  for (let x = 0; x < W2; x++) for (let y = 1; y < H2; y++) {
-    const c = G.get(x, y);
-    if (c && c !== '#000000' && G.get(x, y - 1) === '#000000' && (x + y) % 2 === 0) G.set(x, y, C.rim);
+  // the white hot seam of the core itself
+  for (let k = -3; k <= 3; k++) {
+    const len = W2 * [0.18, 0.3, 0.46, 0.62, 0.46, 0.3, 0.18][k + 3];
+    g.fillStyle = `rgba(255,${Math.abs(k) > 1 ? 210 : 245},${Math.abs(k) > 1 ? 150 : 225},${[0.25, 0.45, 0.7, 1, 0.7, 0.45, 0.25][k + 3]})`;
+    g.fillRect(Math.round(cx - len / 2), Math.round(cy + k), Math.round(len), 1);
   }
-  return G.canvas();
+  g.globalCompositeOperation = 'source-over';
+  // dither everything down to a dozen levels a channel
+  const q = g.getImageData(0, 0, W2, H2), qd = q.data, step = 255 / 11;
+  for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+    const i = (y * W2 + x) * 4, b = (BAYER[(y & 3) * 4 + (x & 3)] - 0.5) * step;
+    for (let ch = 0; ch < 3; ch++) qd[i + ch] = Math.round((qd[i + ch] + b) / step) * step;
+  }
+  g.putImageData(q, 0, 0);
+  tv.bg = c;
 }
-function pxBlobG(G, cx, cy, rx, ry, colour) {
-  for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
-    const dx = (x - cx) / rx, dy = (y - cy) / ry;
-    if (dx * dx + dy * dy <= 1) G.set(x, y, colour(dx, dy));
-  }
-}
-const DIVER = makeDiver();
 
-const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16 - 0.5);
 function sizeHero() {
-  const k = vw > 900 ? (vh > 840 ? 4 : 3) : 2;
-  hero.width = FALL_W * k;
-  hero.height = FALL_H * k;
-  hero.style.width = `${FALL_W * k}px`;
-  hero.style.height = `${FALL_H * k}px`;
+  const dpr2 = window.devicePixelRatio || 1;
+  // scale so the art is about 250 pixels tall, as a whole number
+  tv.s = Math.max(2, Math.round((vh * dpr2) / 250));
+  tv.w = Math.ceil((vw * dpr2) / tv.s);
+  tv.h = Math.ceil((vh * dpr2) / tv.s);
+  hero.width = tv.w * tv.s;
+  hero.height = tv.h * tv.s;
+  hero.style.width = `${(tv.w * tv.s) / dpr2}px`;
+  hero.style.height = `${(tv.h * tv.s) / dpr2}px`;
   heroCtx.imageSmoothingEnabled = false;
-  hero.dataset.k = k;
+  tv.buf = mk(tv.w, tv.h);
+  tv.g = tv.buf.getContext('2d');
+  tv.bg = null;
+}
+
+function buildTitle() {
+  tv.fig = makeFigure();
+  tv.aura = [0, 1].map(v => makeAura(tv.fig, v));
+  const r = mulberry32(SEED + 99);
+  tv.sparks = Array.from({ length: 110 }, () => ({ a: r(), sp: 0.05 + r() * 0.12, side: r() < 0.5 ? -1 : 1, rise: (r() - 0.5) * 0.9, ph: r() }));
+  tv.wisps = Array.from({ length: 6 }, (_, k) => ({ r: 0.55 + r() * 0.35, a0: r() * 6.28, span: 0.8 + r() * 1.4, sp: (r() < 0.5 ? -1 : 1) * (0.4 + r() * 0.6), ph: r() * 6.28, cyan: k % 2 }));
 }
 
 function renderHero(t) {
-  if (started || !sheet.naturalWidth) return;
-  if (!worldMips) buildWorldMips();
-  const secs = reduceMotion ? 3.6 : t / 1000;
-  const p = (secs % FALL_LOOP) / FALL_LOOP;
-  const fall = p * p * (3 - 2 * p);
-  // the camera falls from very high to just over camp, on a curve that speeds up
-  const camH = 2600 * Math.pow(260 / 2600, fall);
-  const landX = CAMP.x * TILE + 8, landY = CAMP.y * TILE + 8;
-  const zt = (camH * FOCAL) / (112 - HORIZON);
-  const camX = landX, camY = landY + zt;
+  if (started || !tv.fig) return;
+  // keep the art matched to the window even if a resize slipped past
+  if (Math.ceil((window.innerHeight * (window.devicePixelRatio || 1)) / tv.s) !== tv.h || Math.ceil((window.innerWidth * (window.devicePixelRatio || 1)) / tv.s) !== tv.w) { vw = window.innerWidth; vh = window.innerHeight; sizeHero(); }
+  if (!tv.bg) buildTitleBg();
+  const g = tv.g, W2 = tv.w, H2 = tv.h, { cx, cy, fx, fy } = titleLayout();
+  const secs = reduceMotion ? 2 : t / 1000;
+  g.drawImage(tv.bg, 0, 0);
 
-  const img = fallG.createImageData(FALL_W, FALL_H), d = img.data;
-  for (let y = 0; y < FALL_H; y++) for (let x = 0; x < FALL_W; x++) {
-    const i = (y * FALL_W + x) * 4;
-    const dx = (x - VPX) / FALL_W, dy = (y - HORIZON) / FALL_H;
-    // the core's light, strongest at the vanishing point and stretched sideways
-    const glow = Math.exp(-(dx * dx * 6 + dy * dy * 60));
-    let R, Gc, B;
-    if (y <= HORIZON) {
-      const k = y / HORIZON;
-      const neb = vnoise(x / 14, y / 9, SEED + 9);
-      R = 4 + 34 * k + 30 * neb * k; Gc = 5 + 14 * k; B = 14 + 34 * k + 26 * (1 - neb) * k;
-    } else {
-      const z = (camH * FOCAL) / (y - HORIZON);
-      const texel = z / FOCAL;
-      const m = worldMips[texel > 12 ? 2 : texel > 3 ? 1 : 0];
-      const wx = (camX + ((x - VPX + 0.5) * z) / FOCAL) / m.k, wy = (camY - z) / m.k;
-      if (wx >= 0 && wy >= 0 && wx < m.w && wy < m.h) {
-        const j = ((wy | 0) * m.w + (wx | 0)) * 4;
-        R = m.d[j] * 0.62; Gc = m.d[j + 1] * 0.62; B = m.d[j + 2] * 0.7;
-      } else {
-        R = 7; Gc = 6; B = 14;
-      }
-      // haze towards the horizon, warm where the timelines are
-      const haze = Math.max(0, 1 - (y - HORIZON) / 30) ** 2;
-      R += (60 - R) * haze; Gc += (26 - Gc) * haze; B += (52 - B) * haze;
-    }
-    R += 255 * glow * 0.75; Gc += 170 * glow * 0.75; B += 90 * glow * 0.75;
-    d[i] = R; d[i + 1] = Gc; d[i + 2] = B; d[i + 3] = 255;
-  }
-  fallStars.forEach(s => {
-    const i = ((s.y | 0) * FALL_W + (s.x | 0)) * 4;
-    const tw = s.b * (reduceMotion ? 1 : 0.6 + 0.4 * Math.sin(secs * 2 + s.ph));
-    d[i] += 200 * tw; d[i + 1] += 200 * tw; d[i + 2] += 220 * tw;
-  });
-  fallG.putImageData(img, 0, 0);
-
-  // the timelines, added on top so they light everything they cross
-  fallG.globalCompositeOperation = 'lighter';
-  fallStrands.forEach(s => {
-    const a = s.a * (reduceMotion ? 1 : 0.7 + 0.3 * Math.sin(secs * s.sp + s.ph));
-    const P = s.pts;
-    fallG.lineCap = 'round';
-    [[s.w * 3, a * 0.12], [s.w, a]].forEach(([w, al]) => {
-      fallG.strokeStyle = `rgba(${s.col},${al})`;
-      fallG.lineWidth = w;
-      fallG.beginPath();
-      fallG.moveTo(P[0], P[1]);
-      fallG.bezierCurveTo(P[2], P[3], P[4], P[5], P[6], P[7]);
-      fallG.stroke();
+  // pulses running out along the timelines, and sparks thrown off the core
+  g.globalCompositeOperation = 'lighter';
+  if (!reduceMotion) {
+    tv.strands.forEach(s => {
+      const k = (s.ph + secs * s.sp) % 1, [x, y] = bez(s.p, k), [x2, y2] = bez(s.p, Math.min(1, k + 0.012));
+      g.fillStyle = `rgba(255,250,235,${0.9 * (1 - k)})`;
+      g.fillRect(Math.round(x), Math.round(y), 1, 1);
+      g.fillStyle = `rgba(${s.colr},${0.6 * (1 - k)})`;
+      g.fillRect(Math.round(x2), Math.round(y2), 1, 1);
     });
-    // a spark running out along it, away from the core
-    if (!reduceMotion) {
-      const q = (s.pulse + secs * s.pulseSp) % 1, [ax, ay] = bezPt(P, q), [bx, by] = bezPt(P, Math.min(1, q + 0.05));
-      fallG.strokeStyle = `rgba(255,248,230,${0.5 * (1 - q)})`;
-      fallG.lineWidth = 1;
-      fallG.beginPath(); fallG.moveTo(ax, ay); fallG.lineTo(bx, by); fallG.stroke();
-    }
-  });
-  // the core itself: a white hot seam along the horizon
-  for (let k = -2; k <= 2; k++) {
-    const len = [26, 46, 64, 46, 26][k + 2];
-    fallG.fillStyle = `rgba(255,${k ? 220 : 250},${k ? 170 : 235},${k ? 0.5 : 0.95})`;
-    fallG.fillRect(VPX - len / 2, HORIZON + k, len, 1);
+    tv.sparks.forEach(sp => {
+      const k = (sp.ph + secs * sp.sp) % 1;
+      const x = cx + sp.side * k * W2 * (0.25 + sp.a * 0.5), y = cy + sp.rise * k * H2 * 0.5 - k * k * H2 * 0.1;
+      g.fillStyle = `rgba(255,${200 + ((sp.a * 55) | 0)},${140 + ((sp.a * 80) | 0)},${1 - k})`;
+      g.fillRect(Math.round(x), Math.round(y), sp.a > 0.8 ? 2 : 1, 1);
+    });
   }
-  fallG.globalCompositeOperation = 'source-over';
+  g.globalCompositeOperation = 'source-over';
 
-  // dither the whole scene down to a handful of levels per channel
-  const q = fallG.getImageData(0, 0, FALL_W, FALL_H), qd = q.data, step = 255 / 9;
-  for (let y = 0; y < FALL_H; y++) for (let x = 0; x < FALL_W; x++) {
-    const i = (y * FALL_W + x) * 4, b = BAYER[(y & 3) * 4 + (x & 3)] * step;
-    for (let c = 0; c < 3; c++) qd[i + c] = Math.round((qd[i + c] + b) / step) * step;
+  // you, tumbling slowly, inside your aura
+  const bob = reduceMotion ? 0 : Math.round(Math.sin(secs * 1.1) * 2);
+  const ox = Math.round(fx - FIG_W / 2), oy = Math.round(fy - FIG_H / 2) + bob;
+  const flick = reduceMotion ? 0 : Math.floor(secs * 8) % 2;
+  g.globalAlpha = reduceMotion ? 1 : 0.85 + Math.sin(secs * 3.3) * 0.15;
+  g.drawImage(tv.aura[flick], ox - 12, oy - 12);
+  g.globalAlpha = 1;
+  // electric wisps arcing round you, plotted pixel by pixel so they stay crisp
+  if (!reduceMotion) {
+    tv.wisps.forEach(w => {
+      const R = FIG_H * w.r * 0.5, a0 = w.a0 + secs * w.sp;
+      for (let k = 0; k < 40; k++) {
+        const a = a0 + (k / 40) * w.span, jitter = Math.sin(k * 1.7 + secs * 9 + w.ph) * 2.2;
+        const x = fx + Math.cos(a) * (R + jitter) * 0.8, y = fy + bob + Math.sin(a) * (R + jitter);
+        g.fillStyle = w.cyan ? `rgba(150,235,255,${0.75 * Math.sin((k / 40) * Math.PI)})` : `rgba(255,248,225,${0.85 * Math.sin((k / 40) * Math.PI)})`;
+        g.fillRect(Math.round(x), Math.round(y), 1, 1);
+      }
+    });
   }
-  fallG.putImageData(q, 0, 0);
+  g.drawImage(tv.fig, ox, oy);
 
-  // wind streaks and clouds rushing up past you
-  topG.clearRect(0, 0, FALL_W, FALL_H);
-  const rush = 0.5 + fall * 1.5;
-  fallSpeed.forEach(s => {
-    const y = ((s.y - secs * s.sp * rush) % (FALL_H + 20) + FALL_H + 20) % (FALL_H + 20) - 10;
-    topG.fillStyle = 'rgba(220,230,255,0.35)';
-    topG.fillRect(Math.round(s.x), Math.round(y), 1, Math.round(s.len));
-  });
-  fallClouds.forEach(c => {
-    const span = FALL_H + 80, y = ((c.y - secs * 70 * c.s * rush) % span + span) % span - 40;
-    topG.globalAlpha = 0.2 + c.s * 0.2;
-    topG.drawImage(c.img, Math.round(c.x - c.img.width / 2), Math.round(y));
-    topG.globalAlpha = 1;
-  });
-
-  // you, diving head first at the horizon with a slow tumble, with a soft warm
-  // glow on you from the timelines
-  const sway = reduceMotion ? 0.12 : Math.sin(secs * 1.3) * 0.16 + 0.08;
-  const px = VPX + (reduceMotion ? 0 : Math.sin(secs * 0.7) * 3), py = 84 + (reduceMotion ? 0 : Math.sin(secs * 2.1) * 1.5);
-  const gg = heroGlow.getContext('2d');
-  if (!heroGlow.done) {
-    gg.drawImage(DIVER, 0, 0);
-    gg.globalCompositeOperation = 'source-in';
-    gg.fillStyle = '#ffb45a';
-    gg.fillRect(0, 0, DIVER.width, DIVER.height);
-    gg.globalCompositeOperation = 'source-over';
-    heroGlow.done = true;
-  }
-  topG.save();
-  topG.imageSmoothingEnabled = false;
-  topG.translate(Math.round(px), Math.round(py));
-  topG.rotate(sway);
-  topG.drawImage(DIVER, -17, -22);
-  topG.globalAlpha = 0.12;
-  topG.globalCompositeOperation = 'lighter';
-  topG.drawImage(heroGlow, -17, -23);
-  topG.restore();
-
-  // the loop's seam: the timelines flare white, and the next fall begins
-  const flare = p > 0.93 ? (p - 0.93) / 0.07 : p < 0.06 ? 1 - p / 0.06 : 0;
-  if (flare > 0 && !reduceMotion) {
-    topG.fillStyle = `rgba(255,244,226,${flare})`;
-    topG.fillRect(0, 0, FALL_W, FALL_H);
-  }
-
-  const k = Number(hero.dataset.k);
-  heroCtx.drawImage(fallBuf, 0, 0, FALL_W * k, FALL_H * k);
-  heroCtx.drawImage(fallTop, 0, 0, FALL_W * k, FALL_H * k);
+  // a white flash when the page first opens, as you come through
+  const intro = reduceMotion ? 0 : Math.max(0, 1 - secs / 1.2);
+  if (intro > 0) { g.fillStyle = `rgba(255,246,230,${intro})`; g.fillRect(0, 0, W2, H2); }
+  heroCtx.drawImage(tv.buf, 0, 0, W2 * tv.s, H2 * tv.s);
 }
 
 generate();
 placeDecor();
 paintWorld();
-buildFall();
+buildTitle();
 renderTabs();
 resize();
 renderJournal('camp');

@@ -1219,6 +1219,7 @@ function loadSave() {
   if (data.furnace) {
     ['input', 'fuel', 'output'].forEach(k => { furnaceState[k] = validStack(data.furnace[k]); });
     furnaceState.burn = +data.furnace.burn || 0;
+    furnaceState.prog = clamp(+data.furnace.prog || 0, 0, 1);
   }
 }
 // older saves had the great tree as ucla. now the tree is glastonbury and ucla
@@ -3728,7 +3729,7 @@ function furnaceTick(dt) {
   let changed = false;
   if (canCook) {
     // tiny tolerance: 1 wood is exactly 2 meat, and float sums land at 0.9999
-    // otherwise, which left the second meat stuck one frame from done
+    // otherwise
     if (F.burn <= 1e-6 && F.fuel) {
       F.burn += ITEMS[F.fuel.id].fuel;
       F.fuel.n--;
@@ -3736,7 +3737,11 @@ function furnaceTick(dt) {
       changed = true;
     }
     if (F.burn > 1e-6) {
-      const step = Math.min(dt * COOK_RATE, F.burn);
+      // never cook past the end of the piece on the fire. the frame that
+      // finished one used to run a little over, that bit of fuel was burned and
+      // thrown away, and the second meat off a wood came up just short with the
+      // fire out
+      const step = Math.min(dt * COOK_RATE, F.burn, 1 - F.prog);
       F.prog += step;
       F.burn -= step;
       if (F.prog >= 1 - 1e-6) {

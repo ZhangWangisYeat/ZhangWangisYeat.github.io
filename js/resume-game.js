@@ -1466,7 +1466,16 @@ function resize() {
 
 function updateFocus() {
   const small = vw <= 820;
-  const open = !document.body.classList.contains('journal-closed') && !document.body.classList.contains('is-title');
+  // when the journal pops out by itself for a new landmark (journal-peek), the
+  // view stays where it is. re-centring slid the whole world sideways under a
+  // cursor that hadn't moved, so whatever you were holding the mouse on (the
+  // great tree, say) slipped out from under it and you stopped mining, then it
+  // happened again when the journal went away. a page can't move your mouse
+  // for you, so the world holds still instead. the side panel only covers the
+  // right edge, so you're still in view. (on small screens the journal is a
+  // bottom sheet that would cover you, so those still re-centre.)
+  const peeking = !small && document.body.classList.contains('journal-peek');
+  const open = !peeking && !document.body.classList.contains('journal-closed') && !document.body.classList.contains('is-title');
   // centre the player in the part of the screen the journal isn't covering
   const coverR = !small && open ? journal.offsetWidth + 20 : 0;
   const coverB = small && open ? journal.offsetHeight + 10 : small ? 44 : 0;
@@ -1653,7 +1662,7 @@ function highlightCard(poi) {
 function endPeek() {
   peekTimer = null;
   journalBody.querySelectorAll('.entry.is-peek').forEach(e => e.classList.remove('is-peek'));
-  setTimeout(() => { if (!peekTimer) document.body.classList.remove('journal-peek'); }, 800);
+  setTimeout(() => { if (!peekTimer) { document.body.classList.remove('journal-peek'); updateFocus(); } }, 800);
 }
 function peekJournal(poi) {
   if (introTimer) return;

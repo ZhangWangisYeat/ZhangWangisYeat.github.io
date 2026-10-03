@@ -101,10 +101,16 @@ ITEMS['exotic-core'] = { part: true, get name() { return partsComplete() ? PART_
 // can see from the start, because that's what alex called it.
 ITEMS['forest-heart'] = { part: true, name: 'Forest\'s Heart' };
 // moe's drill, off moe the mole. hold right click and it spins up (see
-// tickDrill). it never wears out, it takes anything an emerald pickaxe can,
-// diamond is hard going for it (about as slow as an iron pickaxe), and it just
-// packs snow down, so that's still a job for your hands.
-ITEMS['moe-drill'] = { name: 'Moe\'s Drill', tool: 'drill', dmg: 1.5, cd: 0.5, reach: 1.6, speed: 20, harvest: TIERS.emerald.harvest, slowOn: { diamond: TIERS.iron.speed } };
+// tickDrill). it's a mining tool, not a weapon: swing it at something and it
+// hits like your bare hands (heldTool). it never wears out and takes anything
+// an emerald pickaxe can. stone and trees go in a blink, but the harder the
+// ore the longer it grinds (oreSpeed): iron is still quick, diamond is about as
+// slow as an iron pickaxe. it just packs snow down, so that's still a job for
+// your hands.
+ITEMS['moe-drill'] = {
+  name: 'Moe\'s Drill', tool: 'drill', speed: 20, treeSpeed: 8, harvest: TIERS.emerald.harvest,
+  oreSpeed: { 'iron-ore': 14, 'gold-ore': 11, ruby: 10, emerald: 9, diamond: TIERS.iron.speed }
+};
 // whatever you're holding that isn't a tool hits like a bare hand
 const FIST = { name: 'Bare hands', dmg: 0.25, cd: 0.45, reach: 1.4 };
 const STACK_MAX = 64;
@@ -194,7 +200,7 @@ const CREATURES = {
   // grizzly's health, 3 hearts if his drill lunge catches you, and 5 if he
   // comes up out of the floor right under you.
   mole: {
-    name: 'Mole', hp: 6, speed: 62, aggro: 4, leash: 99, range: 2.2, minion: true,
+    name: 'Mole', hp: 6, speed: 62, aggro: 3.5, leash: 99, range: 2.2, minion: true,
     windup: 0.5, lunge: { speed: 240, time: 0.22 }, cooldown: 1.5, dmg: 1.25,
     knock: 120, h: 20, box: { w: 20, h: 12 }, rest: 'burrowed', regen: 0.04, chip: '120,104,150',
     drops: [['iron-ore', 0, 1]], intro: ['Ambush', 'Moles. Mind the teeth.']
@@ -1214,7 +1220,7 @@ function gain(id, n, x, y) {
 const heldItem = () => inv.slots[inv.sel];
 function heldTool() {
   const s = heldItem();
-  return s && ITEMS[s.id].tool ? ITEMS[s.id] : FIST;
+  return s && ITEMS[s.id].tool && ITEMS[s.id].tool !== 'drill' ? ITEMS[s.id] : FIST;
 }
 // knock durability off whatever's in your hand, and break it at zero
 function wearHeld(cost) {
@@ -1810,6 +1816,10 @@ function paintDig(cols, rows, door, seed, den) {
 // mole's den. moe guards the first project landmark, and beating him is what
 // reveals it.
 const HOLE = makeMoleHole();
+// how far from a hole you come out, and how far in from a hole room's way out
+// you start, so stopping just after going through never leaves you standing
+// on the spot that takes you straight back
+const HOLE_STEP = 30, HOLE_IN = 34;
 const holeThings = MOLE_HOLES.map(([x, y]) => {
   const t = { flat: true, hole: true, x: x * TILE + 8, y: y * TILE + 14, frames: [HOLE] };
   things.push(t);
@@ -1863,11 +1873,13 @@ function rollDenLoot() {
 
 // the three burrows: where the moles wait under the floor, the chest, and a
 // few things to look at. rooms are 13 x 8 tiles of floor inside the walls.
+// the moles sit at least 3.5 tiles (their aggro range) from where you come
+// in, so you get a moment to look around before they come up.
 const BURROW_COLS = 13, BURROW_ROWS = 9, BURROW_DOOR = 6;
 const BURROWS = [
-  { moles: [[60, 84], [150, 96]], chest: [56, 47], shrooms: [[26, 100], [184, 60]], rocks: [[124, 62, 0], [172, 118, 1]] },
-  { moles: [[54, 70], [156, 74], [104, 106]], chest: [152, 47], shrooms: [[182, 106], [28, 56]], rocks: [[80, 114, 1], [42, 116, 0]] },
-  { moles: [[44, 96], [100, 66], [168, 92]], chest: [104, 47], shrooms: [[24, 62], [184, 116]], rocks: [[150, 56, 0], [64, 58, 1]] }
+  { moles: [[40, 60], [160, 78]], chest: [56, 47], shrooms: [[26, 100], [184, 60]], rocks: [[124, 62, 0], [172, 118, 1]] },
+  { moles: [[40, 76], [176, 80], [120, 50]], chest: [152, 47], shrooms: [[182, 106], [28, 56]], rocks: [[80, 114, 1], [42, 116, 0]] },
+  { moles: [[40, 50], [172, 86], [36, 96]], chest: [104, 47], shrooms: [[24, 62], [184, 116]], rocks: [[150, 56, 0], [64, 58, 1]] }
 ];
 const doorLight = (cols, rows, door) => ({ x: door * TILE + 8, y: rows * TILE - 6, rgb: '255,236,200', rad: 3.2, flicker: true, strength: 0.2 });
 const burrowRooms = BURROWS.map((B, i) => {
@@ -1877,7 +1889,7 @@ const burrowRooms = BURROWS.map((B, i) => {
   const r = {
     id: `burrow-${i}`, burrow: i, w: BURROW_COLS * TILE, h: BURROW_ROWS * TILE, dust: '#7a5c40', shade: 0.55, fight: true,
     canvas: paintDig(BURROW_COLS, BURROW_ROWS, BURROW_DOOR, 7000 + i * 31, false),
-    outside: { x: hole.x, y: hole.y }, exit: { x: hole.x, y: hole.y + 14 }, door: BURROW_DOOR,
+    outside: { x: hole.x, y: hole.y }, exit: { x: hole.x, y: hole.y + HOLE_STEP }, door: BURROW_DOOR,
     blocked: roomWalls(BURROW_COLS, BURROW_ROWS, BURROW_DOOR), things: [],
     glows: [doorLight(BURROW_COLS, BURROW_ROWS, BURROW_DOOR)]
   };
@@ -1907,7 +1919,7 @@ const denWalls = roomWalls(DEN_COLS, DEN_ROWS, DEN_DOOR);
 const denRoom = {
   id: 'den', w: DEN_COLS * TILE, h: DEN_ROWS * TILE, dust: '#7a5c40', shade: 0.42, fight: true, sealed: false,
   canvas: paintDig(DEN_COLS, DEN_ROWS, DEN_DOOR, 9100, true),
-  outside: { x: denHole.x, y: denHole.y }, exit: { x: denHole.x, y: denHole.y + 14 }, door: DEN_DOOR,
+  outside: { x: denHole.x, y: denHole.y }, exit: { x: denHole.x, y: denHole.y + HOLE_STEP }, door: DEN_DOOR,
   // once the fight starts, the way out is buried under rocks until he's beaten
   blocked: (x, y) => denWalls(x, y) || (denRoom.sealed && y > DEN_ROWS * TILE - 26 && Math.abs(x - (DEN_DOOR * TILE + 8)) < 18),
   things: [], glows: [doorLight(DEN_COLS, DEN_ROWS, DEN_DOOR)]
@@ -2160,7 +2172,7 @@ function updateMoe(c, dt) {
 }
 
 // how much a hit on moe actually does. above ground his drill is between you
-// and him: swings and the drill barely scratch him unless you've caught him
+// and him: swings barely scratch him unless you've caught him
 // side on (straight after a lunge), but arrows get round it. half out of the
 // ground he can't turn, so swings land for half again as much. underground
 // you can't hit him at all.
@@ -2439,15 +2451,14 @@ function drawMoeFloor(o, toX, toY, t) {
   }
 }
 
-// moe's drill in your hands: hold right click and it spins up. whatever's in
-// front of the bit takes a steady grind of damage, and if nothing is, it bores
-// into the block you're pointing at (at the speeds in mineInfo). let go,
-// switch slots or open a menu and it winds down.
-const DRILL = { reach: 2, tick: 0.12, dmg: 0.5, cone: 0.7 };
+// moe's drill in your hands: hold right click and it spins up and bores into
+// whatever block or tree you're pointing at (at the speeds in mineInfo). it
+// doesn't hurt anything alive. let go, switch slots or open a menu and it
+// winds down.
 let drilling = null;
 function startDrill() {
   if (drilling || player.dead || cine) return;
-  drilling = { t: 0, hitT: 0, buzzT: 0, slot: inv.sel };
+  drilling = { t: 0, buzzT: 0, slot: inv.sel };
 }
 function stopDrill() {
   if (!drilling) return;
@@ -2460,22 +2471,9 @@ function tickDrill(dt) {
   const s = heldItem();
   if (ui || player.dead || sleeping || cine || inv.sel !== drilling.slot || !s || ITEMS[s.id].tool !== 'drill') { stopDrill(); return; }
   drilling.t += dt;
-  drilling.hitT -= dt;
   drilling.buzzT -= dt;
-  const a = aimAngle(), o = aimOrigin();
-  faceAngle(a);
-  const tip = { x: o.x + Math.cos(a) * 18, y: o.y + Math.sin(a) * 18 };
+  faceAngle(aimAngle());
   if (drilling.buzzT <= 0) { drilling.buzzT = 0.09; sfx.drill(); }
-  const victims = creatures.filter(c => inArc(c, a, DRILL, DRILL.cone));
-  if (victims.length) {
-    if (mining) { if (mining.thing) mining.thing.shake = 0; mining = null; }
-    if (drilling.hitT <= 0) {
-      drilling.hitT = DRILL.tick;
-      victims.forEach(c => hurtCreature(c, DRILL.dmg, a, 'drill'));
-      burst(tip.x, tip.y, '255,220,140', 2);
-    }
-    return;
-  }
   const tgt = targetAt(mouseWorld());
   if (tgt && !CLICK_ONLY.has(tgt.type) && tgt.type !== 'bed' && inReach(tgt)) {
     mineStep(tgt, dt);
@@ -2542,9 +2540,7 @@ function attack() {
   if (hit) wearHeld(1);
 }
 
-// how it was hit matters to moe (see bossHit): 'melee', 'arrow' or 'drill'.
-// the drill grinds away several times a second, so it skips the numbers and
-// the thwack.
+// how it was hit ('melee' or 'arrow') matters to moe, see bossHit
 function hurtCreature(c, dmg, a, how = 'melee') {
   let col = '#ffd1d1';
   if (c.def.boss) {
@@ -2563,11 +2559,9 @@ function hurtCreature(c, dmg, a, how = 'melee') {
     c.ky = Math.sin(a) * c.def.knock;
   }
   const cc = creatureCenter(c);
-  if (how !== 'drill') {
-    floatText(`-${dmg}`, cc.x, cc.y - 12, col);
-    sfx.hit();
-  }
-  burst(cc.x, cc.y, c.def.chip, how === 'drill' ? 2 : 6);
+  floatText(`-${dmg}`, cc.x, cc.y - 12, col);
+  sfx.hit();
+  burst(cc.x, cc.y, c.def.chip, 6);
   // livestock just bolts; hunters turn on you
   if (c.def.passive) { c.state = 'flee'; c.t = 0; c.path = null; c.pathT = 0; }
   else if (!c.def.boss && !['windup', 'lunge', 'recover'].includes(c.state)) aggro(c);
@@ -3301,7 +3295,8 @@ function mineInfo(tgt) {
     if (!tgt.great && !quest.greatTree) return { time: Infinity };
     const base = MINE_TIME.wood * (tgt.great ? 1.4 : 1);
     const time = it && it.tool === 'axe' ? base / it.speed
-      : it && ['sword', 'pickaxe', 'dagger', 'drill'].includes(it.tool) ? base * TREE_TOOL_SLOW : base * TREE_HAND_SLOW;
+      : it && it.treeSpeed ? base / it.treeSpeed
+      : it && ['sword', 'pickaxe', 'dagger'].includes(it.tool) ? base * TREE_TOOL_SLOW : base * TREE_HAND_SLOW;
     return { time, drops: true, cost: 1 };
   }
   // moe's drill counts as a pickaxe, a very fast one
@@ -3314,7 +3309,7 @@ function mineInfo(tgt) {
   // diamonds and the pickaxe is done
   const cost = pick && pick.mat === 'iron' && tgt.ore === 'diamond' ? Math.ceil(pick.dur / 3) : 1;
   return {
-    time: harvest ? MINE_TIME.ore / ((pick.slowOn && pick.slowOn[tgt.ore]) || pick.speed) : MINE_TIME.ore * NO_HARVEST_SLOW,
+    time: harvest ? MINE_TIME.ore / ((pick.oreSpeed && pick.oreSpeed[tgt.ore]) || pick.speed) : MINE_TIME.ore * NO_HARVEST_SLOW,
     drops: harvest, cost
   };
 }
@@ -4276,11 +4271,9 @@ function enterRoom(r, quiet) {
   particles.length = 0;
   projectiles.length = 0;
   keys.clear();
-  // the den's door is a long way below moe, so you start a few steps in
-  if (r === denRoom) {
-    player.y = r.h - 34;
-    if (!moe.dead) startMoeIntro();
-  }
+  // down a mole hole you start a couple of steps in from the way out
+  if (r === denRoom || r.burrow !== undefined) player.y = r.h - HOLE_IN;
+  if (r === denRoom && !moe.dead) startMoeIntro();
   Object.assign(cam, roomCam());
   if (quiet) return;
   sfx.region();
@@ -4304,6 +4297,12 @@ function enterRoom(r, quiet) {
 function playLeaveRoom(quiet) {
   const r = room;
   if (r === denRoom) resetMoe();
+  // anything down there goes back to where it started (moles back under their
+  // mounds), so walking back in doesn't drop you straight into their teeth
+  creatures.forEach(c => {
+    if (c.room !== r || c.dead || c.def.boss) return;
+    Object.assign(c, { x: c.hx, y: c.hy, state: c.def.rest, t: 0, cd: 0.6, kx: 0, ky: 0, path: null, moving: false });
+  });
   room = null;
   projectiles.length = 0;
   player.x = r.exit.x;
@@ -4755,6 +4754,13 @@ canvas.addEventListener('pointerdown', e => {
   if (!started || ui || player.dead || cine) return;
   mouse.x = e.clientX; mouse.y = e.clientY; mouse.inCanvas = true;
   mouse.touch = e.pointerType === 'touch';
+  // keep the release coming to us even if it happens off the canvas or outside
+  // the window, and don't let the press start a text selection or a drag (a
+  // drag cancels the pointer and the release never arrives)
+  if (!mouse.touch) {
+    e.preventDefault();
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* not supported, the button check below still covers it */ }
+  }
   if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
   if (e.button === 2) { useRight(); return; }
   if (e.button !== 0) return;
@@ -4782,6 +4788,17 @@ canvas.addEventListener('pointerdown', e => {
   mouse.down = true;
 });
 window.addEventListener('pointerup', e => { if (e.button === 2) { releaseBow(); stopDrill(); } else mouse.down = false; });
+// letting go of one button while holding the other comes through as a move,
+// not a pointerup, so every move also checks which buttons are actually still
+// down. a cancelled pointer lets go of everything.
+window.addEventListener('pointermove', e => {
+  if (e.pointerType === 'touch') return;
+  if (mouse.down && !(e.buttons & 1)) mouse.down = false;
+  if (!(e.buttons & 2)) { if (bowDraw) releaseBow(); stopDrill(); }
+});
+const letGo = () => { mouse.down = false; bowDraw = null; stopDrill(); };
+canvas.addEventListener('pointercancel', letGo);
+canvas.addEventListener('lostpointercapture', e => { if (!(e.buttons & 1)) mouse.down = false; });
 window.addEventListener('blur', () => { mouse.down = false; bowDraw = null; stopDrill(); });
 canvas.addEventListener('wheel', e => {
   if (!started || ui) return;

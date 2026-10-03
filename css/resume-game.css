@@ -779,7 +779,7 @@ body.is-title .toast { opacity: 0; pointer-events: none; }
   .on-keys { display: none; }
   .on-touch { display: inline; }
 }
-#hero { display: block; image-rendering: pixelated; }
+#hero { display: block; image-rendering: pixelated; box-shadow: 0 0 0 3px #0b0b0d, 0 0 0 5px rgba(255, 214, 120, 0.22), 0 30px 80px rgba(0, 0, 0, 0.6); }
 
 .noscript-note {
   position: fixed;

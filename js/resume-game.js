@@ -1972,60 +1972,338 @@ function drawLabels(toX, toY, t) {
   }
 }
 
-// the title screen's character: standing on a little floating chunk of the
-// meadow, idling and swinging the sword every few seconds
+// the title screen: you, falling head first out of the sky toward the world,
+// with the multiverse's timelines blazing on the horizon where the universes
+// collided, fraying out across the sky and sweeping down past you. the land is
+// a little mode 7 scene: the real generated map laid out as a ground plane in
+// perspective and sampled pixel by pixel, so it's this exact world you're
+// falling into, with camp right under you. the camera drops the whole time so
+// the land zooms up at you, and every few seconds the timelines flare white and
+// the fall starts over. everything is drawn at 112 x 140 and scaled up, and the
+// glow is dithered down to a few colour levels so it reads as pixel art
+// instead of a smooth gradient.
 const hero = $('#hero');
 const heroCtx = hero.getContext('2d');
-const HERO_W = 80, HERO_H = 76;
-let island;
-function buildIsland() {
-  island = mk(HERO_W, HERO_H);
-  const g = island.getContext('2d');
-  const rowTiles = (type, y, x0, x1) => {
-    for (let x = x0; x < x1; x += TILE) g.drawImage(TEX[type][(x / TILE) % 4 | 0], 0, 0, Math.min(TILE, x1 - x), TILE, x, y, Math.min(TILE, x1 - x), TILE);
-  };
-  rowTiles(T.GRASS, 44, 8, 72);
-  rowTiles(T.STONE, 60, 14, 66);
-  rowTiles(T.STONE, 68, 26, 54);
-  g.fillStyle = 'rgba(0,0,0,0.3)';
-  g.fillRect(14, 60, 52, 2);
-  g.fillRect(26, 68, 28, 2);
-  g.fillStyle = 'rgba(255,255,255,0.18)';
-  g.fillRect(8, 44, 64, 1);
-  g.fillStyle = '#1d562f';
-  [[12, 60], [20, 62], [58, 61], [63, 60], [30, 70], [49, 71]].forEach(([x, y]) => g.fillRect(x, y, 1, 3 + (x % 3)));
+const FALL_W = 112, FALL_H = 140, HORIZON = 46, FOCAL = 78, FALL_LOOP = 9;
+const VPX = FALL_W / 2;
+// two layers at scene resolution: the scene itself, which gets read back for
+// the dithering, and one on top for you and the clouds. the player sprite is a
+// file, and drawing a file image into a canvas you read pixels from blocks the
+// read (when the page is opened straight from disk), so it never goes in there.
+const fallBuf = mk(FALL_W, FALL_H);
+const fallG = fallBuf.getContext('2d', { willReadFrequently: true });
+const fallTop = mk(FALL_W, FALL_H);
+const topG = fallTop.getContext('2d');
+let worldMips = null, fallStrands = [], fallStars = [], fallClouds = [], fallSpeed = [], heroGlow = null;
+
+// the map at three sizes. from high up one screen pixel covers dozens of world
+// pixels, and sampling the full size map then shimmers like mad as you fall,
+// so far away ground reads from a shrunk (averaged) copy instead.
+function buildWorldMips() {
+  worldMips = [1, 4, 16].map(k => {
+    const w = Math.ceil((W * TILE) / k), h = Math.ceil((H * TILE) / k);
+    const c = mk(w, h), g = c.getContext('2d');
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(worldCanvas, 0, 0, w, h);
+    return { k, w, h, d: g.getImageData(0, 0, w, h).data };
+  });
 }
+
+function buildFall() {
+  const r = mulberry32(SEED + 1234);
+  // mostly the warm gold and amber of the reference, with the odd cool strand
+  const cols = ['255,214,120', '255,214,120', '255,190,100', '255,170,80', '255,170,80', '255,236,200', '255,236,200', '255,130,70', '120,215,255', '190,140,255', '255,120,190'];
+  const strand = (sx, sy, c1x, c1y, c2x, c2y, ex, ey, kind, a) => ({
+    pts: [sx, sy, c1x, c1y, c2x, c2y, ex, ey], kind,
+    col: cols[(r() * cols.length) | 0], a: a * (0.5 + r() * 0.8), w: 0.5 + r() * 0.7,
+    ph: r() * 6.28, sp: 0.6 + r() * 1.4, pulse: r(), pulseSp: 0.25 + r() * 0.35
+  });
+  // the main fray: long strands pouring sideways out of the core along the
+  // horizon, wavering as they go, like the timeline in the reference
+  for (let i = 0; i < 34; i++) {
+    const side = r() < 0.5 ? -1 : 1, sx = VPX + side * r() * 14, ex = VPX + side * (64 + r() * 50);
+    const sag = (r() - 0.5) * 30;
+    fallStrands.push(strand(sx, HORIZON + (r() - 0.5) * 2, sx + side * (16 + r() * 16), HORIZON + sag * 0.5,
+      ex - side * (14 + r() * 20), HORIZON - sag * 0.7, ex, HORIZON + sag * 0.6, 'flat', 0.5));
+  }
+  // up into the sky: they leave the core sideways, then curl up and out
+  for (let i = 0; i < 30; i++) {
+    const side = r() < 0.5 ? -1 : 1, sx = VPX + (r() - 0.5) * 26, ex = VPX + side * (30 + r() * 80), ey = HORIZON - 10 - r() * 44;
+    fallStrands.push(strand(sx, HORIZON, sx + side * (18 + r() * 22), HORIZON - 2 - r() * 4,
+      ex - side * (6 + r() * 24), ey + 14 + r() * 18, ex, ey, 'sky', 0.34));
+  }
+  // down over the land and on past you, bending as they come at the camera
+  for (let i = 0; i < 24; i++) {
+    const ex = VPX + (r() - 0.5) * 320, ey = FALL_H + 10 + r() * 60, sx = VPX + (r() - 0.5) * 30;
+    const bend = (r() - 0.5) * 60;
+    fallStrands.push(strand(sx, HORIZON + 1, sx + (ex - sx) * 0.2 + bend * 0.3, HORIZON + 4 + r() * 4,
+      sx + (ex - sx) * 0.55 - bend, HORIZON + (ey - HORIZON) * (0.3 + r() * 0.2), ex, ey, 'down', 0.3));
+  }
+  // a third of them split partway into a thinner timeline of their own
+  fallStrands.slice().forEach(s => {
+    if (r() > 0.34) return;
+    const t = 0.35 + r() * 0.35, [sx, sy] = bezPt(s.pts, t), [ex, ey] = [s.pts[6], s.pts[7]];
+    const bend = (r() - 0.5) * (s.kind === 'down' ? 70 : 40);
+    fallStrands.push({ ...strand(sx, sy, sx + (ex - sx) * 0.3, sy + (ey - sy) * 0.3 + bend * 0.3, ex + bend * 0.6, ey - bend * 0.2, ex + bend, ey + (s.kind === 'down' ? 0 : bend * 0.3), s.kind), col: s.col, a: s.a * 0.7, w: s.w * 0.7 });
+  });
+  for (let i = 0; i < 60; i++) fallStars.push({ x: r() * FALL_W, y: r() * (HORIZON - 6), b: 0.3 + r() * 0.7, ph: r() * 6.28 });
+  // clouds and wind streaks rushing up past you, which is what sells the fall
+  for (let i = 0; i < 3; i++) fallClouds.push({ x: r() * FALL_W, y: r() * (FALL_H + 60), s: 0.6 + r() * 0.9, img: makeFallCloud(r) });
+  for (let i = 0; i < 16; i++) fallSpeed.push({ x: VPX + (r() - 0.5) * 70, y: r() * FALL_H, len: 4 + r() * 10, sp: 140 + r() * 120 });
+  // a warm copy of you, for the rim of light the timelines throw on you
+  heroGlow = mk(DIVER.width, DIVER.height);
+}
+function bezPt(p, t) {
+  const u = 1 - t;
+  return [u * u * u * p[0] + 3 * u * u * t * p[2] + 3 * u * t * t * p[4] + t * t * t * p[6],
+    u * u * u * p[1] + 3 * u * u * t * p[3] + 3 * u * t * t * p[5] + t * t * t * p[7]];
+}
+function makeFallCloud(r) {
+  const w = 28 + ((r() * 18) | 0), h = 10 + ((r() * 6) | 0);
+  const G = pixelGrid(w, h);
+  const blobs = Array.from({ length: 5 }, () => [4 + r() * (w - 8), h * 0.55 + (r() - 0.5) * 3, 3 + r() * 5]);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const inside = blobs.some(([bx, by, br]) => (x - bx) ** 2 + ((y - by) * 1.6) ** 2 < br * br);
+    if (inside) G.set(x, y, y < h * 0.45 ? '#e9e3f2' : y < h * 0.7 ? '#b9b2cf' : '#8a7ea8');
+  }
+  return G.canvas();
+}
+
+// you, mid dive, drawn for this scene: the spider-man leap of faith, seen from
+// behind. feet trailing up top, legs a little apart, jacket flapping, arms
+// flung out wide, and your head leading the way down. same palette as your
+// sprite sheet (brown hair, brown jacket over a blue shirt), but proper body
+// proportions, because the chibi frames upside down just read as a big head.
+function makeDiver() {
+  const W2 = 34, H2 = 44;
+  const G = pixelGrid(W2, H2);
+  const C = {
+    hair: '#573a23', hairD: '#40271a', hairL: '#7a5232', hairH: '#9a6a42', skin: '#c1ac8f', skinD: '#ac7b5d',
+    jacket: '#40271a', jacketL: '#573a23', jacketH: '#7a5232', shirt: '#2c65b5', shirtD: '#1d438a',
+    pants: '#2b1c12', pantsL: '#4a3220', shoe: '#141414', sole: '#5c5c5c', rim: '#ffcf8a'
+  };
+  const line = (x0, y0, x1, y1, c) => {
+    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
+    for (let i = 0; i <= n; i++) G.set(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, c);
+  };
+  // legs: the left one straight up, the right kicked back with a bend at the knee
+  const leg = pts => {
+    for (let k = 0; k < pts.length - 1; k++) {
+      const [x0, y0] = pts[k], [x1, y1] = pts[k + 1];
+      line(x0, y0, x1, y1, C.pantsL); line(x0 + 1, y0, x1 + 1, y1, C.pants); line(x0 + 2, y0, x1 + 2, y1, C.pants);
+    }
+  };
+  leg([[13, 3], [13, 10], [14, 17]]);
+  leg([[22, 4], [21, 9], [18, 17]]);
+  // shoes, soles catching the light
+  [[12, 0], [21, 1]].forEach(([x, y]) => {
+    for (let dy = 0; dy < 3; dy++) for (let dx = 0; dx < 4; dx++) G.set(x + dx, y + dy, dy === 0 ? C.sole : C.shoe);
+  });
+  // jacket, open over the blue shirt, its tails flapping up in the wind
+  for (let y = 17; y <= 29; y++) {
+    const half = y < 20 ? 5 : y > 26 ? 6 : 5.5;
+    for (let x = Math.round(16.5 - half); x <= Math.round(16.5 + half); x++) {
+      let col = x < 13 ? C.jacket : C.jacketL;
+      if (x >= 15 && x <= 18 && y >= 19) col = x === 15 ? C.shirtD : C.shirt;
+      if (x === Math.round(16.5 + half)) col = C.jacketH;
+      G.set(x, y, col);
+    }
+  }
+  [[10, 16], [9, 15], [10, 17], [23, 16], [24, 15], [23, 17]].forEach(([x, y]) => G.set(x, y, C.jacket));
+  // arms flung out wide, swept back towards the legs by the rushing air
+  [[-1, 11], [1, 22]].forEach(([dir, sx]) => {
+    for (let i = 0; i <= 9; i++) {
+      const x = sx + dir * i, y = 27 - Math.round(i * 0.5);
+      G.set(x, y, i > 7 ? C.skin : C.jacketH);
+      G.set(x, y + 1, i > 7 ? C.skinD : C.jacket);
+    }
+    // a spread hand
+    const hx = sx + dir * 10, hy = 22;
+    G.set(hx, hy, C.skin); G.set(hx, hy - 1, C.skin); G.set(hx + dir, hy - 1, C.skinD); G.set(hx - dir, hy - 2, C.skinD);
+  });
+  // neck, then the back of your head leading the way down
+  for (let x = 15; x <= 18; x++) { G.set(x, 30, C.skinD); G.set(x, 31, C.skinD); }
+  for (let y = 31; y < H2 - 1; y++) for (let x = 9; x <= 24; x++) {
+    const dx = (x - 16.5) / 7.2, dy = (y - 37) / 6.2;
+    if (dx * dx + dy * dy > 1) continue;
+    // hair in diagonal locks, lit from the top left, darker underneath
+    const lock = (x + y * 2) % 5;
+    let col = lock === 0 ? C.hairD : lock === 3 ? C.hairL : C.hair;
+    if (dx < -0.3 && dy < -0.1 && lock !== 0) col = C.hairH;
+    if (dy > 0.6) col = C.hairD;
+    G.set(x, y, col);
+  }
+  // ears peeking out either side, and a few tufts flicked up by the wind
+  [[9, 36], [24, 36]].forEach(([x, y]) => { G.set(x, y, C.skinD); G.set(x, y + 1, C.skin); });
+  [[11, 31], [13, 30], [20, 30], [22, 31]].forEach(([x, y]) => G.set(x, y, C.hair));
+  G.outline(() => '#000000');
+  // a thin warm rim along the top edges, from the timelines blazing above
+  for (let x = 0; x < W2; x++) for (let y = 1; y < H2; y++) {
+    const c = G.get(x, y);
+    if (c && c !== '#000000' && G.get(x, y - 1) === '#000000' && (x + y) % 2 === 0) G.set(x, y, C.rim);
+  }
+  return G.canvas();
+}
+function pxBlobG(G, cx, cy, rx, ry, colour) {
+  for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
+    const dx = (x - cx) / rx, dy = (y - cy) / ry;
+    if (dx * dx + dy * dy <= 1) G.set(x, y, colour(dx, dy));
+  }
+}
+const DIVER = makeDiver();
+
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16 - 0.5);
 function sizeHero() {
-  const k = vw > 900 ? 5 : 3;
-  hero.width = HERO_W * k;
-  hero.height = HERO_H * k;
-  hero.style.width = `${HERO_W * k}px`;
-  hero.style.height = `${HERO_H * k}px`;
+  const k = vw > 900 ? (vh > 840 ? 4 : 3) : 2;
+  hero.width = FALL_W * k;
+  hero.height = FALL_H * k;
+  hero.style.width = `${FALL_W * k}px`;
+  hero.style.height = `${FALL_H * k}px`;
   heroCtx.imageSmoothingEnabled = false;
   hero.dataset.k = k;
 }
+
 function renderHero(t) {
   if (started || !sheet.naturalWidth) return;
+  if (!worldMips) buildWorldMips();
+  const secs = reduceMotion ? 3.6 : t / 1000;
+  const p = (secs % FALL_LOOP) / FALL_LOOP;
+  const fall = p * p * (3 - 2 * p);
+  // the camera falls from very high to just over camp, on a curve that speeds up
+  const camH = 2600 * Math.pow(260 / 2600, fall);
+  const landX = CAMP.x * TILE + 8, landY = CAMP.y * TILE + 8;
+  const zt = (camH * FOCAL) / (112 - HORIZON);
+  const camX = landX, camY = landY + zt;
+
+  const img = fallG.createImageData(FALL_W, FALL_H), d = img.data;
+  for (let y = 0; y < FALL_H; y++) for (let x = 0; x < FALL_W; x++) {
+    const i = (y * FALL_W + x) * 4;
+    const dx = (x - VPX) / FALL_W, dy = (y - HORIZON) / FALL_H;
+    // the core's light, strongest at the vanishing point and stretched sideways
+    const glow = Math.exp(-(dx * dx * 6 + dy * dy * 60));
+    let R, Gc, B;
+    if (y <= HORIZON) {
+      const k = y / HORIZON;
+      const neb = vnoise(x / 14, y / 9, SEED + 9);
+      R = 4 + 34 * k + 30 * neb * k; Gc = 5 + 14 * k; B = 14 + 34 * k + 26 * (1 - neb) * k;
+    } else {
+      const z = (camH * FOCAL) / (y - HORIZON);
+      const texel = z / FOCAL;
+      const m = worldMips[texel > 12 ? 2 : texel > 3 ? 1 : 0];
+      const wx = (camX + ((x - VPX + 0.5) * z) / FOCAL) / m.k, wy = (camY - z) / m.k;
+      if (wx >= 0 && wy >= 0 && wx < m.w && wy < m.h) {
+        const j = ((wy | 0) * m.w + (wx | 0)) * 4;
+        R = m.d[j] * 0.62; Gc = m.d[j + 1] * 0.62; B = m.d[j + 2] * 0.7;
+      } else {
+        R = 7; Gc = 6; B = 14;
+      }
+      // haze towards the horizon, warm where the timelines are
+      const haze = Math.max(0, 1 - (y - HORIZON) / 30) ** 2;
+      R += (60 - R) * haze; Gc += (26 - Gc) * haze; B += (52 - B) * haze;
+    }
+    R += 255 * glow * 0.75; Gc += 170 * glow * 0.75; B += 90 * glow * 0.75;
+    d[i] = R; d[i + 1] = Gc; d[i + 2] = B; d[i + 3] = 255;
+  }
+  fallStars.forEach(s => {
+    const i = ((s.y | 0) * FALL_W + (s.x | 0)) * 4;
+    const tw = s.b * (reduceMotion ? 1 : 0.6 + 0.4 * Math.sin(secs * 2 + s.ph));
+    d[i] += 200 * tw; d[i + 1] += 200 * tw; d[i + 2] += 220 * tw;
+  });
+  fallG.putImageData(img, 0, 0);
+
+  // the timelines, added on top so they light everything they cross
+  fallG.globalCompositeOperation = 'lighter';
+  fallStrands.forEach(s => {
+    const a = s.a * (reduceMotion ? 1 : 0.7 + 0.3 * Math.sin(secs * s.sp + s.ph));
+    const P = s.pts;
+    fallG.lineCap = 'round';
+    [[s.w * 3, a * 0.12], [s.w, a]].forEach(([w, al]) => {
+      fallG.strokeStyle = `rgba(${s.col},${al})`;
+      fallG.lineWidth = w;
+      fallG.beginPath();
+      fallG.moveTo(P[0], P[1]);
+      fallG.bezierCurveTo(P[2], P[3], P[4], P[5], P[6], P[7]);
+      fallG.stroke();
+    });
+    // a spark running out along it, away from the core
+    if (!reduceMotion) {
+      const q = (s.pulse + secs * s.pulseSp) % 1, [ax, ay] = bezPt(P, q), [bx, by] = bezPt(P, Math.min(1, q + 0.05));
+      fallG.strokeStyle = `rgba(255,248,230,${0.5 * (1 - q)})`;
+      fallG.lineWidth = 1;
+      fallG.beginPath(); fallG.moveTo(ax, ay); fallG.lineTo(bx, by); fallG.stroke();
+    }
+  });
+  // the core itself: a white hot seam along the horizon
+  for (let k = -2; k <= 2; k++) {
+    const len = [26, 46, 64, 46, 26][k + 2];
+    fallG.fillStyle = `rgba(255,${k ? 220 : 250},${k ? 170 : 235},${k ? 0.5 : 0.95})`;
+    fallG.fillRect(VPX - len / 2, HORIZON + k, len, 1);
+  }
+  fallG.globalCompositeOperation = 'source-over';
+
+  // dither the whole scene down to a handful of levels per channel
+  const q = fallG.getImageData(0, 0, FALL_W, FALL_H), qd = q.data, step = 255 / 9;
+  for (let y = 0; y < FALL_H; y++) for (let x = 0; x < FALL_W; x++) {
+    const i = (y * FALL_W + x) * 4, b = BAYER[(y & 3) * 4 + (x & 3)] * step;
+    for (let c = 0; c < 3; c++) qd[i + c] = Math.round((qd[i + c] + b) / step) * step;
+  }
+  fallG.putImageData(q, 0, 0);
+
+  // wind streaks and clouds rushing up past you
+  topG.clearRect(0, 0, FALL_W, FALL_H);
+  const rush = 0.5 + fall * 1.5;
+  fallSpeed.forEach(s => {
+    const y = ((s.y - secs * s.sp * rush) % (FALL_H + 20) + FALL_H + 20) % (FALL_H + 20) - 10;
+    topG.fillStyle = 'rgba(220,230,255,0.35)';
+    topG.fillRect(Math.round(s.x), Math.round(y), 1, Math.round(s.len));
+  });
+  fallClouds.forEach(c => {
+    const span = FALL_H + 80, y = ((c.y - secs * 70 * c.s * rush) % span + span) % span - 40;
+    topG.globalAlpha = 0.2 + c.s * 0.2;
+    topG.drawImage(c.img, Math.round(c.x - c.img.width / 2), Math.round(y));
+    topG.globalAlpha = 1;
+  });
+
+  // you, diving head first at the horizon with a slow tumble, with a soft warm
+  // glow on you from the timelines
+  const sway = reduceMotion ? 0.12 : Math.sin(secs * 1.3) * 0.16 + 0.08;
+  const px = VPX + (reduceMotion ? 0 : Math.sin(secs * 0.7) * 3), py = 84 + (reduceMotion ? 0 : Math.sin(secs * 2.1) * 1.5);
+  const gg = heroGlow.getContext('2d');
+  if (!heroGlow.done) {
+    gg.drawImage(DIVER, 0, 0);
+    gg.globalCompositeOperation = 'source-in';
+    gg.fillStyle = '#ffb45a';
+    gg.fillRect(0, 0, DIVER.width, DIVER.height);
+    gg.globalCompositeOperation = 'source-over';
+    heroGlow.done = true;
+  }
+  topG.save();
+  topG.imageSmoothingEnabled = false;
+  topG.translate(Math.round(px), Math.round(py));
+  topG.rotate(sway);
+  topG.drawImage(DIVER, -17, -22);
+  topG.globalAlpha = 0.12;
+  topG.globalCompositeOperation = 'lighter';
+  topG.drawImage(heroGlow, -17, -23);
+  topG.restore();
+
+  // the loop's seam: the timelines flare white, and the next fall begins
+  const flare = p > 0.93 ? (p - 0.93) / 0.07 : p < 0.06 ? 1 - p / 0.06 : 0;
+  if (flare > 0 && !reduceMotion) {
+    topG.fillStyle = `rgba(255,244,226,${flare})`;
+    topG.fillRect(0, 0, FALL_W, FALL_H);
+  }
+
   const k = Number(hero.dataset.k);
-  heroCtx.clearRect(0, 0, hero.width, hero.height);
-  const bobY = reduceMotion ? 0 : (Math.floor(t / 900) % 2);
-  heroCtx.drawImage(island, 0, bobY * k, HERO_W * k, HERO_H * k);
-  // 4.2s loop: idle, swing down, idle, swing to the side
-  const loop = reduceMotion ? 0 : (t / 1000) % 4.2;
-  let row = 0, col = Math.floor((t / 1000) * 5) % 6, flip = false;
-  if (loop > 1.6 && loop < 1.9) { row = 6; col = Math.min(3, Math.floor((loop - 1.6) / 0.075)); }
-  if (loop > 3.4 && loop < 3.7) { row = 7; col = Math.min(3, Math.floor((loop - 3.4) / 0.075)); flip = Math.floor(t / 4200) % 2 === 1; }
-  const dx = (40 - 24) * k, dy = (46 - 42 + bobY) * k;
-  heroCtx.save();
-  if (flip) { heroCtx.translate(dx + CELL * k, dy); heroCtx.scale(-1, 1); heroCtx.drawImage(sheet, col * CELL, row * CELL, CELL, CELL, 0, 0, CELL * k, CELL * k); }
-  else heroCtx.drawImage(sheet, col * CELL, row * CELL, CELL, CELL, dx, dy, CELL * k, CELL * k);
-  heroCtx.restore();
+  heroCtx.drawImage(fallBuf, 0, 0, FALL_W * k, FALL_H * k);
+  heroCtx.drawImage(fallTop, 0, 0, FALL_W * k, FALL_H * k);
 }
 
 generate();
 placeDecor();
 paintWorld();
-buildIsland();
+buildFall();
 renderTabs();
 resize();
 renderJournal('camp');

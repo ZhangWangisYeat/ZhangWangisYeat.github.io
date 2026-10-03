@@ -139,21 +139,24 @@ const REGIONS = [
             date: 'Jun 2026 – Aug 2026',
             desc: 'Desktop tool that instantly downloads and organizes hundreds of thousands of Excel attachments, replacing a manual monthly workflow with automated distributor and manufacturer classification. Whitelisted email monitoring, email threading, and SHA-256 hashing track attachments and their superseded versions.',
             loot: ['Python', 'IMAP', 'SHA-256', 'SQLite', 'Tkinter'],
-            poi: { id: 'mailsisi', kind: 'emerald', at: [96, 49], label: 'MailSISI' }
+            // each project's landmark is where its boss lives. mailsisi's is moe
+            // the mole's den, the big hole you walk down into. the other four are
+            // boarded up lairs until their bosses are built.
+            poi: { id: 'mailsisi', kind: 'den', at: [84, 49], label: 'MailSISI' }
           },
           {
             title: 'MailSISIBox',
             date: 'Jun 2026 – Aug 2026',
             desc: "PowerShell tool that transfers files up to 100 GB between remote desktops. Picks the fastest available TCP connection, verifies every transfer end to end with SHA-256, and lets you copy and paste files through a remote desktop connection's clipboard.",
             loot: ['PowerShell', 'TCP Sockets', 'SHA-256', '.NET', 'Clipboard IPC'],
-            poi: { id: 'mailsisibox', kind: 'iron', at: [108, 76], label: 'MailSISIBox' }
+            poi: { id: 'mailsisibox', kind: 'lair', at: [108, 76], label: 'MailSISIBox' }
           },
           {
             title: 'BruinPop',
             date: 'Mar 2026 – Jun 2026',
             desc: 'Full-stack social platform for pop-ups around UCLA. Built an interactive, location-aware posting interface. Secured with NextAuth JWTs and bcrypt encryption. 100+ campus users.',
             loot: ['React', 'Next.js', 'Tailwind CSS', 'Leaflet', 'NextAuth'],
-            poi: { id: 'bruinpop', kind: 'diamond', at: [78, 55], label: 'BruinPop' }
+            poi: { id: 'bruinpop', kind: 'lair', at: [78, 55], label: 'BruinPop' }
           },
           {
             title: 'Desperate Measures',
@@ -161,14 +164,14 @@ const REGIONS = [
             flag: 'This world',
             desc: '2D co-op sandbox inspired by Minecraft and Terraria: explore, build, and fight across an infinite multiverse procedurally generated from a single seed. Each seed follows a set plot with its own world generation and progression timing, and you can interact with other multiverses within a single playthrough. Alpha tested by 50+ users; beta releases Sep 2026.',
             loot: ['Unity', 'C#', 'Lua', 'Procedural Gen', 'Physics', '2D Sandbox'],
-            poi: { id: 'desperate', kind: 'gold', at: [101, 62], label: 'Desperate Measures' }
+            poi: { id: 'desperate', kind: 'lair', at: [101, 62], label: 'Desperate Measures' }
           },
           {
             title: 'ACM TeachLA "Static" Website',
             date: 'Sep 2025',
             desc: 'Set up the login-system backend deployed on Netlify. Built blog and events pages with HTML5/CSS3 and implemented static category filtering. Transitioning the static site to be fully dynamic.',
             loot: ['HTML5', 'CSS3', 'Netlify'],
-            poi: { id: 'teachla-site', kind: 'ruby', at: [84, 74], label: 'TeachLA Site' }
+            poi: { id: 'teachla-site', kind: 'lair', at: [84, 74], label: 'TeachLA Site' }
           }
         ]
       }
@@ -215,10 +218,9 @@ const SEED = 20250701;
 const CAMP = { x: 60, y: 42, r: 9 };
 const HOUSE = { x: 60, y: 35 };     // the tile the tent's flap is on
 const HYENA_HOME = { x: 33, y: 62 };
-// the mole holes in the early mines, close to camp. the first three are
-// burrows full of moles, the last one is moe the mole's den. from the outside
-// they all look the same, so you don't know which one he's in.
-const MOLE_HOLES = [[69, 48], [71, 61], [86, 66], [84, 49]];
+// the mole holes in the early mines, close to camp: burrows full of moles.
+// moe's own den is a landmark (mailsisi's), not one of these.
+const MOLE_HOLES = [[69, 48], [71, 61], [86, 66]];
 const SPAWN = { x: 60, y: 45 };
 const QUADS = ['dunes', 'tundra', 'meadows', 'mines'];
 
@@ -598,8 +600,21 @@ function makeLogo() {
 function makeCave() {
   const w = 48, h = 40, cx = 23.5, ground = h - 2;
   const G = pixelGrid(w, h);
-  // a few overlapping boulders instead of one smooth dome, each lit from the
-  // top left on its own, with a dark seam wherever one sits in front of another
+  rockMound(G, w, ground, true);
+  // the mouth, with a lip of lighter stones round the top of it
+  for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
+    const mx = (x - cx) / 7.5, my = (y - ground) / 14;
+    const d = mx * mx + my * my;
+    if (d > 1.25 || y > ground) continue;
+    if (d <= 1) G.set(x, y, d > 0.72 ? '#2a221c' : '#0d0a08');
+    else if (G.get(x, y)) G.set(x, y, hash2(x, y, 46) < 0.5 ? '#b3b3b3' : '#9a9a9a');
+  }
+  return G.outline(() => '#262626').canvas();
+}
+// a few overlapping boulders instead of one smooth dome, each lit from the
+// top left on its own, with a dark seam wherever one sits in front of another.
+// out in the meadows there's moss growing on top.
+function rockMound(G, w, ground, mossy) {
   const rocks = [[23.5, 30, 23, 17], [12, 31, 11, 9], [36, 31, 11, 9], [19, 16, 10, 9], [30, 17, 10, 9], [24.5, 9, 8, 7]];
   for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
     let hit = -1, best = 2;
@@ -614,18 +629,69 @@ function makeCave() {
     let col = lit > 0.55 ? '#a6a6a6' : lit > 0.15 ? '#8c8c8c' : lit > -0.3 ? '#737373' : '#5a5a5a';
     if (best > 0.82) col = '#4e4e4e';
     if (hash2(x >> 2, y >> 1, 42) < 0.1) col = '#666666';
-    if (y < ry - ay * 0.45 && hash2(x, y, 44) < 0.6 && dy < -0.35) col = hash2(x, y, 45) < 0.5 ? '#3f8f3a' : '#2f7330';
+    if (mossy && y < ry - ay * 0.45 && hash2(x, y, 44) < 0.6 && dy < -0.35) col = hash2(x, y, 45) < 0.5 ? '#3f8f3a' : '#2f7330';
     G.set(x, y, col);
   }
-  // the mouth, with a lip of lighter stones round the top of it
-  for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
-    const mx = (x - cx) / 7.5, my = (y - ground) / 14;
-    const d = mx * mx + my * my;
-    if (d > 1.25 || y > ground) continue;
-    if (d <= 1) G.set(x, y, d > 0.72 ? '#2a221c' : '#0d0a08');
-    else if (G.get(x, y)) G.set(x, y, hash2(x, y, 46) < 0.5 ? '#b3b3b3' : '#9a9a9a');
+}
+
+// a boss's lair in the mines that isn't open yet: a mound of rock with an old
+// mine shaft in it, a timber frame round the opening and planks nailed across
+// it. three tiles wide and solid, like the cave. each boss gets its own lair
+// art once it's built.
+function makeLair() {
+  const w = 48, h = 40, cx = 23.5, ground = h - 2;
+  const G = pixelGrid(w, h);
+  rockMound(G, w, ground, false);
+  for (let y = ground - 15; y <= ground; y++) for (let x = Math.round(cx - 7); x <= Math.round(cx + 7); x++) G.set(x, y, y > ground - 3 ? '#1a1410' : '#0d0a08');
+  // the frame: two posts and a beam across the top
+  for (let y = ground - 17; y <= ground; y++) [[cx - 9, cx - 8], [cx + 8, cx + 9]].forEach(([a, b]) => { G.set(a, y, '#a8703f'); G.set(b, y, '#6b4422'); });
+  for (let x = Math.round(cx - 10); x <= Math.round(cx + 10); x++) { G.set(x, ground - 18, '#c48a4f'); G.set(x, ground - 17, '#8a5a32'); }
+  // planks nailed across the opening
+  [[ground - 12, 0], [ground - 6, 1]].forEach(([py, k]) => {
+    for (let x = Math.round(cx - 8); x <= Math.round(cx + 8); x++) {
+      const y = py + Math.round((x - cx) * (k ? 0.12 : -0.1));
+      G.set(x, y, '#b98049'); G.set(x, y + 1, '#8a5a32');
+    }
+    G.set(Math.round(cx - 6), py, '#cfcfcf'); G.set(Math.round(cx + 6), py + (k ? 1 : -1), '#cfcfcf');
+  });
+  for (let k = 0; k <= 13; k++) {
+    const x = Math.round(cx - 6 + k), y = ground - 15 + k;
+    G.set(x, y, '#a8703f'); G.set(x + 1, y, '#74491f');
   }
   return G.outline(() => '#262626').canvas();
+}
+
+// moe the mole's den, mailsisi's landmark: a big crater in the mine floor,
+// seen from above, with fresh dirt thrown up all round it, claw gouges in the
+// rim, and the old mine timbers he dug straight through lying broken across
+// the back. it's flat so you walk over it, and walking into the pit takes you
+// down.
+function makeDen() {
+  const w = 56, h = 36, cx = 27.5, cy = 20;
+  const G = pixelGrid(w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (x - cx) / 26, dy = (y - cy) / 15;
+    const d = Math.sqrt(dx * dx + dy * dy) - (hash2(x >> 1, y >> 1, 670) - 0.5) * 0.2;
+    if (d > 1) continue;
+    const pit = ((x - cx) / 15) ** 2 + ((y - cy - 0.5) / 8.5) ** 2;
+    let col;
+    if (pit <= 1) col = pit > 0.66 && y < cy ? '#2a2018' : pit > 0.8 ? '#1a130e' : '#0b0807';
+    else {
+      const lit = -(dx * 0.5 + dy * 0.9) + (hash2(x, y, 671) - 0.5) * 0.5;
+      col = lit > 0.45 ? '#a8865f' : lit > 0 ? '#8a6a4c' : lit > -0.4 ? '#6b5038' : '#4e3a28';
+      if (hash2(x, y, 672) < 0.05) col = '#9a9a9a';
+    }
+    G.set(x, y, col);
+  }
+  // claw gouges in the rim, three at a time
+  [[10, 24, 1], [44, 26, -1], [16, 31, 1]].forEach(([x0, y0, s]) => {
+    for (let j = 0; j < 3; j++) for (let k = 0; k < 4; k++) G.set(x0 + j * 2 + k * s * 0.5, y0 + k, '#3e2e20');
+  });
+  // broken timbers across the back
+  for (let k = 0; k <= 22; k++) { const x = 9 + k, y = 6 + Math.round(k * 0.18); G.set(x, y, '#a8703f'); G.set(x, y + 1, '#6b4422'); }
+  for (let k = 0; k <= 12; k++) { const x = 34 + k, y = 10 - Math.round(k * 0.35); G.set(x, y, '#8a5a32'); G.set(x, y + 1, '#5e3a1c'); }
+  for (let y = 2; y <= 12; y++) { G.set(46, y, '#a8703f'); G.set(47, y, '#6b4422'); }
+  return G.outline(() => '#2b1e14').canvas();
 }
 
 // home at base camp: the camp tent, made big enough to live in. orange canvas
@@ -728,7 +794,9 @@ const SPRITE = {
   emerald: [makeCrystal('emerald')],
   iron: [makeCrystal('iron')],
   fire: FIRE,
-  cave: [makeCave()]
+  cave: [makeCave()],
+  den: [makeDen()],
+  lair: [makeLair()]
 };
 const DECOR = {
   tree: [makeTree(41, false), makeTree(57, false), makeTree(73, false)],
@@ -736,7 +804,7 @@ const DECOR = {
   deadtree: [makeDeadTree(17, false), makeDeadTree(29, false)]
 };
 const GLOW = {
-  fire: '255,140,50', cave: '150,140,120', gold: '255,210,80', diamond: '95,240,224', ruby: '255,90,74', emerald: '90,230,130', iron: '230,226,220', crystal: '160,214,255', torch: '255,150,60'
+  fire: '255,140,50', cave: '150,140,120', den: '255,214,140', lair: '170,110,80', gold: '255,210,80', diamond: '95,240,224', ruby: '255,90,74', emerald: '90,230,130', iron: '230,226,220', crystal: '160,214,255', torch: '255,150,60'
 };
 
 // the four biomes meet at a wobbly cross instead of a ruler-straight one
@@ -851,23 +919,20 @@ function generate() {
     if (!reach[i] && !SOLID[tiles[i]]) tiles[i] = BIOMES[QUADS[quad[i]]].rock;
   }
 
-  // ore veins: sprinkled along exposed cave walls, and clustered around each
-  // project so the landmark looks like it's being mined out of the rock
+  // ore veins sprinkled along exposed cave walls. diamond and emerald are
+  // very rare on purpose: the way to get them is beating the mines' bosses.
   const r = mulberry32(SEED + 404);
-  const ORE_WEIGHTS = [[T.IRON, 50], [T.GOLD, 22], [T.RUBY, 16], [T.DIAMOND, 10], [T.EMERALD, 6]];
+  const ORE_WEIGHTS = [[T.IRON, 56], [T.GOLD, 25], [T.RUBY, 17], [T.DIAMOND, 1.4], [T.EMERALD, 0.6]];
   const pickOre = () => {
     let roll = r() * 100;
     for (const [t, w] of ORE_WEIGHTS) { roll -= w; if (roll < 0) return t; }
     return T.IRON;
   };
-  const CLUSTER = { iron: 0.5, gold: 0.22, ruby: 0.18, diamond: 0.04, emerald: 0.03 };
   const exposed = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inside(x + dx, y + dy) && !solidTile(x + dx, y + dy));
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = idx(x, y);
     if (tiles[i] !== T.WALL || !exposed(x, y)) continue;
-    const nearPoi = POIS.find(p => p.region === 'mines' && Math.hypot(p.at[0] - x, p.at[1] - y) < 6.5);
-    if (nearPoi && r() < CLUSTER[nearPoi.kind]) tiles[i] = { gold: T.GOLD, diamond: T.DIAMOND, ruby: T.RUBY, emerald: T.EMERALD, iron: T.IRON }[nearPoi.kind];
-    else if (r() < 0.1) tiles[i] = pickOre();
+    if (r() < 0.1) tiles[i] = pickOre();
   }
 }
 
@@ -937,8 +1002,14 @@ function placeDecor() {
       const [hx, hy] = p.at;
       [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0]].forEach(([dx, dy]) => extraSolid.add(idx(hx + dx, hy + dy)));
     }
+    // a lair is the same shape as the cave, but boarded up, so its mouth is
+    // solid too
+    if (p.kind === 'lair') {
+      const [hx, hy] = p.at;
+      [[-1, -1], [0, -1], [1, -1], [-1, 0], [0, 0], [1, 0]].forEach(([dx, dy]) => extraSolid.add(idx(hx + dx, hy + dy)));
+    }
     const t = {
-      poi: p, tx: p.at[0], ty: p.at[1],
+      poi: p, tx: p.at[0], ty: p.at[1], flat: p.kind === 'den',
       x: p.at[0] * TILE + 8, y: p.at[1] * TILE + 14,
       frames: SPRITE[p.kind], fps: p.kind === 'fire' ? 8 : 0
     };

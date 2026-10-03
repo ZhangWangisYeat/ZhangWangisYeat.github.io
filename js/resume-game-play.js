@@ -101,8 +101,8 @@ ITEMS['exotic-core'] = { part: true, get name() { return partsComplete() ? PART_
 // can see from the start, because that's what alex called it.
 ITEMS['forest-heart'] = { part: true, name: 'Forest\'s Heart' };
 // moe's drill, off moe the mole. hold right click and it spins up (see
-// tickDrill). it's a mining tool, not a weapon: swing it at something and it
-// hits like your bare hands (heldTool). it never wears out and takes anything
+// tickDrill). it's a mining tool, not a weapon: swinging it at something does
+// nothing at all (DRILL_SWING). it never wears out and takes anything
 // an emerald pickaxe can. stone and trees go in a blink, but the harder the
 // ore the longer it grinds (oreSpeed): iron is still quick, diamond is about as
 // slow as an iron pickaxe. it just packs snow down, so that's still a job for
@@ -1218,9 +1218,12 @@ function gain(id, n, x, y) {
   sfx.pickup();
 }
 const heldItem = () => inv.slots[inv.sel];
+// moe's drill swings, but it's only for show: it never touches a creature
+const DRILL_SWING = { name: 'Moe\'s Drill', dmg: 0, cd: 0.45, reach: 1.4, cosmetic: true };
 function heldTool() {
   const s = heldItem();
-  return s && ITEMS[s.id].tool && ITEMS[s.id].tool !== 'drill' ? ITEMS[s.id] : FIST;
+  if (s && ITEMS[s.id].tool === 'drill') return DRILL_SWING;
+  return s && ITEMS[s.id].tool ? ITEMS[s.id] : FIST;
 }
 // knock durability off whatever's in your hand, and break it at zero
 function wearHeld(cost) {
@@ -1811,10 +1814,10 @@ function paintDig(cols, rows, door, seed, den) {
 }
 
 // the mines, chapter two. moles have dug holes all over the early mines
-// (MOLE_HOLES in the engine). three of them are burrows, each with a chest of
-// mine loot and a few moles with big teeth in it, and the fourth is moe the
-// mole's den. moe guards the first project landmark, and beating him is what
-// reveals it.
+// (MOLE_HOLES in the engine): three burrows, each with a chest of mine loot and
+// a few moles with big teeth in it. every project landmark in the mines is a
+// boss's lair, and the first one, mailsisi's, is moe the mole's den. beating
+// him is what reveals it.
 const HOLE = makeMoleHole();
 // how far from a hole you come out, and how far in from a hole room's way out
 // you start, so stopping just after going through never leaves you standing
@@ -1842,7 +1845,7 @@ function spawnRoomCreature(kind, r, x, y) {
 
 // a burrow's chest: a little of whatever the moles have dug up. raw iron is
 // nearly always in there, gold and rubies sometimes, an emerald or a diamond
-// only rarely, and sometimes a few iron arrows somebody dropped (handy for
+// hardly ever (those come from the later bosses), and sometimes a few iron arrows somebody dropped (handy for
 // moe). rolled once, the first time the game sees it, and then saved.
 function rollBurrowLoot() {
   const out = [];
@@ -1851,21 +1854,22 @@ function rollBurrowLoot() {
   add(0.45, 'gold-ore', 1, 3);
   add(0.3, 'ruby', 1, 2);
   add(0.35, 'iron-arrow', 2, 4);
-  add(0.1, 'emerald', 1, 1);
-  add(0.06, 'diamond', 1, 1);
+  add(0.03, 'emerald', 1, 1);
+  add(0.02, 'diamond', 1, 1);
   if (out.length < 2) out.push(makeStack('stone', rand(3, 8)));
   return Array.from({ length: 6 }, (_, i) => out[i] || null);
 }
 // moe's chest is the better haul, and it's locked until he's beaten. iron
-// ingots and raw gold for sure, then diamonds, emeralds, a sword and a set of armor, each
-// rarer than the one before. a sword or armor is iron most of the time,
-// emerald sometimes and diamond rarely, since moe is the easiest boss.
+// ingots and raw gold for sure, then maybe a diamond, an emerald, a sword and
+// a set of armor, each rarer than the one before. moe is the easiest boss, so
+// a sword or armor is nearly always iron, and the diamonds and emeralds are
+// kept mostly for the bosses after him.
 function rollDenLoot() {
   const out = [makeStack('iron', rand(3, 6)), makeStack('gold-ore', rand(2, 4))];
   const add = (chance, id, a, b) => { if (Math.random() < chance) out.push(makeStack(id, rand(a, b))); };
-  add(0.4, 'diamond', 1, 2);
-  add(0.25, 'emerald', 1, 2);
-  const tier = () => { const r = Math.random(); return r < 0.08 ? 'diamond' : r < 0.25 ? 'emerald' : 'iron'; };
+  add(0.2, 'diamond', 1, 1);
+  add(0.12, 'emerald', 1, 1);
+  const tier = () => { const r = Math.random(); return r < 0.03 ? 'diamond' : r < 0.12 ? 'emerald' : 'iron'; };
   if (Math.random() < 0.2) out.push(makeStack(`${tier()}-sword`));
   if (Math.random() < 0.1) out.push(makeStack(`${tier()}-armor`));
   return Array.from({ length: 12 }, (_, i) => out[i] || null);
@@ -1914,7 +1918,8 @@ const burrowRooms = BURROWS.map((B, i) => {
 // rocks, the locked chest at the back, and moe himself waiting under the
 // middle of the floor.
 const DEN_COLS = 24, DEN_ROWS = 16, DEN_DOOR = 12;
-const denHole = holeThings[3];
+const denPoi = POIS.find(p => p.kind === 'den');
+const denHole = denPoi.thing;
 const denWalls = roomWalls(DEN_COLS, DEN_ROWS, DEN_DOOR);
 const denRoom = {
   id: 'den', w: DEN_COLS * TILE, h: DEN_ROWS * TILE, dust: '#7a5c40', shade: 0.42, fight: true, sealed: false,
@@ -1971,7 +1976,7 @@ denRoom.glows.push(moeLamp, moeBeam);
 
 BUILDINGS.push(
   ...burrowRooms.map((r, i) => ({ thing: holeThings[i], tile: MOLE_HOLES[i], room: r, name: 'Mole Hole', hole: true, open: () => true, hint: () => false })),
-  { thing: denHole, tile: MOLE_HOLES[3], room: denRoom, name: 'Mole Hole', hole: true, open: () => true, hint: () => false }
+  { thing: denHole, tile: denPoi.at, room: denRoom, name: 'Moe\'s Den', hole: true, pit: { x: denHole.x, y: denHole.y - 15, w: 12 }, open: () => true, hint: () => false }
 );
 
 // the numbers for the fight. tell is how long the floor cracks before he
@@ -2535,6 +2540,7 @@ function attack() {
   faceAngle(a);
   player.swing = 0;
   sfx.swing();
+  if (tool.cosmetic) return;
   let hit = false;
   creatures.forEach(c => { if (inArc(c, a, tool)) { hurtCreature(c, tool.dmg, a); hit = true; } });
   if (hit) wearHeld(1);
@@ -4227,7 +4233,7 @@ function checkChapters() {
     if (Math.hypot(p.thing.x - player.x, p.thing.y - player.y) < TILE * 3.4) {
       sealHinted.add(p.id);
       if (playSealNote(p)) toast('Sealed', '? ? ?', playSealNote(p).replace(/^Sealed\. /, ''));
-      else toast('Guarded', '? ? ?', 'Something down in the mole holes is guarding this');
+      else toast('Guarded', '? ? ?', 'Something big is digging down there');
       sfx.deny();
     }
   });
@@ -4323,7 +4329,8 @@ function checkDoors() {
   const pushing = keys.has('KeyW') || keys.has('ArrowUp');
   for (const b of BUILDINGS) {
     if (b.hole) {
-      if (!player.moving || Math.abs(player.x - b.thing.x) > 9 || Math.abs(player.y - (b.thing.y - 9)) > 5) continue;
+      const pit = b.pit || { x: b.thing.x, y: b.thing.y - 9, w: 9 };
+      if (!player.moving || Math.abs(player.x - pit.x) > pit.w || Math.abs(player.y - pit.y) > 5) continue;
       if (buildingOpen(b)) enterRoom(b.room);
       else lockedToast(regionAt(b.tile[0] + 0.5, b.tile[1] + 0.5));
       return;
@@ -4505,7 +4512,7 @@ function playUpdate(dt, t) {
     const held = heldItem() && ITEMS[heldItem().id];
     const ranged = shootsHere() && held && held.throw;
     const diggable = tgt && !CLICK_ONLY.has(tgt.type) && inReach(tgt) && (!ranged || mineInfo(tgt).time !== Infinity);
-    const fighting = !ranged && creatures.some(c => inArc(c, a, tool));
+    const fighting = !ranged && !tool.cosmetic && creatures.some(c => inArc(c, a, tool));
     if (!fighting && diggable) mineStep(tgt, dt);
     else {
       if (mining && mining.thing) mining.thing.shake = 0;

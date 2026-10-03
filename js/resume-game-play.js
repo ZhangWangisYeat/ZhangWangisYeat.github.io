@@ -4097,13 +4097,13 @@ function renderVitals() {
     return out.join('');
   };
   // hearts fill to the hundredth, so a hit shows exactly what it took after
-  // armor, and the number next to them spells it out
+  // armor (there's no number next to them, alex didn't want the decimals)
   let hearts = '';
   for (let i = 0; i < 5; i++) {
     const f = clamp(vitals.hp - i, 0, 1);
     hearts += `<i style="background-image:url(${HEART.empty})"><b style="width:${(f * 100).toFixed(2)}%;background-image:url(${HEART.full})"></b></i>`;
   }
-  $('#hearts').innerHTML = `${hearts}<span class="hp-num">${vitals.hp.toFixed(2)}</span>`;
+  $('#hearts').innerHTML = hearts;
   // the armor bar: each icon fills with steel for the first 5 points, then the
   // shinier runs lay over the top of it, like minecraft's extra heart rows
   const pts = armorPoints(), tier = pts > 10 ? 2 : pts > 5 ? 1 : 0;
@@ -4113,7 +4113,7 @@ function renderVitals() {
     plates += `<i style="background-image:url(${ARMOR_PT.empty})">${layer(0, ARMOR_PT.steel)}${layer(1, ARMOR_PT.reinforced)}${layer(2, ARMOR_PT.mythic)}</i>`;
   }
   const bar = $('#armor-bar');
-  bar.innerHTML = `${plates}<span class="armor-num">${pts.toFixed(2)}</span>`;
+  bar.innerHTML = plates;
   bar.className = `armor-bar${tier ? ` is-tier${tier}` : ''}`;
   bar.setAttribute('aria-label', `Armor ${pts.toFixed(2)} points, blocks ${Math.round(armorBlock() * 100)}% of every hit`);
   $('#hearts').setAttribute('aria-label', `Health ${vitals.hp.toFixed(2)} of ${vitals.max}`);

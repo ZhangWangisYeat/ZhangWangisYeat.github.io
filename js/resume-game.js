@@ -215,6 +215,10 @@ const SEED = 20250701;
 const CAMP = { x: 60, y: 42, r: 9 };
 const HOUSE = { x: 60, y: 35 };     // the tile the tent's flap is on
 const HYENA_HOME = { x: 33, y: 62 };
+// the mole holes in the early mines, close to camp. the first three are
+// burrows full of moles, the last one is moe the mole's den. from the outside
+// they all look the same, so you don't know which one he's in.
+const MOLE_HOLES = [[69, 48], [71, 61], [86, 66], [84, 49]];
 const SPAWN = { x: 60, y: 45 };
 const QUADS = ['dunes', 'tundra', 'meadows', 'mines'];
 
@@ -785,8 +789,7 @@ function generate() {
 
   // carve a wandering trail from camp to every landmark so nothing is walled
   // off. only solid tiles get carved, which is why lakes survive the trail.
-  POIS.forEach((p, n) => {
-    const [px, py] = p.at;
+  [...POIS.map(p => p.at), ...MOLE_HOLES].forEach(([px, py], n) => {
     const steps = Math.ceil(Math.hypot(px - CAMP.x, py - CAMP.y) * 1.6);
     const nx = -(py - CAMP.y), ny = px - CAMP.x, nl = Math.hypot(nx, ny) || 1;
     for (let s = 0; s <= steps; s++) {
@@ -801,6 +804,7 @@ function generate() {
   // get round you to fight properly. this gives it open ground.
   clear(HYENA_HOME.x, HYENA_HOME.y, 6, true);
   POIS.forEach(p => clear(p.at[0], p.at[1] + 1, 3.2, true));
+  MOLE_HOLES.forEach(([x, y]) => clear(x, y, 2.3, true));
   // camp sits on a clearing of packed earth, so it reads as one tidy place
   // instead of a patchwork of all four biomes' ground
   for (let y = CAMP.y - 8; y <= CAMP.y + 8; y++) for (let x = CAMP.x - 8; x <= CAMP.x + 8; x++) {
@@ -1486,6 +1490,11 @@ function canTravel(poi) {
 }
 
 function travelTo(poi) {
+  if (typeof playTravelBlocked === 'function' && playTravelBlocked()) {
+    toast('No way out', 'Not now', 'Finish the fight first');
+    sfx.deny();
+    return;
+  }
   if (!isFound(poi)) {
     toast('Uncharted', '? ? ?', `Somewhere in ${regionById[poi.region].biome}. Find it on foot first.`);
     sfx.deny();
@@ -1718,10 +1727,8 @@ function update(dt, t) {
 
   // camera: follow when playing, slow drift around camp on the title screen
   let target;
-  if (started && room) {
-    // rooms are small enough to just sit in the middle of the view
-    target = { x: room.w / 2 - focusX / S, y: room.h / 2 - focusY / S };
-  } else if (started) target = camTarget();
+  if (started && room) target = roomCam();
+  else if (started) target = camTarget();
   else {
     const drift = reduceMotion ? 0 : t / 1000;
     target = { x: player.x + Math.sin(drift * 0.09) * 180 - focusX / S, y: player.y + Math.cos(drift * 0.07) * 110 - focusY / S };
@@ -1730,6 +1737,21 @@ function update(dt, t) {
   const k = reduceMotion ? 1 : Math.min(1, dt * (started ? 7 : 1.5));
   cam.x += (target.x - cam.x) * k;
   cam.y += (target.y - cam.y) * k;
+  // the play layer can shake the screen (a boss slamming up out of the floor)
+  const shake = !reduceMotion && typeof playShake === 'function' ? playShake() : 0;
+  if (shake > 0) { cam.x += (Math.random() - 0.5) * 2 * shake; cam.y += (Math.random() - 0.5) * 2 * shake; }
+}
+
+// where the camera wants to be indoors. a room that fits on screen just sits in
+// the middle of it. a bigger one (moe's den) follows you, or whatever the play
+// layer wants to show off, and stops at the walls.
+function roomCam() {
+  const f = (typeof playCamFocus === 'function' && playCamFocus()) || { x: player.x, y: player.y - 10 };
+  const vw2 = canvas.width / S, vh2 = canvas.height / S;
+  return {
+    x: room.w + 32 > vw2 ? clamp(f.x - focusX / S, -16, room.w + 16 - vw2) : room.w / 2 - focusX / S,
+    y: room.h + 32 > vh2 ? clamp(f.y - focusY / S, -16, room.h + 16 - vh2) : room.h / 2 - focusY / S
+  };
 }
 
 function render(t) {

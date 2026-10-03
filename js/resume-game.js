@@ -2261,7 +2261,7 @@ function buildTitle() {
 // nothing ever vanishes at once. new families are started at a gentle, capped
 // rate so the screen never gets crowded. anything nearer the camera than you is
 // drawn in front of you. plotted pixel by pixel (no smoothing) to stay crisp.
-const FLOW = { far: 60, near: 1.4, focal: 120, speed: 15, families: 14, every: 0.45, playerZ: 9 };
+const FLOW = { far: 60, near: 1.4, focal: 120, speed: 15, families: 24, every: 0.4, playerZ: 9 };
 const FLOW_GROW = (FLOW.far - FLOW.near) / FLOW.speed;
 const FLOW_COLS = ['255,214,120', '255,214,120', '255,190,100', '255,170,80', '255,236,200', '255,236,200', '255,130,70', '120,215,255', '190,140,255', '255,120,190'];
 function flowStrand(r, born, opts) {
@@ -2278,7 +2278,7 @@ function flowStrand(r, born, opts) {
   };
   // a new family keeps its timing on its root: how long it lingers once it's
   // fully grown, and how long it takes to dissolve
-  if (!s.fam) { s.fam = s; s.hold = 2.5 + r() * 4; s.fadeDur = 3 + r() * 3; }
+  if (!s.fam) { s.fam = s; s.hold = 7 + r() * 6; s.fadeDur = 4 + r() * 4; }
   const n = s.depth === 0 ? 1 + (r() < 0.6 ? 1 : 0) + (r() < 0.25 ? 1 : 0) : s.depth === 1 ? (r() < 0.8 ? 1 : 0) : s.depth === 2 && r() < 0.4 ? 1 : 0;
   for (let k = 0; k < n; k++) s.forks.push(s.s0 + 4 + r() * 26);
   return s;
@@ -2294,7 +2294,7 @@ function flowLife(s, secs) {
   return k <= 0 ? 1 : k >= 1 ? 0 : 1 - k * k * (3 - 2 * k);
 }
 function flowStep(secs) {
-  const r = Math.random, span = FLOW_GROW + 6.5 + 6;
+  const r = Math.random, span = FLOW_GROW + 13 + 8;
   if (!tv.flow) {
     // start with the screen already populated, as if they'd been coming for a
     // while, with families at every stage of growing and fading

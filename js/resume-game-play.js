@@ -194,7 +194,7 @@ const CREATURES = {
   // grizzly's health, 3 hearts if his drill lunge catches you, and 5 if he
   // comes up out of the floor right under you.
   mole: {
-    name: 'Mole', hp: 6, speed: 62, aggro: 6, leash: 99, range: 2.2, minion: true,
+    name: 'Mole', hp: 6, speed: 62, aggro: 4, leash: 99, range: 2.2, minion: true,
     windup: 0.5, lunge: { speed: 240, time: 0.22 }, cooldown: 1.5, dmg: 1.25,
     knock: 120, h: 20, box: { w: 20, h: 12 }, rest: 'burrowed', regen: 0.04, chip: '120,104,150',
     drops: [['iron-ore', 0, 1]], intro: ['Ambush', 'Moles. Mind the teeth.']
@@ -479,18 +479,30 @@ function makeIcon(id) {
   return G.outline(() => '#141414').canvas();
 }
 // moe's drill in miniature, pointing up to the top right like the other tools:
-// the grip, the hazard yellow motor, the collar and the threaded bit. spin
-// moves the thread along, for the drill turning in your hand.
+// the grip, the chunky hazard striped motor, the collar and the threaded bit.
+// it's worked out along the drill's own axis (u along it, v across it) so the
+// shapes stay fat enough to read at 16px. spin moves the thread along, for
+// the drill turning in your hand.
 function drillIconArt(G, spin) {
-  pxLine(G, 1, 14, 3, 12, '#2b2b33', 2);
-  for (let k = 0; k <= 4; k++) {
-    const x = 4 + k, y = 11 - k;
-    [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1]].forEach(([a, b]) => G.set(x + a, y + b, (k + a - b + 4) % 2 ? '#1f1f24' : '#f2c84b'));
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const px = x + 0.5 - 1.5, py = y + 0.5 - 14.5;
+    const u = (px - py) / Math.SQRT2, v = (px + py) / Math.SQRT2;
+    let half, col;
+    if (u < 0 || u > 18.6) continue;
+    if (u < 3) { half = 1.2; col = '#2b2b33'; }
+    else if (u < 10) {
+      half = 2.7;
+      col = v < -1.6 ? '#fff0a0' : v > 1.6 ? '#a8800f' : Math.floor((u + v) * 0.7) % 2 ? '#1f1f24' : '#f2c84b';
+    } else if (u < 11.2) { half = 2.3; col = v < 0 ? '#ffffff' : '#827d77'; }
+    else {
+      half = 2.2 * (1 - (u - 11.2) / 7.4) + 0.35;
+      const thread = (((u * 1.1 + v + spin * 1.5) % 3) + 3) % 3 < 1;
+      col = thread ? '#4f5768' : v < -0.3 ? '#eef2f8' : '#8a93a6';
+    }
+    if (Math.abs(v) > half) continue;
+    G.set(x, y, col);
   }
-  G.set(9, 6, '#ffffff'); G.set(9, 7, '#c9c4bd'); G.set(10, 7, '#827d77'); G.set(8, 6, '#c9c4bd');
-  pxLine(G, 10, 5, 14, 1, '#b4bccb', 2);
-  [[11 + spin, 4 - spin], [13 - spin, 2 + spin]].forEach(([x, y]) => G.set(x, y, '#4f5768'));
-  G.set(15, 1, '#ffffff');
+  G.set(14, 1, '#ffffff');
 }
 // canvases for drawing items in your hand, data urls for the html slots
 const ICON_CANVAS = Object.fromEntries(Object.keys(ITEMS).map(id => [id, makeIcon(id)]));
@@ -1835,13 +1847,12 @@ function rollBurrowLoot() {
   return Array.from({ length: 6 }, (_, i) => out[i] || null);
 }
 // moe's chest is the better haul, and it's locked until he's beaten. iron
-// ingots for sure, then diamonds, emeralds, a sword and a set of armor, each
+// ingots and raw gold for sure, then diamonds, emeralds, a sword and a set of armor, each
 // rarer than the one before. a sword or armor is iron most of the time,
 // emerald sometimes and diamond rarely, since moe is the easiest boss.
 function rollDenLoot() {
-  const out = [makeStack('iron', rand(3, 6))];
+  const out = [makeStack('iron', rand(3, 6)), makeStack('gold-ore', rand(2, 4))];
   const add = (chance, id, a, b) => { if (Math.random() < chance) out.push(makeStack(id, rand(a, b))); };
-  add(0.6, 'gold-ore', 2, 4);
   add(0.4, 'diamond', 1, 2);
   add(0.25, 'emerald', 1, 2);
   const tier = () => { const r = Math.random(); return r < 0.08 ? 'diamond' : r < 0.25 ? 'emerald' : 'iron'; };
@@ -1957,7 +1968,7 @@ BUILDINGS.push(
 // tells, shorter openings, more pops before he climbs out.
 const MOE = {
   dig: 0.8, chase: 1.3, chaseAgain: 0.8, tell: 0.95, tellMad: 0.75, pop: 0.3, stuck: 2.4, stuckMad: 2, climb: 0.6,
-  pops: 3, popsMad: 4, popR: 18, stuckSink: 0.45, under: 150, underMad: 190, mad: 0.5
+  pops: 3, popsMad: 4, popR: 18, stuckSink: 0.3, under: 150, underMad: 190, mad: 0.5
 };
 let cine = null, shakeAmp = 0;
 const bossHints = new Set();
@@ -2308,8 +2319,8 @@ function drawMoe(c, toX, toY, t) {
   // pointing up, the drill goes behind him
   const behind = Math.sin(c.aim) < -0.35;
   ctx.save();
-  // whatever's below the floor line is down the hole
-  if (sinkPx > 0) { ctx.beginPath(); ctx.rect(0, 0, canvas.width, toY(c.y + 1)); ctx.clip(); }
+  // whatever's below the middle of the hole is down it
+  if (sinkPx > 0) { ctx.beginPath(); ctx.rect(0, 0, canvas.width, toY(c.y - 2)); ctx.clip(); }
   if (behind) drill();
   if (c.flip) {
     ctx.translate(toX(left) + MOE_W * S, toY(top));
@@ -2319,6 +2330,7 @@ function drawMoe(c, toX, toY, t) {
   } else ctx.drawImage(img, toX(left), toY(top), MOE_W * S, MOE_H * S);
   if (!behind) drill();
   ctx.restore();
+  if (sinkPx > 0) drawHoleRim(c, toX, toY, true);
   // the tell before a lunge, same red "!" as everything else
   if (c.state === 'windup') {
     const fs = Math.max(16, 8 * Math.round((S * 5.3) / 8)), mw = Math.round(fs * 0.9);
@@ -2341,6 +2353,29 @@ function drawMoe(c, toX, toY, t) {
     }
   }
 }
+// the hole moe digs: a dark pit with a ring of thrown up dirt round it, lit on
+// top. drawn in two halves, the back (with the pit) under him and the front
+// lip over him, so he looks like he's standing down in it.
+const HOLE_RX = 26, HOLE_RY = 8;
+function drawHoleRim(c, toX, toY, front) {
+  const cx = Math.round(c.x), cy = Math.round(c.y - 3);
+  for (let y = -HOLE_RY - 1; y <= HOLE_RY + 1; y++) {
+    if (front ? y < 0 : y >= 0 && y > 2) continue;
+    for (let x = -HOLE_RX - 1; x <= HOLE_RX + 1; x++) {
+      const d = Math.sqrt((x / HOLE_RX) ** 2 + (y / HOLE_RY) ** 2) + (hash2(x >> 1, y, 91) - 0.5) * 0.12;
+      if (d > 1.06) continue;
+      let col;
+      if (d > 1) col = '#2b1e14';
+      else if (d > 0.74) {
+        const lit = -y / HOLE_RY + (hash2(x, y, 92) - 0.5) * 0.6;
+        col = d < 0.8 ? '#4e3a28' : lit > 0.3 ? '#c09a70' : lit > -0.3 ? '#a8865f' : '#7a5c40';
+      } else if (front) continue;
+      else col = d > 0.62 ? '#2a1e14' : '#0d0a08';
+      ctx.fillStyle = col;
+      ctx.fillRect(toX(cx + x), toY(cy + y), S, S);
+    }
+  }
+}
 // cracks for the tell: a few jagged lines out from the middle, worked out once
 const CRACKS = (() => {
   const r = mulberry32(4242), out = [];
@@ -2356,41 +2391,50 @@ function drawMoeFloor(o, toX, toY, t) {
   const c = moe;
   if (c.gone || c.state === 'wait') return;
   const P = (x, y, col, w = 1, h = 1) => { ctx.fillStyle = col; ctx.fillRect(toX(x), toY(y), w * S, h * S); };
-  // the hole he's standing in
-  if (!c.under && c.sink > 0.02) {
-    for (let y = -5; y <= 5; y++) {
-      const half = Math.round(Math.sqrt(1 - (y / 5.5) ** 2) * 20);
-      P(c.x - half, c.y - 2 + y, Math.abs(y) >= 4 ? '#4e3a28' : '#0d0a08', half * 2, 1);
-    }
-    for (let i = 0; i < 14; i++) {
-      const a = (i / 14) * Math.PI * 2;
-      P(c.x + Math.cos(a) * 22, c.y - 2 + Math.sin(a) * 6.5, i % 2 ? '#8a6a4c' : '#6b5038', 3, 2);
-    }
-  }
-  // the furrow he leaves behind under the floor, and the bulge where he is
+  // the hole he's in: the dark pit and the back half of its rim (the front
+  // half is drawn over him, in drawMoe)
+  if (!c.under && c.sink > 0.02) drawHoleRim(c, toX, toY, false);
+  // the furrow he pushes up behind him under the floor, fading out the
+  // further back it goes, and the bulge where he is right now
   if (c.state === 'under' || c.state === 'tell') {
-    c.trail.forEach(([x, y], i) => P(x, y, `rgba(42,30,20,${0.25 + (0.5 * i) / c.trail.length})`, 2, 1));
+    const n = c.trail.length;
+    c.trail.forEach(([x, y], i) => {
+      ctx.globalAlpha = 0.25 + (0.75 * i) / n;
+      P(x - 2, y - 2, '#a8865f', 4, 1);
+      P(x - 2, y - 1, '#6b5038', 4, 1);
+    });
+    ctx.globalAlpha = 1;
   }
   if (c.state === 'under') {
     const j = reduceMotion ? 0 : Math.round(Math.sin(t / 40));
-    for (let y = -3; y <= 1; y++) {
-      const half = Math.round(Math.sqrt(1 - ((y + 1) / 3) ** 2) * 9);
-      P(c.mx - half + j, c.my - 2 + y, y < -1 ? '#a8865f' : '#8a6a4c', half * 2, 1);
+    P(c.mx - 12, c.my, 'rgba(0,0,0,0.25)', 24, 2);
+    // a lumpy dome of dirt, lit on top
+    for (let y = -9; y <= 0; y++) {
+      const half = Math.round(Math.sqrt(1 - (y / 9.5) ** 2) * 11 + (hash2(y, Math.floor(t / 120), 77) - 0.5) * 2);
+      P(c.mx - half - 1 + j, c.my - 1 + y, '#3e2e20', half * 2 + 2, 1);
+      if (y > -9) P(c.mx - half + j, c.my - 1 + y, y < -6 ? '#c09a70' : y < -2 ? '#a8865f' : '#7a5c40', half * 2, 1);
     }
+    [[-6, -6], [3, -7], [8, -4]].forEach(([dx, dy]) => P(c.mx + dx + j, c.my + dy, '#9a9a9a', 2, 1));
   }
-  // the tell: cracks spreading and a red ring pulsing where he'll come up
+  // the tell: the floor glows red and cracks open where he's about to come up,
+  // with a thick ring round the edge pulsing faster and faster. it has to be
+  // impossible to miss, it's the whole point of the fight.
   if (c.tellK !== null && c.spot) {
-    const k = c.tellK, sx = c.spot.x, sy = c.spot.y - 2;
-    CRACKS.forEach(line => line.slice(0, Math.ceil(line.length * Math.min(1, k * 1.3))).forEach(([x, y]) => P(sx + x, sy + y, '#1e140c')));
-    const pulse = reduceMotion ? 1 : 0.5 + 0.5 * Math.sin(t / 55);
-    for (let i = 0; i < 40; i++) {
-      const a = (i / 40) * Math.PI * 2;
-      P(sx + Math.cos(a) * MOE.popR, sy + Math.sin(a) * MOE.popR * 0.6, `rgba(255,70,50,${(0.3 + 0.6 * pulse) * Math.min(1, k * 2)})`);
-    }
-    ctx.fillStyle = `rgba(255,60,40,${0.1 * k})`;
-    for (let y = -10; y <= 10; y++) {
-      const half = Math.round(Math.sqrt(Math.max(0, 1 - (y / 10.8) ** 2)) * MOE.popR);
+    const k = c.tellK, sx = c.spot.x, sy = c.spot.y - 2, R = MOE.popR;
+    const pulse = reduceMotion ? 1 : 0.5 + 0.5 * Math.sin(t / (70 - 40 * k));
+    ctx.fillStyle = `rgba(255,50,30,${(0.12 + 0.18 * pulse) * Math.min(1, k * 2)})`;
+    for (let y = -Math.round(R * 0.6); y <= Math.round(R * 0.6); y++) {
+      const half = Math.round(Math.sqrt(Math.max(0, 1 - (y / (R * 0.6 + 0.5)) ** 2)) * R);
       ctx.fillRect(toX(sx - half), toY(sy + y), half * 2 * S, S);
+    }
+    CRACKS.forEach(line => line.slice(0, Math.ceil(line.length * Math.min(1, k * 1.4))).forEach(([x, y]) => {
+      P(sx + x, sy + y - 1, '#c09a70', 2, 1);
+      P(sx + x, sy + y, '#140c06', 2, 2);
+    }));
+    const ring = `rgba(255,${Math.round(90 + 120 * pulse)},60,${Math.min(1, 0.45 + 0.55 * pulse) * Math.min(1, k * 2.5)})`;
+    for (let i = 0; i < 64; i++) {
+      const a = (i / 64) * Math.PI * 2;
+      P(sx + Math.cos(a) * R - 1, sy + Math.sin(a) * R * 0.6 - 1, ring, 2, 2);
     }
   }
 }
@@ -4180,12 +4224,15 @@ function checkChapters() {
   }
   wasComplete = done;
   if (room) return;
-  // walking up to a sealed landmark tells you once why nothing happened
+  // walking up to a sealed landmark tells you once why nothing happened. a
+  // mines landmark whose boss is still alive says where to look instead.
   POIS.forEach(p => {
-    if (sealHinted.has(p.id) || found.has(p.id) || p.thing.gone || !playSealNote(p)) return;
+    const guarded = !!MINE_BOSSES[p.id] && playLandmarkGuarded(p);
+    if (sealHinted.has(p.id) || found.has(p.id) || p.thing.gone || !(playSealNote(p) || guarded)) return;
     if (Math.hypot(p.thing.x - player.x, p.thing.y - player.y) < TILE * 3.4) {
       sealHinted.add(p.id);
-      toast('Sealed', '? ? ?', playSealNote(p).replace(/^Sealed\. /, ''));
+      if (playSealNote(p)) toast('Sealed', '? ? ?', playSealNote(p).replace(/^Sealed\. /, ''));
+      else toast('Guarded', '? ? ?', 'Something down in the mole holes is guarding this');
       sfx.deny();
     }
   });

@@ -774,6 +774,96 @@ body.is-cine .hud-left,
 body.is-cine .toast,
 body.is-cine .boss-bar { opacity: 0; }
 
+.talk {
+  position: fixed;
+  left: var(--focus-x, 50vw);
+  bottom: 118px;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px));
+  padding: 14px 20px 12px;
+  background: var(--panel);
+  box-shadow: inset 0 0 0 var(--n) #e8e1cc;
+  z-index: 19;
+}
+.talk[hidden] { display: none; }
+.talk-name {
+  font-family: var(--px);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #e8e1cc;
+}
+.talk-text { margin-top: 6px; min-height: 2.9em; font-size: 0.98rem; line-height: 1.45; color: var(--ink); }
+.talk-hint {
+  margin-top: 4px;
+  text-align: right;
+  font-family: var(--px);
+  font-size: 0.52rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+  animation: bob 0.9s steps(2) infinite;
+}
+.talk.is-reply { box-shadow: inset 0 0 0 var(--n) var(--accent); }
+.talk.is-reply .talk-name,
+.talk.is-reply .talk-text { color: var(--accent); }
+body.is-talking .toast { opacity: 0; }
+
+.race-help {
+  position: fixed;
+  top: 50%;
+  left: var(--focus-x, 50vw);
+  transform: translate(-50%, -50%);
+  width: min(420px, calc(100vw - 32px));
+  padding: 22px 24px 20px;
+  background: var(--panel);
+  box-shadow: inset 0 0 0 var(--n) var(--accent);
+  text-align: center;
+  z-index: 25;
+}
+.race-help[hidden] { display: none; }
+.rh-eyebrow {
+  font-family: var(--px);
+  font-size: 0.58rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.rh-title {
+  margin-top: 4px;
+  font-family: var(--head);
+  font-weight: 700;
+  font-size: 1.8rem;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.rh-demo {
+  display: block;
+  width: 220px;
+  height: 110px;
+  margin: 14px auto 0;
+  image-rendering: pixelated;
+  box-shadow: 0 0 0 2px var(--edge);
+}
+.rh-keys { display: flex; justify-content: center; gap: 10px; margin-top: 14px; }
+.rh-key { display: grid; justify-items: center; gap: 4px; font-family: var(--px); font-size: 0.52rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.rh-key kbd {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  font-size: 0.9rem;
+  color: var(--ink);
+  background: var(--panel-2);
+  box-shadow: inset 0 0 0 2px var(--edge-hi), 0 3px 0 #000;
+}
+.rh-key.is-down kbd { background: var(--accent); color: #111; transform: translateY(2px); box-shadow: inset 0 0 0 2px #000, 0 1px 0 #000; }
+.rh-key.is-down { color: var(--ink); }
+.rh-list { margin: 14px 0 16px; padding-left: 18px; text-align: left; font-size: 0.84rem; line-height: 1.45; color: var(--ink-2); }
+.rh-list li + li { margin-top: 5px; }
+.rh-list b { color: var(--accent); }
+body.is-help .toast { opacity: 0; }
+
 .warp {
   position: fixed;
   inset: 0;

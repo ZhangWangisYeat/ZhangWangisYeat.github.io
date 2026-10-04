@@ -118,6 +118,31 @@
     </div>
   </div>
 
+  <div class="talk px" id="talk" role="status" aria-live="polite" hidden>
+    <p class="talk-name" id="talk-name"></p>
+    <p class="talk-text" id="talk-text"></p>
+    <p class="talk-hint">Click or Space</p>
+  </div>
+  <div class="race-help px" id="race-help" role="dialog" aria-labelledby="race-help-title" hidden>
+    <p class="rh-eyebrow">Minecart race</p>
+    <p class="rh-title" id="race-help-title">How to drive</p>
+    <canvas class="rh-demo" id="race-demo" width="220" height="110" aria-hidden="true"></canvas>
+    <div class="rh-keys">
+      <div class="rh-key" data-key="W"><kbd>W</kbd><span>Go</span></div>
+      <div class="rh-key" data-key="A"><kbd>A</kbd><span>Left</span></div>
+      <div class="rh-key" data-key="S"><kbd>S</kbd><span>Brake</span></div>
+      <div class="rh-key" data-key="D"><kbd>D</kbd><span>Right</span></div>
+    </div>
+    <ul class="rh-list">
+      <li>The faster you go, the wider you turn. Brake for the sharp bends.</li>
+      <li>Hit a gem and you spin out. <b>Mash W</b> to steady the cart, or it grinds to a stop.</li>
+      <li>Fall in a hole and <b>mash W</b> to climb back out.</li>
+      <li>Jagged rocks crack your cart, and it stays slower for the rest of the race.</li>
+      <li>Mud and water slow you down. Mud is worse.</li>
+    </ul>
+    <button type="button" class="px-btn px px-btn-primary" id="race-help-go">Let's race</button>
+  </div>
+
   <div class="warp" id="warp" aria-hidden="true"></div>
 
   <section class="title" id="title" aria-label="Title screen">
@@ -153,5 +178,6 @@
 
   <script src="js/resume-game.js"></script>
   <script src="js/resume-game-play.js"></script>
+  <script src="js/resume-game-race.js"></script>
 </body>
 </html>

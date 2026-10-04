@@ -349,6 +349,7 @@ function armorIcon(G, P) {
 // string from tip to tip, pulled back by `pull`. it faces along (ux, uy) with
 // the grip at (gx, gy), and plot(x, y, colour) puts down one pixel. hands back
 // where the nock is, for the arrow.
+const BOW_L = 6.5, BOW_BEND = 3.5;
 function bowShape(plot, gx, gy, ux, uy, L, bend, pull) {
   const vx = -uy, vy = ux;
   const limb = t => [gx + vx * L * t - ux * bend * t * t, gy + vy * L * t - uy * bend * t * t];
@@ -513,9 +514,9 @@ function makeIcon(id) {
       pxLine(G, 3, 13, 6, 6, '#bdb8ac'); pxLine(G, 10, 13, 13, 6, '#bdb8ac');
       break;
     case 'bow':
-      // the same bow you see when you draw it (bowShape), at rest, facing up
-      // to the top right like the other tools
-      bowShape((x, y, c) => G.set(Math.round(x), Math.round(y), c), 10, 6, Math.SQRT1_2, -Math.SQRT1_2, 6.5, 3.5, 0);
+      // the same bow you hold and draw (bowShape, see drawDrawnBow), at rest,
+      // facing up and to the left (alex wanted it left facing)
+      bowShape((x, y, c) => G.set(Math.round(x), Math.round(y), c), 5, 6, -Math.SQRT1_2, -Math.SQRT1_2, BOW_L, BOW_BEND, 0);
       break;
     case 'poison-meat':
       pxBlob(G, 8, 9, 6, 4.2, (dx, dy, x, y) => (hash2(x, y, 8) < 0.2 ? '#7a3f8f' : dy < -0.5 ? '#9fbf6a' : '#6f8f3a'));
@@ -4885,12 +4886,16 @@ function playDrawHeld(dx, dy, row, col, front) {
 // your aim (bowAng eases between the two, see tickBowAngle), an arrow appears
 // on the string and you pull it back. the grip is out in front of you along
 // bowAng, the limbs curve back towards you and bend further the more you draw,
-// and the arrow lies along the aim with its nock on the string. hx, hy is
-// your feet on screen.
+// and the arrow lies along the aim with its nock on the string. it's built
+// exactly like the inventory icon (same size, same colours, same dark
+// outline, alex wanted them to match) on a little grid, which is cached by
+// angle and draw so it isn't rebuilt every frame. hx, hy is your feet on
+// screen.
 let bowAng = Math.PI / 2;
 function bowRestAngle() {
-  // held low at your side in your bow hand, a little out from the body
-  if (player.face === 'down') return 0.6;
+  // held low at your side in your bow hand, a little out from the body,
+  // pointing left when you face the camera (alex: left facing, like the icon)
+  if (player.face === 'down') return Math.PI - 0.6;
   if (player.face === 'up') return -Math.PI + 0.6;
   return player.flip ? Math.PI - 0.3 : 0.3;
 }
@@ -4901,27 +4906,40 @@ function tickBowAngle(dt) {
   d = Math.atan2(Math.sin(d), Math.cos(d));
   bowAng += d * Math.min(1, dt * (aiming ? 22 : 12));
 }
-function drawDrawnBow(hx, hy) {
-  const a = bowAng, ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux, c = bowCharge();
-  const head = MAT_PAL[ITEMS[bestArrow() || 'wood-arrow'].arrow];
-  const plot = (x, y, col) => { ctx.fillStyle = col; ctx.fillRect(hx + Math.round(x) * S, hy + Math.round(y) * S, S, S); };
+const BOW_GRID = 56, BOW_OX = 28, BOW_OY = 34, bowCache = new Map();
+function heldBowCanvas(a, c, mat) {
+  const steps = 64, k = ((Math.round((a / (Math.PI * 2)) * steps) % steps) + steps) % steps;
+  const ck = Math.round(c * 12), key = `${k}|${ck}|${mat}`;
+  let cv = bowCache.get(key);
+  if (cv) return cv;
+  const ang = (k / steps) * Math.PI * 2, ux = Math.cos(ang), uy = Math.sin(ang), vx = -uy, vy = ux, cc = ck / 12;
+  const G = pixelGrid(BOW_GRID, BOW_GRID);
+  const plot = (x, y, col) => G.set(Math.round(x) + BOW_OX, Math.round(y) + BOW_OY, col);
   const line = (x0, y0, x1, y1, col) => {
     const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 1.5));
     for (let i = 0; i <= n; i++) plot(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, col);
   };
+  const nock = bowShape(plot, ux * 10, -9 + uy * 9, ux, uy, BOW_L, BOW_BEND + cc * 2.5, cc * 5);
+  // the arrow, only while you're drawing
+  if (mat) {
+    const head = MAT_PAL[mat], tip = [nock[0] + ux * 13, nock[1] + uy * 13];
+    line(nock[0], nock[1], tip[0] - ux * 2, tip[1] - uy * 2, '#c48a4f');
+    line(tip[0] - ux * 2, tip[1] - uy * 2, tip[0], tip[1], head[1]);
+    plot(tip[0], tip[1], head[0]);
+    plot(nock[0] + ux + vx, nock[1] + uy + vy, '#ffffff');
+    plot(nock[0] + ux - vx, nock[1] + uy - vy, '#ffffff');
+  }
+  cv = G.outline(() => '#141414').canvas();
+  if (bowCache.size > 600) bowCache.clear();
+  bowCache.set(key, cv);
+  return cv;
+}
+function drawDrawnBow(hx, hy) {
+  const mat = bowDraw ? ITEMS[bestArrow() || 'wood-arrow'].arrow : '';
+  const cv = heldBowCanvas(bowAng, bowCharge(), mat);
   ctx.save();
   if (player.blink) ctx.globalAlpha = 0.4;
-  const nock = bowShape(plot, ux * 11, -9 + uy * 10, ux, uy, 8, 4.3 + c * 2.5, c * 6);
-  ctx.restore();
-  if (!bowDraw) return;
-  ctx.save();
-  if (player.blink) ctx.globalAlpha = 0.4;
-  const tip = [nock[0] + ux * 14, nock[1] + uy * 14];
-  line(nock[0], nock[1], tip[0] - ux * 2, tip[1] - uy * 2, '#c48a4f');
-  line(tip[0] - ux * 2, tip[1] - uy * 2, tip[0], tip[1], head[1]);
-  plot(tip[0], tip[1], head[0]);
-  plot(nock[0] + ux + vx, nock[1] + uy + vy, '#ffffff');
-  plot(nock[0] + ux - vx, nock[1] + uy - vy, '#ffffff');
+  ctx.drawImage(cv, hx - BOW_OX * S, hy - BOW_OY * S, BOW_GRID * S, BOW_GRID * S);
   ctx.restore();
 }
 

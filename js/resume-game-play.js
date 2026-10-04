@@ -1197,9 +1197,11 @@ function validStack(s) {
   if (ITEMS[s.id].dur) out.dur = clamp(+s.dur || ITEMS[s.id].dur, 1, ITEMS[s.id].dur);
   return out;
 }
+let savedGround = [];
 function loadSave() {
   const data = store.read(SAVE_KEY, null);
   if (!data || ![1, 2, 3].includes(data.v)) return;
+  if (Array.isArray(data.ground)) savedGround = data.ground;
   if (Array.isArray(data.inv?.slots)) data.inv.slots.slice(0, 24).forEach((s, i) => { inv.slots[i] = validStack(s); });
   // a worn old-style armor becomes a full set of that material, same wear
   const worn = data.inv?.armor;
@@ -1263,7 +1265,7 @@ function fixFoundIds() {
 }
 function saveNow() {
   if (resetting) return;
-  store.write(SAVE_KEY, { v: 3, inv, quest, hp: vitals.hp, hunger: vitals.hunger, sat: vitals.sat, furnace: furnaceState, chest: chestSlots, clock });
+  store.write(SAVE_KEY, { v: 3, inv, quest, ground: ground.map(g => ({ st: g.st, x: g.x, y: g.y, room: g.room, age: g.age })), hp: vitals.hp, hunger: vitals.hunger, sat: vitals.sat, furnace: furnaceState, chest: chestSlots, clock });
   saveDirty = false;
   lastSave = performance.now();
 }
@@ -1931,6 +1933,124 @@ function paintDig(cols, rows, door, seed, den) {
   return c;
 }
 
+// things on the ground: dropped with q, or spilled when you die. each one is a
+// stack lying somewhere (out in the world, or in a room) that bobs a little
+// and is picked up by walking over it. dropping the same thing on the same
+// spot piles it onto what's already there. everything on the ground goes
+// after 5 minutes, wherever you are (the last 15 seconds it blinks).
+const GROUND_LIFE = 300, PICKUP_R = 12;
+const ground = [];
+// quest parts and moe's drill are one of a kind, so they never leave you: you
+// can't drop them, and you keep them when you die
+const keepOnDeath = st => !!ITEMS[st.id].part || st.id === 'moe-drill';
+function groundThing(g) {
+  g.thing = { x: g.x, y: g.y, frames: [ICON_CANVAS[g.st.id]], draw: drawGround, ground: g };
+  (g.room ? roomById(g.room).things : things).push(g.thing);
+}
+function dropStack(st, x, y, r, wait = 1) {
+  const max = maxStack(st.id), rid = r ? r.id : null;
+  if (max > 1) {
+    const pile = ground.find(g => g.room === rid && g.st.id === st.id && g.st.n < max && Math.hypot(g.x - x, g.y - y) < 10);
+    if (pile) {
+      const k = Math.min(max - pile.st.n, st.n);
+      pile.st.n += k;
+      pile.age = 0;
+      st = { ...st, n: st.n - k };
+      if (!st.n) { markDirty(); return; }
+    }
+  }
+  const g = { st: { ...st }, x, y, room: rid, age: 0, wait };
+  ground.push(g);
+  groundThing(g);
+  markDirty();
+}
+function removeGround(g) {
+  ground.splice(ground.indexOf(g), 1);
+  const list = g.room ? roomById(g.room).things : things;
+  const i = list.indexOf(g.thing);
+  if (i >= 0) list.splice(i, 1);
+  markDirty();
+}
+// how many of a stack would fit in your bag right now
+function roomFor(st) {
+  const max = maxStack(st.id);
+  if (max === 1) return inv.slots.some(s => !s) ? 1 : 0;
+  return inv.slots.reduce((n, s) => n + (!s ? max : s.id === st.id ? max - s.n : 0), 0);
+}
+let fullHintT = 0;
+function tickGround(dt) {
+  fullHintT -= dt;
+  const here = room ? room.id : null;
+  for (let i = ground.length - 1; i >= 0; i--) {
+    const g = ground[i];
+    g.age += dt;
+    g.wait = Math.max(0, g.wait - dt);
+    if (g.age >= GROUND_LIFE) { removeGround(g); continue; }
+    if (player.dead || g.wait > 0 || g.room !== here || Math.hypot(g.x - player.x, g.y - player.y) > PICKUP_R) continue;
+    const k = Math.min(g.st.n, roomFor(g.st));
+    if (!k) {
+      if (fullHintT <= 0) { floatText('Bag full', player.x, player.y - 34, '#cfcfcf'); fullHintT = 2; }
+      continue;
+    }
+    if (maxStack(g.st.id) === 1) addStack({ ...g.st });
+    else addItem(g.st.id, k);
+    floatText(`+${k} ${ITEMS[g.st.id].name}`, g.x, g.y - 14, '#9bf07a');
+    sfx.pickup();
+    g.st.n -= k;
+    if (!g.st.n) removeGround(g);
+  }
+}
+function drawGround(o, toX, toY, t) {
+  const g = o.ground, img = ICON_CANVAS[g.st.id];
+  // blinking out in its last 15 seconds
+  if (GROUND_LIFE - g.age < 15 && Math.floor(t / 150) % 2) return;
+  const bob = reduceMotion ? 0 : Math.round(Math.sin(t / 350 + g.x) * 1.5);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillRect(toX(g.x - 5), toY(g.y - 1), 10 * S, 2 * S);
+  // a pile shows a second one peeking out behind
+  if (g.st.n > 1) ctx.drawImage(img, toX(g.x - 4), toY(g.y - 15 + bob), 12 * S, 12 * S);
+  ctx.drawImage(img, toX(g.x - 6), toY(g.y - 13 + bob), 12 * S, 12 * S);
+}
+function groundAt(m) {
+  const here = room ? room.id : null;
+  return ground.find(g => g.room === here && Math.abs(m.x - g.x) < 8 && m.y > g.y - 16 && m.y < g.y + 2) || null;
+}
+// out of a slot: one, or the whole stack. it lands a step in front of you,
+// the way you're aiming (or at your feet if that's a wall).
+function dropFrom(ref, all) {
+  const st = slotGet(ref);
+  if (!st || ref.startsWith('out')) return;
+  if (keepOnDeath(st)) { floatText('You can\'t drop that', player.x, player.y - 34, '#cfcfcf'); sfx.deny(); return; }
+  const n = all ? st.n : 1;
+  const out = { ...st, n };
+  st.n -= n;
+  if (!st.n) slotSet(ref, null);
+  const a = aimAngle();
+  let x = player.x + Math.cos(a) * 20, y = player.y + Math.sin(a) * 20;
+  if (blocked(x, y)) { x = player.x; y = player.y + 2; }
+  dropStack(out, x, y, room, 1.2);
+  sfx.swing();
+  afterInventoryChange();
+}
+// dying spills everything round where you fell, except the one of a kind
+// things. it all waits there for 5 minutes, even in a boss's den: walk back
+// in (the boss starts again from full) and it's still lying on the floor.
+function spillInventory() {
+  const all = [];
+  inv.slots.forEach((st, i) => { if (st && !keepOnDeath(st)) { all.push(st); inv.slots[i] = null; } });
+  ARMOR_SLOTS.forEach(a => { if (inv.armor[a.key]) { all.push(inv.armor[a.key]); inv.armor[a.key] = null; } });
+  all.forEach(st => {
+    let x = player.x, y = player.y;
+    for (let tries = 0; tries < 10; tries++) {
+      const a = Math.random() * Math.PI * 2, d = 8 + Math.random() * 26;
+      const tx = player.x + Math.cos(a) * d, ty = player.y + Math.sin(a) * d * 0.8;
+      if (!blocked(tx, ty)) { x = tx; y = ty; break; }
+    }
+    dropStack(st, x, y, room, 2);
+  });
+  markDirty();
+}
+
 // the mines, chapter two. moles have dug holes all over the early mines
 // (MOLE_HOLES in the engine): three burrows, each with a chest of mine loot and
 // a few moles with big teeth in it. every project landmark in the mines is a
@@ -2103,7 +2223,10 @@ BUILDINGS.push(
 // tells, shorter openings, more pops before he climbs out.
 const MOE = {
   dig: 0.8, chase: 1.3, chaseAgain: 0.8, tell: 0.95, tellMad: 0.75, pop: 0.3, stuck: 2.4, stuckMad: 2, climb: 0.6,
-  pops: 3, popsMad: 4, popR: 18, stuckSink: 0.3, under: 150, underMad: 190, mad: 0.5
+  pops: 3, popsMad: 4, stuckSink: 0.3, under: 150, underMad: 190, mad: 0.5,
+  // how far his drill reaches from his hand: anywhere in front of him closer
+  // than this and the bit is in you
+  reach: 40, keep: 4.5, backOff: 2.5
 };
 let cine = null, shakeAmp = 0;
 const bossHints = new Set();
@@ -2146,10 +2269,21 @@ function updateMoe(c, dt) {
   c.spin += dt * (['windup', 'lunge', 'dig', 'pop', 'stuck'].includes(c.state) ? 30 : 12);
   const img = moeFrame(c, performance.now());
   const hand = moePoint(c, MOE_HAND, img);
-  const toYou = Math.atan2(player.y - 10 - hand.y, player.x - hand.x);
+  // aimed from the middle of his body, not his hand: the hand moves when he
+  // turns round, which moved the aim, which turned him round again, and he
+  // twitched back and forth whenever you were above or below him
+  const toYou = Math.atan2(player.y - 10 - (c.y - 24), player.x - c.x);
+  // the drill swings round smoothly (eased, with a top speed) instead of
+  // snapping, and he only turns his body once the drill is well past straight
+  // up or down, so it never flickers side to side
   const turn = (target, rate) => {
     const d = Math.atan2(Math.sin(target - c.aim), Math.cos(target - c.aim));
-    c.aim += clamp(d, -rate * dt, rate * dt);
+    c.aim += clamp(d * Math.min(1, dt * 8), -rate * dt, rate * dt);
+  };
+  const face = () => {
+    const cx = Math.cos(c.aim);
+    if (cx < -0.3) c.flip = true;
+    else if (cx > 0.3) c.flip = false;
   };
   const d = Math.hypot(player.x - c.x, player.y - c.y);
   const walk = (tx, ty, speed) => {
@@ -2160,17 +2294,17 @@ function updateMoe(c, dt) {
   };
   switch (c.state) {
     case 'face':
-      // above ground the drill never stops pointing at you. he edges in to
-      // about three tiles and every couple of seconds he lunges.
-      turn(toYou, 9);
-      c.flip = Math.cos(c.aim) < 0;
-      if (d > 3 * TILE) walk(player.x, player.y, def.speed);
-      else if (d < 2 * TILE && d > 0) walk(c.x - (player.x - c.x), c.y - (player.y - c.y), def.speed * 0.6);
+      // above ground the drill never stops pointing at you. he keeps about
+      // four and a half tiles off and every couple of seconds he lunges.
+      turn(toYou, 6);
+      face();
+      if (d > MOE.keep * TILE) walk(player.x, player.y, def.speed);
+      else if (d < MOE.backOff * TILE && d > 0) walk(c.x - (player.x - c.x), c.y - (player.y - c.y), def.speed * 0.6);
       if (c.t > (c.lunges ? 1.2 : 1.8) && d < 6.5 * TILE && !player.dead) { c.state = 'windup'; c.t = 0; sfx.rev(); }
       break;
     case 'windup':
-      turn(toYou, 9);
-      c.flip = Math.cos(c.aim) < 0;
+      turn(toYou, 6);
+      face();
       if (Math.random() < dt * 30) burst(hand.x + Math.cos(c.aim) * 30, hand.y + Math.sin(c.aim) * 30, '255,220,140', 1);
       if (c.t >= def.windup) { c.lx = Math.cos(c.aim); c.ly = Math.sin(c.aim); c.state = 'lunge'; c.t = 0; sfx.bite(); }
       break;
@@ -2194,7 +2328,7 @@ function updateMoe(c, dt) {
       break;
     case 'recover':
       turn(toYou, 4);
-      c.flip = Math.cos(c.aim) < 0;
+      face();
       if (c.t > 0.5) {
         c.lunges++;
         c.t = 0;
@@ -2244,7 +2378,7 @@ function updateMoe(c, dt) {
         c.x = c.spot.x; c.y = c.spot.y; c.under = false; c.sink = 1; c.aim = -Math.PI / 2;
         dirtSpray(c.x, c.y - 4, 26);
         addShake(5); sfx.boom();
-        if (!player.dead && Math.hypot(player.x - c.x, (player.y - c.y) * 1.3) < MOE.popR) hurtPlayer(def.popDmg, c.x, c.y + 6);
+        if (!player.dead && inMoeHole(c)) hurtPlayer(def.popDmg, c.x, c.y + 6);
       }
       break;
     }
@@ -2273,8 +2407,8 @@ function updateMoe(c, dt) {
     case 'climb':
       c.sink = MOE.stuckSink * Math.max(0, 1 - c.t / MOE.climb);
       turn(toYou, 6);
-      c.flip = Math.cos(c.aim) < 0;
-      if (c.t >= MOE.climb) { c.state = 'face'; c.t = 0; c.pops = 0; c.sink = 0; }
+      face();
+      if (c.t >= MOE.climb) { c.state = 'face'; c.t = 0; c.pops = 0; c.sink = 0; c.spot = null; }
       break;
     case 'dying':
       // sparks, shaking, flashing, then he's gone in a burst of dirt
@@ -2288,10 +2422,13 @@ function updateMoe(c, dt) {
   // the big drill still roaring over him hurts anyone standing in his hole:
   // a heart less than coming up under you did (drillDmg 4 to popDmg's 5), every
   // time you're open to it.
-  if (!player.dead && !c.under && ['face', 'windup', 'lunge', 'recover', 'climb'].includes(c.state) && overlap(playerBox(), creatureBox(c))) {
+  // above ground his reach is the whole length of the drill, and since it's
+  // always pointed at you, getting anywhere near him means getting drilled
+  const up = ['face', 'windup', 'lunge', 'recover', 'climb'].includes(c.state);
+  if (!player.dead && !c.under && up && (overlap(playerBox(), creatureBox(c)) || Math.hypot(player.x - hand.x, player.y - 10 - hand.y) < MOE.reach)) {
     hurtPlayer(c.state === 'lunge' ? def.lungeDmg : def.dmg, c.x, c.y - 10);
   }
-  if (!player.dead && (c.state === 'pop' || c.state === 'stuck') && Math.hypot(player.x - c.x, (player.y - c.y) * 1.3) < MOE.popR) {
+  if (!player.dead && (c.state === 'pop' || c.state === 'stuck') && inMoeHole(c)) {
     hurtPlayer(def.drillDmg, c.x, c.y + 6);
   }
   if (c.moving) c.anim += dt;
@@ -2545,7 +2682,14 @@ function drawMoe(c, toX, toY, t) {
 // the hole moe digs: a dark pit with a ring of thrown up dirt round it, lit on
 // top. drawn in two halves, the back (with the pit) under him and the front
 // lip over him, so he looks like he's standing down in it.
-const HOLE_RX = 26, HOLE_RY = 8;
+const HOLE_RX = 26, HOLE_RY = 10;
+// standing anywhere in the hole (feet inside it, give or take your width) is
+// what the pop and the stuck drill hit, and the tell ring is drawn the same size,
+// so the warning, the hole and the danger all match
+function inMoeHole(c) {
+  const cx = c.spot ? c.spot.x : c.x, cy = (c.spot ? c.spot.y : c.y) - 3;
+  return ((player.x - cx) / (HOLE_RX + 5)) ** 2 + ((player.y - cy) / (HOLE_RY + 3)) ** 2 < 1;
+}
 function drawHoleRim(c, toX, toY, front) {
   const cx = Math.round(c.x), cy = Math.round(c.y - 3);
   for (let y = -HOLE_RY - 1; y <= HOLE_RY + 1; y++) {
@@ -2609,11 +2753,11 @@ function drawMoeFloor(o, toX, toY, t) {
   // with a thick ring round the edge pulsing faster and faster. it has to be
   // impossible to miss, it's the whole point of the fight.
   if (c.tellK !== null && c.spot) {
-    const k = c.tellK, sx = c.spot.x, sy = c.spot.y - 2, R = MOE.popR;
+    const k = c.tellK, sx = c.spot.x, sy = c.spot.y - 3, R = HOLE_RX, RY = HOLE_RY;
     const pulse = reduceMotion ? 1 : 0.5 + 0.5 * Math.sin(t / (70 - 40 * k));
     ctx.fillStyle = `rgba(255,50,30,${(0.12 + 0.18 * pulse) * Math.min(1, k * 2)})`;
-    for (let y = -Math.round(R * 0.6); y <= Math.round(R * 0.6); y++) {
-      const half = Math.round(Math.sqrt(Math.max(0, 1 - (y / (R * 0.6 + 0.5)) ** 2)) * R);
+    for (let y = -RY; y <= RY; y++) {
+      const half = Math.round(Math.sqrt(Math.max(0, 1 - (y / (RY + 0.5)) ** 2)) * R);
       ctx.fillRect(toX(sx - half), toY(sy + y), half * 2 * S, S);
     }
     CRACKS.forEach(line => line.slice(0, Math.ceil(line.length * Math.min(1, k * 1.4))).forEach(([x, y]) => {
@@ -2621,9 +2765,9 @@ function drawMoeFloor(o, toX, toY, t) {
       P(sx + x, sy + y, '#140c06', 2, 2);
     }));
     const ring = `rgba(255,${Math.round(90 + 120 * pulse)},60,${Math.min(1, 0.45 + 0.55 * pulse) * Math.min(1, k * 2.5)})`;
-    for (let i = 0; i < 64; i++) {
-      const a = (i / 64) * Math.PI * 2;
-      P(sx + Math.cos(a) * R - 1, sy + Math.sin(a) * R * 0.6 - 1, ring, 2, 2);
+    for (let i = 0; i < 80; i++) {
+      const a = (i / 80) * Math.PI * 2;
+      P(sx + Math.cos(a) * R - 1, sy + Math.sin(a) * RY - 1, ring, 2, 2);
     }
   }
 }
@@ -2837,6 +2981,8 @@ function die() {
   player.swing = -1;
   mining = null;
   closeUI();
+  spillInventory();
+  renderHUD();
   sfx.die();
 }
 function respawn() {
@@ -2866,7 +3012,7 @@ function respawn() {
     if (c.dead || c.dormant || c.def.passive) return;
     Object.assign(c, { x: c.hx, y: c.hy, hp: c.def.hp, state: c.def.rest, cd: 0, kx: 0, ky: 0 });
   });
-  toast('You fell', bedSpot ? 'Back in your bed' : 'Back at Base Camp', 'You keep your stuff. Eat, craft armor, try again.');
+  toast('You fell', bedSpot ? 'Back in your bed' : 'Back at Base Camp', 'Your things are where you fell. You have 5 minutes to get them back.');
   renderHUD();
   markDirty();
 }
@@ -4715,6 +4861,7 @@ function playUpdate(dt, t) {
     checkDoors();
   } else if (!room.sealed && player.y > room.h - 3) playLeaveRoom();
   shakeAmp = Math.max(0, shakeAmp - dt * 10);
+  tickGround(dt);
   tickCine(dt);
   tickBossBar(dt);
   tickMusic(dt);
@@ -4972,10 +5119,43 @@ function playRenderOverlay(toX, toY, t) {
 }
 
 // keys the engine hands over before its own handling. returns true if used.
+// the slot under the mouse in an open inventory, if there's anything in it
+function hoveredRef() {
+  const el = document.elementFromPoint(mouse.x, mouse.y)?.closest('[data-ref]');
+  return el && slotGet(el.dataset.ref) ? el.dataset.ref : null;
+}
+// a number key over a slot sends what's in it to that hotbar slot. whatever
+// was already there goes into your bag (back where the new one came from if
+// that was in the bag), and if there's no room at all it's dropped at your feet
+function toHotbar(ref, i) {
+  const target = `inv:${i}`;
+  if (ref === target || ref.startsWith('out')) return;
+  const st = slotGet(ref), there = inv.slots[i];
+  slotSet(ref, null);
+  inv.slots[i] = st;
+  if (there) {
+    const [box, j] = ref.split(':');
+    const free = inv.slots.findIndex((x, n) => n >= 6 && !x);
+    if (box === 'inv' && +j >= 6) inv.slots[+j] = there;
+    else if (free >= 0) inv.slots[free] = there;
+    else if (box === 'inv') inv.slots[+j] = there;
+    else { dropStack(there, player.x, player.y + 4, room, 1.5); hint(`Bag full, dropped the ${ITEMS[there.id].name}`); }
+  }
+  sfx.ui();
+  afterInventoryChange();
+}
 function playKey(e, onControl) {
   const k = e.key.toLowerCase();
   if (k === 'e') { e.preventDefault(); if (ui) closeUI(); else openUI('inv'); return true; }
   if (k === 'escape' && ui) { closeUI(); return true; }
+  // q drops one, shift q the whole stack: whatever's under the mouse with the
+  // inventory open, otherwise whatever's in your hand
+  if (k === 'q' && !onControl && !player.dead && !cine) {
+    if (ui) { const ref = hoveredRef(); if (ref) dropFrom(ref, e.shiftKey); }
+    else if (heldItem()) dropFrom(`inv:${inv.sel}`, e.shiftKey);
+    return true;
+  }
+  if (ui && /^[1-6]$/.test(k)) { const ref = hoveredRef(); if (ref) toHotbar(ref, Number(k) - 1); return true; }
   if (ui) return MOVE_KEYS[e.code] !== undefined;
   if (/^[1-6]$/.test(k)) { selectSlot(Number(k) - 1); return true; }
   if (k === 'f' && !onControl) { eat(); return true; }
@@ -5088,9 +5268,12 @@ $('#hotbar').addEventListener('click', e => {
 // from under the cursor without telling anyone.
 const tipEl = $('#tip');
 function showTip(x, y) {
-  const el = !heldStack && document.elementFromPoint(x, y)?.closest('[data-tip]');
-  if (!el) { tipEl.hidden = true; return; }
-  tipEl.textContent = el.dataset.tip;
+  const under = !heldStack && document.elementFromPoint(x, y);
+  const el = under && under.closest('[data-tip]');
+  // a pile on the ground: its name, and how many if there's more than one
+  const pile = under === canvas && started && !ui && groundAt(mouseWorld());
+  if (!el && !pile) { tipEl.hidden = true; return; }
+  tipEl.textContent = el ? el.dataset.tip : `${ITEMS[pile.st.id].name}${pile.st.n > 1 ? ` ×${pile.st.n}` : ''}`;
   tipEl.hidden = false;
   const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
   tipEl.style.left = `${Math.min(x + 14, window.innerWidth - w - 6)}px`;
@@ -5099,6 +5282,16 @@ function showTip(x, y) {
 document.addEventListener('mousemove', e => showTip(e.clientX, e.clientY));
 document.addEventListener('mouseleave', () => { tipEl.hidden = true; });
 window.addEventListener('pagehide', () => { if (saveDirty) saveNow(); });
+
+// put back whatever was lying on the ground last time (now every room exists)
+const roomById = id => [caveRoom, homeRoom, denRoom, ...burrowRooms].find(r => r.id === id) || null;
+savedGround.forEach(g => {
+  const st = validStack(g && g.st);
+  if (!st || !(g.age < GROUND_LIFE) || (g.room && !roomById(g.room))) return;
+  const item = { st, x: +g.x, y: +g.y, room: g.room || null, age: +g.age || 0, wait: 0 };
+  ground.push(item);
+  groundThing(item);
+});
 
 renderHUD();
 renderQuest();

@@ -4399,7 +4399,8 @@ function openUI(kind, st) {
   bookOpen = false;
   mining = null;
   mouse.down = false;
-  keys.clear();
+  // held keys aren't dropped: you can't move with a menu open anyway, and
+  // whatever you're still holding when it closes carries on straight away
   invWrap.hidden = false;
   document.body.classList.add('inv-open');
   renderUI();
@@ -4877,7 +4878,7 @@ function enterRoom(r, quiet) {
   rockT = 0;
   particles.length = 0;
   projectiles.length = 0;
-  keys.clear();
+  // (held keys carry on through the door: you keep walking in)
   // down a mole hole you start a couple of steps in from the way out
   if (r === denRoom || r.burrow !== undefined) player.y = r.h - HOLE_IN;
   if (r === denRoom && !moe.dead) startMoeIntro();
@@ -4917,7 +4918,7 @@ function playLeaveRoom(quiet) {
   player.face = 'down';
   mining = null;
   particles.length = 0;
-  keys.clear();
+  // (held keys carry on out of it too)
   Object.assign(cam, clampCam(camTarget()));
   if (!quiet) sfx.ui();
 }

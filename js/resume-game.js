@@ -1959,15 +1959,20 @@ function drawParticles(toX, toY) {
 // one layer of black with holes cut out for your own light and for every
 // flickering light source, so in the dark you only see what's being lit up
 function drawShade(shade, toX, toY, inner, outer, lights) {
-  const cw = canvas.width, ch = canvas.height;
-  if (!shadeCanvas || shadeCanvas.width !== cw || shadeCanvas.height !== ch) shadeCanvas = mk(cw, ch);
+  // drawn at a quarter of the screen's resolution and smoothed back up: it's
+  // nothing but soft gradients, so it looks the same, and filling and cutting
+  // a full screen canvas every frame was most of the frame time in the mines
+  // and at night (about 11ms of 18 measured, which made moving there laggy)
+  const Q = 4, cw = canvas.width, ch = canvas.height, sw = Math.ceil(cw / Q), sh = Math.ceil(ch / Q);
+  if (!shadeCanvas || shadeCanvas.width !== sw || shadeCanvas.height !== sh) shadeCanvas = mk(sw, sh);
   const sg = shadeCanvas.getContext('2d');
   sg.globalCompositeOperation = 'source-over';
-  sg.clearRect(0, 0, cw, ch);
+  sg.clearRect(0, 0, sw, sh);
   sg.fillStyle = `rgba(3,4,12,${shade})`;
-  sg.fillRect(0, 0, cw, ch);
+  sg.fillRect(0, 0, sw, sh);
   sg.globalCompositeOperation = 'destination-out';
   const hole = (x, y, a, b) => {
+    x /= Q; y /= Q; a /= Q; b /= Q;
     const g = sg.createRadialGradient(x, y, a, x, y, b);
     g.addColorStop(0, 'rgba(0,0,0,1)');
     g.addColorStop(1, 'rgba(0,0,0,0)');
@@ -1981,7 +1986,9 @@ function drawShade(shade, toX, toY, inner, outer, lights) {
     if (gx < -rad || gy < -rad || gx > cw + rad || gy > ch + rad) continue;
     hole(gx, gy, rad * 0.25, rad);
   }
-  ctx.drawImage(shadeCanvas, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(shadeCanvas, 0, 0, sw * Q, sh * Q);
+  ctx.imageSmoothingEnabled = false;
 }
 
 // indoors: the room's floor and walls, its furniture sorted with you, and its
@@ -2684,10 +2691,13 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keyup', e => keys.delete(e.code));
 // anything that can swallow a key release (the window losing focus, the tab
 // being hidden, a browser right-click menu opening over the page) drops every
-// held key, so nothing can get stuck down
+// held key, so nothing can get stuck down. only a menu that really opens
+// counts: every right click in the game (eating, the bow, the drill, beds)
+// fires contextmenu too, the game cancels it, and clearing on those stopped
+// you dead mid walk until you pressed the key again.
 window.addEventListener('blur', () => keys.clear());
 document.addEventListener('visibilitychange', () => keys.clear());
-document.addEventListener('contextmenu', () => keys.clear());
+document.addEventListener('contextmenu', e => { if (!e.defaultPrevented) keys.clear(); });
 
 $('#start-btn').addEventListener('click', () => start());
 $('#title').addEventListener('click', e => { if (!e.target.closest('a, button')) start(); });

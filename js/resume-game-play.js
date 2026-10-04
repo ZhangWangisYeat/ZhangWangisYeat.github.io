@@ -4125,8 +4125,18 @@ function tickSleep(dt) {
     toast('Good morning', `Day ${quest.day}`, 'This bed is your respawn point now');
   }
 }
+// put on the armor piece in a slot. whatever you were wearing in that spot
+// swaps back into the slot it came from.
+function wearFrom(ref) {
+  const st = slotGet(ref), key = ITEMS[st.id].slot, was = inv.armor[key];
+  inv.armor[key] = st;
+  slotSet(ref, was);
+  floatText(was ? `Swapped for ${ITEMS[st.id].name}` : `Put on ${ITEMS[st.id].name}`, player.x, player.y - 34, '#cfe8ff');
+  sfx.craft();
+  afterInventoryChange();
+}
 // right-click: sleep in a bed you're pointing at, place a bed you're holding,
-// or eat whatever food is in your hand
+// put on armor you're holding, or eat whatever food is in your hand
 function useRight() {
   const tgt = targetAt(mouseWorld());
   if (tgt && tgt.type === 'bed') {
@@ -4138,6 +4148,7 @@ function useRight() {
   if (s && s.id === 'bed') { placeBed(); return; }
   if (s && ITEMS[s.id].ranged) { startBowDraw(); return; }
   if (s && ITEMS[s.id].tool === 'drill') { startDrill(); return; }
+  if (s && ITEMS[s.id].armor) { wearFrom(`inv:${inv.sel}`); return; }
   eat();
 }
 
@@ -5650,6 +5661,9 @@ invWrap.addEventListener('mousedown', e => {
     const dbl = e.button === 0 && !e.shiftKey && (e.detail >= 2 || (now - lastClick.t < 500 && Math.hypot(e.clientX - lastClick.x, e.clientY - lastClick.y) < 16));
     lastClick = { x: e.clientX, y: e.clientY, t: dbl ? 0 : now };
     if (dbl && heldStack) { gatherHeld(); return; }
+    // right click an armor piece in your bag or hotbar (with nothing on the
+    // cursor) to put it on
+    if (e.button === 2 && !heldStack && ref.startsWith('inv:') && slotGet(ref) && ITEMS[slotGet(ref).id].armor) { wearFrom(ref); return; }
     slotClick(ref, e.button, e.shiftKey);
     if (e.button === 2 && heldStack && !e.shiftKey) { rightDrag = new Set([ref]); dragFrom = { x: e.clientX, y: e.clientY }; }
     return;

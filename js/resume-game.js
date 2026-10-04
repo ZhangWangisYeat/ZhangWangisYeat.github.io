@@ -1538,7 +1538,7 @@ function discover(poi) {
   } else if (el) {
     el.classList.add('is-found');
   }
-  if (found.size === POIS.length) toast('World explored', 'All landmarks found', 'Thanks for playing. Now let\'s talk.');
+  if (found.size === POIS.length) toast('World explored', 'All landmarks found', 'Thanks for playing! Let\'s talk.');
   else toast(`Landmark ${foundCount()}`, poi.label, regionById[poi.region].label);
   sfx.found();
   peekJournal(poi);
@@ -1589,7 +1589,7 @@ function canTravel(poi) {
 
 function travelTo(poi) {
   if (typeof playTravelBlocked === 'function' && playTravelBlocked()) {
-    toast('No way out', 'Not now', 'Finish the fight first');
+    toast('No way out...', 'Not now', 'Finish the fight first.');
     sfx.deny();
     return;
   }
@@ -1600,7 +1600,7 @@ function travelTo(poi) {
   }
   if (!canTravel(poi)) {
     const needs = regionById[poi.region === 'camp' ? 'meadows' : poi.region].biome;
-    toast('Fast travel locked', poi.label, `Clear ${needs} to travel there`);
+    toast('Fast travel locked.', poi.label, `Clear ${needs} to travel there.`);
     sfx.deny();
     return;
   }
@@ -1997,7 +1997,11 @@ function drawShade(shade, toX, toY, inner, outer, lights) {
 // own lights. no night, no labels, no weather. a room with `shade` is dark
 // like the mines, lit only around you and by its own lights.
 function renderRoom(toX, toY, t) {
-  ctx.drawImage(room.canvas, toX(0), toY(0), room.w * S, room.h * S);
+  // only the part of the room that's on screen, since the race track is far
+  // bigger than the screen and scaling all of it up every frame is slow
+  const x0 = clamp(Math.floor(-toX(0) / S) - 1, 0, room.w), y0 = clamp(Math.floor(-toY(0) / S) - 1, 0, room.h);
+  const rw = Math.min(room.w - x0, Math.ceil(canvas.width / S) + 3), rh = Math.min(room.h - y0, Math.ceil(canvas.height / S) + 3);
+  if (rw > 0 && rh > 0) ctx.drawImage(room.canvas, x0, y0, rw, rh, toX(x0), toY(y0), rw * S, rh * S);
   drawSprites(room.things.filter(o => !o.gone), toX, toY, t);
   drawParticles(toX, toY);
   if (room.shade) drawShade(room.shade, toX, toY, TILE * S * 1.4, TILE * S * 3.8, room.glows);
@@ -2020,6 +2024,8 @@ function drawPlayer(toX, toY, t) {
   if (!sheet.complete || !sheet.naturalWidth) return;
   // asleep, the play layer tucks you into the bed itself
   if (player.sleeping && typeof playDrawSleeper === 'function') { playDrawSleeper(toX, toY); return; }
+  // and it can draw you itself (riding a minecart, turned to bones)
+  if (typeof playDrawPlayer === 'function' && playDrawPlayer(toX, toY, t)) return;
   let row, col;
   if (player.dead) {
     row = 9;
@@ -2634,7 +2640,7 @@ function start(regionId) {
     enterRegion(regionId, true);
   } else {
     region = 'camp';
-    toast('Welcome to', 'Base Camp', 'Walk up to a landmark to read it');
+    toast('Welcome to', 'Base Camp', 'Walk up to a landmark and complete the quest to unlock my resume.');
   }
   canvas.focus?.();
 }
@@ -2720,7 +2726,7 @@ $('#mm-frame').addEventListener('click', e => {
     .sort((a, b) => a[1] - b[1])
     .find(([, d]) => d < 12);
   if (foundNear) travelTo(foundNear[0]);
-  else { toast('Uncharted', 'Nothing found here yet', 'Walk out and find a landmark first'); sfx.deny(); }
+  else { toast('Uncharted', 'Nothing found here yet...', 'Walk out and find a landmark first.'); sfx.deny(); }
 });
 
 document.addEventListener('click', e => {

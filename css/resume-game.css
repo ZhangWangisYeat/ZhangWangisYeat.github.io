@@ -777,7 +777,7 @@ body.is-cine .boss-bar { opacity: 0; }
 .talk {
   position: fixed;
   left: var(--focus-x, 50vw);
-  bottom: 118px;
+  bottom: 172px;
   transform: translateX(-50%);
   width: min(560px, calc(100vw - 32px));
   padding: 14px 20px 12px;

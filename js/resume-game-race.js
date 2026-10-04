@@ -519,7 +519,7 @@ function paintVault() {
     }
   }
   // lava channels either side of the statue
-  [[64, 44], [160, 44]].forEach(([x0, y0]) => {
+  [[64, 54], [160, 54]].forEach(([x0, y0]) => {
     for (let y = y0; y < y0 + 40; y++) for (let x = x0; x < x0 + 16; x++) {
       const edge = x === x0 || x === x0 + 15 || y === y0 || y === y0 + 39;
       dot(x, y, edge ? '#3a3036' : hash2(x, y, 954) < 0.3 ? '#ffd23f' : hash2(x, y, 955) < 0.5 ? '#ff8a1c' : '#e0561a');
@@ -569,9 +569,11 @@ const vaultWalls = roomWalls(VAULT_COLS, VAULT_ROWS, VAULT_DOOR);
 const vaultRoom = {
   id: 'vault', w: VAULT_COLS * TILE, h: VAULT_ROWS * TILE, dust: '#4e4650', shade: 0.5, underground: true,
   canvas: paintVault(),
-  outside: { x: shaftThing.x, y: shaftThing.y }, exit: { x: shaftThing.x, y: shaftThing.y + 10 },
+  // the ladder comes up a couple of steps from the shaft, not in its mouth,
+  // or still holding w would walk you straight back in
+  outside: { x: shaftThing.x, y: shaftThing.y }, exit: { x: shaftThing.x, y: shaftThing.y + 34 },
   door: VAULT_DOOR,
-  blocked: (x, y) => vaultWalls(x, y) || (Math.abs(x - 120) < 26 && y > 62 && y < 92) || ((x > 62 && x < 82) || (x > 158 && x < 178)) && y > 42 && y < 86,
+  blocked: (x, y) => vaultWalls(x, y) || (Math.abs(x - 120) < 26 && y > 74 && y < 104) || ((x > 62 && x < 82) || (x > 158 && x < 178)) && y > 52 && y < 96,
   // the way down goes back out onto the track, in front of the door
   bottomTo: () => {
     room = raceRoom;
@@ -584,9 +586,9 @@ const vaultRoom = {
   },
   things: [],
   glows: [
-    { x: 72, y: 64, rgb: '255,140,40', rad: 3.2, flicker: true, strength: 0.32 },
-    { x: 168, y: 64, rgb: '255,140,40', rad: 3.2, flicker: true, strength: 0.32 },
-    { x: 120, y: 46, rgb: '255,170,60', rad: 2.6, flicker: true, strength: 0.26 },
+    { x: 72, y: 74, rgb: '255,140,40', rad: 3.2, flicker: true, strength: 0.32 },
+    { x: 168, y: 74, rgb: '255,140,40', rad: 3.2, flicker: true, strength: 0.32 },
+    { x: 120, y: 58, rgb: '255,170,60', rad: 2.6, flicker: true, strength: 0.26 },
     { x: 36, y: 22, rgb: '210,225,255', rad: 2.2, flicker: true, strength: 0.18 },
     { x: 120, y: 186, rgb: '255,220,160', rad: 2.6, flicker: true, strength: 0.16 }
   ]
@@ -599,7 +601,7 @@ BUILDINGS.push({
 
 // the statue and the chest in the vault
 const LAVA_LORD = makeLavaLord();
-vaultRoom.things.push({ x: 120, y: 90, frames: [LAVA_LORD] });
+vaultRoom.things.push({ x: 120, y: 102, frames: [LAVA_LORD] });
 function rollVaultLoot() {
   const out = [makeStack('iron', rand(4, 8)), makeStack('gold', rand(2, 5))];
   const add = (chance, id, a, b) => { if (Math.random() < chance) out.push(makeStack(id, rand(a, b))); };
@@ -615,7 +617,7 @@ function rollVaultLoot() {
   return Array.from({ length: 12 }, (_, i) => out[i] || null);
 }
 DQ.chest = Array.isArray(DQ.chest) ? Array.from({ length: 12 }, (_, i) => validStack(DQ.chest[i])) : rollVaultLoot();
-const vaultChest = addStation('chest', 190, 112, vaultRoom);
+const vaultChest = addStation('chest', 192, 124, vaultRoom);
 vaultChest.slots = DQ.chest;
 vaultChest.where = 'in the vault';
 
@@ -726,8 +728,8 @@ function surfaceAt(x, y) {
 }
 function mashPress() {
   const c = carts.you;
-  if (c.spin) { c.spin.meter = Math.min(1, c.spin.meter + 0.17); sfx.mash(); }
-  else if (c.hole) { c.hole.meter = Math.min(1, c.hole.meter + 0.1); sfx.mash(); c.hole.wob = 0.12; }
+  if (c.spin) { c.spin.meter = Math.min(1, c.spin.meter + 0.13); sfx.mash(); }
+  else if (c.hole) { c.hole.meter = Math.min(1, c.hole.meter + 0.085); sfx.mash(); c.hole.wob = 0.12; }
 }
 function driveCart(c, dt) {
   const k = code => keys.has(code);
@@ -748,7 +750,8 @@ function driveCart(c, dt) {
     // stuck down a hole until you mash your way out
     const h = c.hole;
     h.t += dt;
-    h.meter = Math.max(0, h.meter - 0.12 * dt);
+    // (checked before it drains, or a bar mashed full could slip back under)
+    if (h.meter < 1) h.meter = Math.max(0, h.meter - 0.12 * dt);
     h.wob = Math.max(0, (h.wob || 0) - dt);
     c.v = 0;
     c.x += (h.o.x - c.x) * Math.min(1, dt * 10);
@@ -769,9 +772,9 @@ function driveCart(c, dt) {
   if (c.spin) {
     // spinning out: no steering, no power, sliding on and slowing down until
     // you mash it steady (or it grinds to a halt)
-    c.spin.meter = Math.max(0, c.spin.meter - 0.3 * dt);
+    if (c.spin.meter < 1) c.spin.meter = Math.max(0, c.spin.meter - 0.3 * dt);
     c.spinA += dt * (9 + c.v / 14);
-    c.v *= Math.exp(-0.85 * dt);
+    c.v *= Math.exp(-1.1 * dt);
     if (c.spin.meter >= 1) { c.spin = null; floatText('Steady!', c.x, c.y - 30, '#9bf07a'); sfx.found(); }
     else if (c.v < 10) { c.v = 0; c.spin = null; floatText('Stopped', c.x, c.y - 30, '#ff9a6b'); sfx.deny(); }
   } else {
@@ -796,10 +799,20 @@ function driveCart(c, dt) {
 function moveCart(c, dt) {
   const nx = c.x + Math.cos(c.a) * c.v * dt, ny = c.y + Math.sin(c.a) * c.v * dt;
   if (cartFits(nx, ny)) { c.x = nx; c.y = ny; return; }
-  // into the wall: bounce off it, losing speed, and turn along it
+  // into the wall: bounce off it, losing speed, and turn along it. which way
+  // the wall faces is found by feeling round the cart for it, since the walls
+  // wobble: going by the track's centre line missed the bumps, and a cart
+  // could get pinned against one, pushing at it forever.
   const t = trackAt(c.x, c.y);
   if (!t) { c.v = 0; return; }
-  const ox = (c.x - track.xs[t.i]) / (t.dist || 1), oy = (c.y - track.ys[t.i]) / (t.dist || 1);
+  let ox = 0, oy = 0;
+  for (let k = 0; k < 12; k++) {
+    const q = (k / 12) * Math.PI * 2;
+    if (!cartFits(c.x + Math.cos(q) * 5, c.y + Math.sin(q) * 5)) { ox += Math.cos(q); oy += Math.sin(q); }
+  }
+  if (Math.hypot(ox, oy) < 0.01) { ox = c.x - track.xs[t.i]; oy = c.y - track.ys[t.i]; }
+  const ol = Math.hypot(ox, oy) || 1;
+  ox /= ol; oy /= ol;
   let vx = Math.cos(c.a) * c.v, vy = Math.sin(c.a) * c.v;
   const vn = vx * ox + vy * oy;
   if (vn > 0) { vx -= vn * ox * 1.6; vy -= vn * oy * 1.6; }
@@ -808,9 +821,9 @@ function moveCart(c, dt) {
   if (vn > 50) { addShake(1.5); sfx.hit(); burst(c.x + ox * 10, c.y + oy * 10, '140,140,140', 5); }
   const mx = c.x + Math.cos(c.a) * c.v * dt, my = c.y + Math.sin(c.a) * c.v * dt;
   if (cartFits(mx, my)) { c.x = mx; c.y = my; }
-  else if (!cartFits(c.x, c.y)) {
-    // somehow stuck in the wall: nudge it back towards the middle
-    c.x -= ox * 2; c.y -= oy * 2;
+  else if (cartFits(c.x - ox, c.y - oy)) {
+    // still touching: ease it off the wall a pixel
+    c.x -= ox; c.y -= oy;
   }
 }
 // what your cart runs into: a gem spins you out, a jagged rock cracks the cart
@@ -871,7 +884,9 @@ function chooseLane(c) {
   const slip = ahead.find(o => (o.n === MISTAKE.gem || o.n === MISTAKE.mud) && !c.slipped[o.n]);
   if (slip && slip.s < c.s + 150) return slip.d;
   let best = c.d, bestCost = Infinity;
-  for (let lane = -28; lane <= 28; lane += 2) {
+  // (lanes stop at 24 either side: the walls bulge in to 34 in places, and a
+  // cart is 9 from its middle to its side)
+  for (let lane = -24; lane <= 24; lane += 2) {
     let cost = Math.abs(lane - pref) + Math.abs(lane - c.d) * 0.4;
     ahead.forEach(o => {
       const gap = o.r + 11, off = Math.abs(lane - o.d);
@@ -1265,6 +1280,8 @@ function raceTick(dt) {
     const side = player.x < darryl.x ? 20 : -20;
     walkDarryl(player.x + side, player.y, 70, () => {
       darryl.flip = player.x < darryl.x;
+      // (counts as talking to him, so walking off after doesn't set him off again)
+      darryl.talked = true;
       if (race.result === 'win') {
         DQ.won = true;
         markDirty();
@@ -1302,7 +1319,11 @@ function raceTick(dt) {
 // in the vault: the ladder up the back wall takes you outside
 function vaultTick() {
   if (room !== vaultRoom || player.dead) return;
-  if (Math.abs(player.x - 36) < 9 && player.y < 40 && (keys.has('KeyW') || keys.has('ArrowUp'))) playLeaveRoom();
+  if (Math.abs(player.x - 36) < 9 && player.y < 40 && (keys.has('KeyW') || keys.has('ArrowUp'))) {
+    keys.delete('KeyW');
+    keys.delete('ArrowUp');
+    playLeaveRoom();
+  }
 }
 
 function raceEnter(r) {
@@ -1504,11 +1525,12 @@ function raceOverlay(toX, toY, t) {
   const m = Y.spin || Y.hole;
   if (race.riding && m) {
     const k = m.meter, bx = toX(Y.x - 14), by = toY(Y.y - 50);
-    const pulse = Math.floor(t / 120) % 2;
+    const pulse = Math.floor(t / 120) % 2, label = Y.hole ? 'MASH W TO CLIMB OUT' : 'MASH W';
+    const bw = Math.max(28 * S, ctx.measureText(label).width) + fs * 0.8;
     ctx.fillStyle = 'rgba(12,12,16,0.9)';
-    ctx.fillRect(bx - fs * 0.4, by - fs * 1.7, 28 * S + fs * 0.8, fs * 2.4);
+    ctx.fillRect(toX(Y.x) - bw / 2, by - fs * 1.7, bw, fs * 2.4);
     ctx.fillStyle = pulse ? '#ffd23f' : '#ffffff';
-    ctx.fillText(Y.hole ? 'MASH W TO CLIMB OUT' : 'MASH W', toX(Y.x), by - fs * 0.85);
+    ctx.fillText(label, toX(Y.x), by - fs * 0.85);
     ctx.fillStyle = '#3a3a44';
     ctx.fillRect(bx, by, 28 * S, 3 * S);
     ctx.fillStyle = '#9bf07a';

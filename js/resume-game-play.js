@@ -2527,50 +2527,55 @@ function finishMoe(c) {
 }
 
 // moe's theme, written for this game and played live by the synth below (no
-// audio file). it's built to sit in the same place as the song alex picked
-// for him: f sharp minor at 105 bpm with a 3-3-2 swing to the kick and bass
-// (a hit every dotted quarter, then a quick one), a quiet opening, then a
-// heavy, bass led boss groove. a 4 bar intro (pads and a twinkling
-// arpeggio), then section a (F#m, A, E, C# with a bouncy square lead),
-// section b (D, E, F#m, C# with the lead up high), a 4 bar breakdown, and
-// back round to a forever. 16 steps to the bar. the melodies are original.
-const SONG = { bpm: 105, steps: 16 };
+// audio file). alex wanted the chill, whimsical, molish feel of the song he'd
+// picked rather than something quick and dramatic, so it's an easy going
+// shuffle: f sharp minor with a dorian lift (the bright D# that makes it
+// sound cheeky instead of sad), 92 bpm with every other sixteenth pushed late
+// so it lilts, a plinky marimba, a bouncy oom-pah plucked bass, a soft
+// ocarina-ish lead, and light drums (a soft kick, rim clicks and a shaker). a
+// 4 bar intro, section a (F#m, B, F#m, C#m) twice, section b (D, E, F#m, C#)
+// twice, a 4 bar breakdown, and back round to a forever. the melodies are
+// original.
+const SONG = { bpm: 92, steps: 16, swing: 0.3 };
 const REST = null, HOLD = '-';
 const CH = {
-  A: [57, 61, 64], Fm: [54, 57, 61], E: [52, 56, 59], D: [50, 54, 57], C: [49, 53, 56]
+  Fm: [54, 57, 61], B: [59, 63, 66], Cm: [49, 52, 56], D: [50, 54, 57], E: [52, 56, 59], C: [49, 53, 56]
 };
 const LEAD = {
-  a1: [73, REST, 76, REST, 81, HOLD, HOLD, 80, 78, REST, 76, REST, 73, HOLD, HOLD, REST],
-  a2: [78, REST, 76, REST, 73, HOLD, 71, REST, 69, HOLD, HOLD, 71, 73, REST, REST, REST],
-  a3: [71, REST, 76, REST, 80, HOLD, HOLD, 78, 76, REST, 73, REST, 71, HOLD, HOLD, REST],
-  a4: [73, REST, 71, REST, 68, HOLD, HOLD, REST, 73, REST, 77, REST, 80, HOLD, HOLD, REST],
-  a5: [80, HOLD, HOLD, HOLD, 77, HOLD, 73, HOLD, 80, HOLD, HOLD, HOLD, REST, REST, 80, 81],
-  b1: [81, REST, REST, 78, REST, REST, 74, REST, 78, REST, 81, REST, 83, HOLD, HOLD, REST],
-  b2: [80, REST, REST, 76, REST, REST, 71, REST, 76, REST, 80, REST, 83, HOLD, 81, 80],
-  b3: [78, REST, REST, 73, REST, REST, 69, REST, 73, REST, 78, REST, 81, HOLD, HOLD, HOLD],
-  b4: [80, HOLD, 77, HOLD, 80, HOLD, 85, HOLD, HOLD, HOLD, 80, HOLD, HOLD, HOLD, REST, REST]
+  a1: [66, REST, 69, REST, 73, REST, 75, 73, REST, REST, 69, REST, 71, HOLD, REST, REST],
+  a2: [71, REST, 75, REST, 78, REST, 75, 73, REST, REST, 71, REST, 75, HOLD, REST, REST],
+  a3: [73, REST, 73, 75, 76, REST, 75, 73, REST, 69, REST, 71, 73, HOLD, HOLD, REST],
+  a4: [76, REST, 75, REST, 73, REST, 71, REST, 68, HOLD, REST, REST, REST, REST, 69, 71],
+  a5: [73, REST, 76, REST, 80, HOLD, REST, REST, 78, REST, 76, REST, 73, REST, REST, REST],
+  b1: [81, REST, 78, REST, 74, REST, 78, 81, REST, REST, 83, REST, 81, HOLD, REST, REST],
+  b2: [80, REST, 76, REST, 71, REST, 76, 80, REST, REST, 83, REST, 80, HOLD, REST, REST],
+  b3: [78, REST, 73, REST, 69, REST, 73, 78, REST, 80, 81, REST, 78, HOLD, HOLD, REST],
+  b4: [80, REST, 77, REST, 73, REST, 77, 80, 85, HOLD, HOLD, REST, REST, REST, REST, REST]
 };
 // one entry per bar: the chord, the lead line, and what's playing
 const ARR = [
-  { ch: 'Fm', part: 'intro' }, { ch: 'A', part: 'intro' }, { ch: 'E', part: 'intro' }, { ch: 'C', part: 'introFill' },
-  { ch: 'Fm', lead: 'a1', part: 'full', crash: true }, { ch: 'A', lead: 'a2', part: 'full' }, { ch: 'E', lead: 'a3', part: 'full' }, { ch: 'C', lead: 'a4', part: 'full' },
-  { ch: 'Fm', lead: 'a1', part: 'full' }, { ch: 'A', lead: 'a2', part: 'full' }, { ch: 'E', lead: 'a3', part: 'full' }, { ch: 'C', lead: 'a5', part: 'fill' },
-  { ch: 'D', lead: 'b1', part: 'full', crash: true }, { ch: 'E', lead: 'b2', part: 'full' }, { ch: 'Fm', lead: 'b3', part: 'full' }, { ch: 'C', lead: 'b4', part: 'full' },
-  { ch: 'D', lead: 'b1', part: 'full' }, { ch: 'E', lead: 'b2', part: 'full' }, { ch: 'Fm', lead: 'b3', part: 'full' }, { ch: 'C', lead: 'b4', part: 'fill' },
-  { ch: 'Fm', part: 'break', crash: true }, { ch: 'D', part: 'break' }, { ch: 'E', part: 'break' }, { ch: 'C', part: 'breakFill' }
+  { ch: 'Fm', part: 'intro' }, { ch: 'B', part: 'intro' }, { ch: 'Fm', part: 'intro' }, { ch: 'C', part: 'intro' },
+  { ch: 'Fm', lead: 'a1', part: 'full' }, { ch: 'B', lead: 'a2', part: 'full' }, { ch: 'Fm', lead: 'a3', part: 'full' }, { ch: 'Cm', lead: 'a4', part: 'full' },
+  { ch: 'Fm', lead: 'a1', part: 'full' }, { ch: 'B', lead: 'a2', part: 'full' }, { ch: 'Fm', lead: 'a3', part: 'full' }, { ch: 'Cm', lead: 'a5', part: 'full' },
+  { ch: 'D', lead: 'b1', part: 'full' }, { ch: 'E', lead: 'b2', part: 'full' }, { ch: 'Fm', lead: 'b3', part: 'full' }, { ch: 'C', lead: 'b4', part: 'full' },
+  { ch: 'D', lead: 'b1', part: 'full' }, { ch: 'E', lead: 'b2', part: 'full' }, { ch: 'Fm', lead: 'b3', part: 'full' }, { ch: 'C', lead: 'b4', part: 'full' },
+  { ch: 'Fm', part: 'break' }, { ch: 'B', part: 'break' }, { ch: 'D', part: 'break' }, { ch: 'C', part: 'break' }
 ];
 const LOOP_FROM = 4;
-const BASS = [0, REST, REST, 12, REST, REST, 0, REST, REST, 12, REST, REST, 0, REST, 12, REST];
-const KICK = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0];
+// oom-pah: the root on the beat, the fifth on the off beat, a hop up at the end
+const BASS = [0, REST, REST, REST, 7, REST, REST, REST, 0, REST, REST, REST, 7, REST, 12, REST];
+const KICK = [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0];
+// the marimba picks out the chord in a little up and down figure
+const MARIMBA = [0, REST, 2, REST, 1, REST, 2, 1, REST, 2, REST, 1, 0, REST, 1, REST];
 const midiHz = m => 440 * 2 ** ((m - 69) / 12);
 
 // a tiny synth on the shared audio context. everything goes through one bus
-// with a compressor so the drums and the bass don't clip each other.
+// with a compressor so nothing clips.
 let musicAC = null, musicBus = null, noiseBuf = null;
 function musicSetup(ac) {
   musicAC = ac;
   const comp = ac.createDynamicsCompressor();
-  comp.threshold.value = -16; comp.ratio.value = 4;
+  comp.threshold.value = -16; comp.ratio.value = 3;
   musicBus = ac.createGain();
   musicBus.gain.value = 0;
   musicBus.connect(comp).connect(ac.destination);
@@ -2603,9 +2608,9 @@ function mNote(type, f, t, dur, vol, o = {}) {
   if (o.vib) {
     const lfo = ac.createOscillator(), lg = ac.createGain();
     lfo.frequency.value = o.vib;
-    lg.gain.value = f * 0.012;
+    lg.gain.value = f * 0.01;
     lfo.connect(lg).connect(osc.frequency);
-    lfo.start(t + 0.1);
+    lfo.start(t + 0.15);
     lfo.stop(t + dur + rel);
   }
 }
@@ -2619,47 +2624,47 @@ function mNoise(t, dur, vol, type, freq, q = 1) {
   src.start(t, Math.random() * 0.5);
   src.stop(t + dur + 0.02);
 }
+// a struck note that dies away on its own: a sine with a little click on top
+function mallet(f, t, vol, ring) {
+  mNote('sine', f, t, 0.01, vol, { at: 0.002, rel: ring });
+  mNote('sine', f * 4, t, 0.005, vol * 0.18, { at: 0.001, rel: 0.05 });
+}
 // everything that happens on one 16th note
 function songStep(bar, step, t) {
   const b = ARR[bar], chord = CH[b.ch], st = 60 / SONG.bpm / 4, root = chord[0] - 12;
-  const full = b.part === 'full' || b.part === 'fill', fill = b.part.endsWith('ill') || b.part === 'breakFill';
-  if (step === 0 && b.crash) mNoise(t, 1.4, 0.16, 'highpass', 5000);
-  // pads: a soft detuned chord held through each bar of the intro and the breakdown
-  if (step === 0 && (b.part.startsWith('intro') || b.part.startsWith('break'))) {
-    chord.forEach(n => [-8, 8].forEach(det => mNote('sawtooth', midiHz(n + 12), t, st * 16, 0.03, { lp: 1600, at: 0.25, rel: 0.4, detune: det })));
+  const full = b.part === 'full', soft = b.part !== 'full';
+  // pads: a soft chord held through each bar of the intro and the breakdown
+  if (step === 0 && soft) {
+    chord.forEach(n => mNote('triangle', midiHz(n), t, st * 15, 0.035, { lp: 1400, at: 0.4, rel: 0.5 }));
   }
-  // the arpeggio twinkling over the top, up and down the chord
-  const arpN = chord[[0, 1, 2, 1][step % 4]] + 12 + (step >= 8 ? 12 : 0);
-  mNote('square', midiHz(arpN), t, st * 0.5, b.part.startsWith('intro') ? 0.07 : 0.06, { lp: 2600, rel: 0.03 });
-  // hats: eighths in the intro once it gets going, sixteenths in the groove
-  if ((full && step % 1 === 0) || ((b.part.startsWith('intro') && bar >= 2) || b.part.startsWith('break')) && step % 2 === 0) {
-    mNoise(t, step % 4 === 2 && full ? 0.1 : 0.035, full ? (step % 2 ? 0.07 : 0.12) : 0.08, 'highpass', 6500);
-  }
+  // the marimba
+  const m = MARIMBA[step];
+  if (m !== REST) mallet(midiHz(chord[m] + 12), t, soft ? 0.16 : 0.13, 0.32);
+  // the shaker, every eighth, and the rim clicks on 2 and 4
+  if ((full || bar >= 2) && step % 2 === 0) mNoise(t, 0.04, step % 4 === 2 ? 0.05 : 0.03, 'highpass', 8000);
   if (full) {
-    if (KICK[step]) mNote('sine', 120, t, 0.16, 0.42, { slide: 48, slideT: 0.07, rel: 0.05 });
-    if (step === 4 || step === 12) { mNoise(t, 0.2, 0.4, 'bandpass', 2000, 0.6); mNote('triangle', 220, t, 0.07, 0.18, { slide: 160 }); }
+    if (KICK[step]) mNote('sine', 95, t, 0.1, 0.32, { slide: 50, slideT: 0.08, rel: 0.06 });
+    if (step === 4 || step === 12) { mNoise(t, 0.035, 0.16, 'bandpass', 2600, 4); mNote('triangle', 900, t, 0.02, 0.06, { rel: 0.02 }); }
   }
-  // fills: snare rolling in sixteenths over the last half bar
-  if (fill && step >= 8) { mNoise(t, 0.1, 0.12 + (step - 8) * 0.025, 'bandpass', 2000, 0.7); }
-  // the bass: a pumping octave line on the chord's root
-  if ((full || b.part.startsWith('break')) && BASS[step] !== null) {
-    const f = midiHz(root - 12 + BASS[step]);
-    mNote('sawtooth', f, t, st * 2.4, 0.13, { lp: 1400, lpTo: 380, q: 4 });
-    mNote('sine', f / (BASS[step] ? 2 : 1), t, st * 2.4, 0.05);
+  // the bass: short and plucked, bouncing between root and fifth
+  if ((full || b.part === 'break') && BASS[step] !== REST) {
+    const f = midiHz(root + BASS[step]);
+    mNote('triangle', f, t, st * 1.2, 0.2, { lp: 1200, rel: 0.06 });
   }
-  // the lead: a square wave with a little vibrato, doubled slightly out of
-  // tune for width. a '-' holds the note before it.
+  // the lead: soft and round, a little vibrato on the long notes. a '-'
+  // holds the note before it.
   const line = b.lead && LEAD[b.lead];
-  if (line && line[step] !== null && line[step] !== HOLD) {
+  if (line && line[step] !== REST && line[step] !== HOLD) {
     let len = 1;
     while (step + len < 16 && line[step + len] === HOLD) len++;
-    const f = midiHz(line[step]);
-    mNote('square', f, t, st * len * 0.95, 0.22, { lp: 3600, vib: len > 1 ? 5.5 : 0 });
-    mNote('square', f, t, st * len * 0.95, 0.11, { lp: 2600, detune: 9 });
+    const f = midiHz(line[step]), dur = st * (len > 1 ? len * 0.95 : 0.7);
+    mNote('triangle', f, t, dur, 0.26, { lp: 2400, at: 0.02, vib: len > 1 ? 5 : 0 });
+    mNote('sine', f * 2, t, dur, 0.05, { at: 0.02 });
   }
 }
 // the scheduler: looks a little ahead and books each 16th note on the audio
-// clock, which keeps time even when a frame stutters
+// clock, which keeps time even when a frame stutters. every other sixteenth
+// is pushed a little late, which is what gives it its shuffle.
 const song = { on: false, timer: null, next: 0, bar: 0, step: 0 };
 function songStart() {
   if (song.on) return;
@@ -2670,7 +2675,7 @@ function songStart() {
   song.next = ac.currentTime + 0.1;
   musicBus.gain.cancelScheduledValues(ac.currentTime);
   musicBus.gain.setValueAtTime(0.0001, ac.currentTime);
-  musicBus.gain.exponentialRampToValueAtTime(0.55, ac.currentTime + 0.4);
+  musicBus.gain.exponentialRampToValueAtTime(0.8, ac.currentTime + 0.4);
   clearInterval(song.timer);
   song.timer = setInterval(songTick, 25);
   songTick();
@@ -2679,7 +2684,7 @@ function songTick() {
   if (!song.on) return;
   const st = 60 / SONG.bpm / 4;
   while (song.next < musicAC.currentTime + 0.15) {
-    songStep(song.bar, song.step, song.next);
+    songStep(song.bar, song.step, song.next + (song.step % 2 ? st * SONG.swing : 0));
     song.next += st;
     if (++song.step === 16) { song.step = 0; song.bar = song.bar + 1 >= ARR.length ? LOOP_FROM : song.bar + 1; }
   }

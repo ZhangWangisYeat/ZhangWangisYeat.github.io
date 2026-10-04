@@ -2544,58 +2544,63 @@ function finishMoe(c) {
 }
 
 // moe's theme, written for this game and played live by the synth below (no
-// audio file). alex wanted the chill, whimsical, molish feel of the song he'd
-// picked rather than something quick and dramatic, so it's an easy going
-// shuffle: f sharp minor with a dorian lift (the bright D# that makes it
-// sound cheeky instead of sad), 92 bpm with every other sixteenth pushed late
-// so it lilts, a plinky marimba, a bouncy oom-pah plucked bass, a soft
-// ocarina-ish lead, and light drums (a soft kick, rim clicks and a shaker). a
-// 4 bar intro, section a (F#m, B, F#m, C#m) twice, section b (D, E, F#m, C#)
-// twice, a 4 bar breakdown, and back round to a forever. the melodies are
-// original.
-const SONG = { bpm: 92, steps: 16, swing: 0.3 };
-const REST = null, HOLD = '-';
+// audio file). alex loves the song he picked for moe, so this follows it as
+// closely as it can without using its melody (that's the part that would be
+// copying). everything else comes from measuring that track: f sharp minor at
+// 105 bpm, a strong 3-3-2 pulse (a hit every dotted quarter, then a quick
+// one), an 8 bar quiet opening sitting on A, then the bass moving F#, E, F#,
+// E, C#, a long stretch on A, and round again, and a warm, muffled, bass
+// heavy sound with almost nothing up top. on top of that it keeps the chill,
+// whimsical feel alex asked for: a half time backbeat, a plinky marimba, a
+// music box lead, plucked bass, and a lo-fi filter over the whole thing. the
+// lead is made up as it goes from each bar's chord in 3-3-2 rhythms, so it's
+// its own tune.
+const SONG = { bpm: 105, steps: 16 };
+const REST = null;
 const CH = {
-  Fm: [54, 57, 61], B: [59, 63, 66], Cm: [49, 52, 56], D: [50, 54, 57], E: [52, 56, 59], C: [49, 53, 56]
+  A: [57, 61, 64], Fm: [54, 57, 61], E: [52, 56, 59], C: [49, 53, 56], B: [59, 63, 66], FA: [54, 59, 61]
 };
-const LEAD = {
-  a1: [66, REST, 69, REST, 73, REST, 75, 73, REST, REST, 69, REST, 71, HOLD, REST, REST],
-  a2: [71, REST, 75, REST, 78, REST, 75, 73, REST, REST, 71, REST, 75, HOLD, REST, REST],
-  a3: [73, REST, 73, 75, 76, REST, 75, 73, REST, 69, REST, 71, 73, HOLD, HOLD, REST],
-  a4: [76, REST, 75, REST, 73, REST, 71, REST, 68, HOLD, REST, REST, REST, REST, 69, 71],
-  a5: [73, REST, 76, REST, 80, HOLD, REST, REST, 78, REST, 76, REST, 73, REST, REST, REST],
-  b1: [81, REST, 78, REST, 74, REST, 78, 81, REST, REST, 83, REST, 81, HOLD, REST, REST],
-  b2: [80, REST, 76, REST, 71, REST, 76, 80, REST, REST, 83, REST, 80, HOLD, REST, REST],
-  b3: [78, REST, 73, REST, 69, REST, 73, 78, REST, 80, 81, REST, 78, HOLD, HOLD, REST],
-  b4: [80, REST, 77, REST, 73, REST, 77, 80, 85, HOLD, HOLD, REST, REST, REST, REST, REST]
-};
-// one entry per bar: the chord, the lead line, and what's playing
+// the long stretches on A in the original have A in the bass but its notes
+// centre on F# and B, so FA is an airy F#, B, C# over A (a soft lo-fi chord)
+const BASS_ROOT = { FA: 45 };
+// one entry per bar. the lead plays a motif (an index into MOTIFS), or holds
+// a long note to end a phrase.
 const ARR = [
-  { ch: 'Fm', part: 'intro' }, { ch: 'B', part: 'intro' }, { ch: 'Fm', part: 'intro' }, { ch: 'C', part: 'intro' },
-  { ch: 'Fm', lead: 'a1', part: 'full' }, { ch: 'B', lead: 'a2', part: 'full' }, { ch: 'Fm', lead: 'a3', part: 'full' }, { ch: 'Cm', lead: 'a4', part: 'full' },
-  { ch: 'Fm', lead: 'a1', part: 'full' }, { ch: 'B', lead: 'a2', part: 'full' }, { ch: 'Fm', lead: 'a3', part: 'full' }, { ch: 'Cm', lead: 'a5', part: 'full' },
-  { ch: 'D', lead: 'b1', part: 'full' }, { ch: 'E', lead: 'b2', part: 'full' }, { ch: 'Fm', lead: 'b3', part: 'full' }, { ch: 'C', lead: 'b4', part: 'full' },
-  { ch: 'D', lead: 'b1', part: 'full' }, { ch: 'E', lead: 'b2', part: 'full' }, { ch: 'Fm', lead: 'b3', part: 'full' }, { ch: 'C', lead: 'b4', part: 'full' },
-  { ch: 'Fm', part: 'break' }, { ch: 'B', part: 'break' }, { ch: 'D', part: 'break' }, { ch: 'C', part: 'break' }
+  { ch: 'FA', part: 'intro' }, { ch: 'FA', part: 'intro' }, { ch: 'Fm', part: 'intro' }, { ch: 'A', part: 'intro' },
+  { ch: 'FA', part: 'intro2' }, { ch: 'C', part: 'intro2' }, { ch: 'FA', part: 'intro2' }, { ch: 'B', part: 'intro2' },
+  { ch: 'Fm', lead: 0, part: 'full' }, { ch: 'E', lead: 1, part: 'full' }, { ch: 'Fm', lead: 2, part: 'full' }, { ch: 'E', lead: 'hold', part: 'full' },
+  { ch: 'C', lead: 3, part: 'full' }, { ch: 'FA', lead: 0, part: 'full' }, { ch: 'A', lead: 1, part: 'full' }, { ch: 'FA', lead: 'hold', part: 'full' },
+  { ch: 'E', lead: 2, part: 'full' }, { ch: 'Fm', lead: 3, part: 'full' }, { ch: 'E', lead: 0, part: 'full' }, { ch: 'A', lead: 'hold', part: 'full' },
+  { ch: 'Fm', lead: 1, part: 'full' }, { ch: 'E', lead: 2, part: 'full' }, { ch: 'C', lead: 3, part: 'full' }, { ch: 'A', lead: 'hold', part: 'full' },
+  { ch: 'FA', part: 'break' }, { ch: 'A', part: 'break' }, { ch: 'Fm', part: 'break' }, { ch: 'FA', part: 'break' },
+  { ch: 'E', part: 'break' }, { ch: 'A', part: 'break' }, { ch: 'C', part: 'break' }, { ch: 'A', part: 'break' }
 ];
-const LOOP_FROM = 4;
-// oom-pah: the root on the beat, the fifth on the off beat, a hop up at the end
-const BASS = [0, REST, REST, REST, 7, REST, REST, REST, 0, REST, REST, REST, 7, REST, 12, REST];
-const KICK = [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0];
-// the marimba picks out the chord in a little up and down figure
-const MARIMBA = [0, REST, 2, REST, 1, REST, 2, 1, REST, 2, REST, 1, 0, REST, 1, REST];
+const LOOP_FROM = 8;
+// lead motifs: when the notes fall (3-3-2 rhythms) and which chord tone each
+// one is (0 the root, 1 the third, 2 the fifth, 3 the root an octave up)
+const MOTIFS = [
+  { at: [0, 3, 6, 10, 12], tone: [2, 1, 0, 1, 3] },
+  { at: [0, 3, 6, 8, 11, 14], tone: [0, 1, 2, 3, 2, 1] },
+  { at: [0, 6, 8, 10, 12], tone: [3, 2, 1, 2, 4] },
+  { at: [2, 4, 6, 10, 14], tone: [1, 2, 3, 2, 1] }
+];
+// the 3-3-2 groove: plucked bass and a soft kick on 1, the "and" of 2, and 4
+const PULSE = [0, 6, 12];
+const BASS = { 0: 0, 6: 0, 12: 7, 14: 12 };
+const MARIMBA = [0, REST, REST, 2, REST, REST, 1, REST, 2, REST, REST, 1, REST, REST, 2, REST];
 const midiHz = m => 440 * 2 ** ((m - 69) / 12);
 
-// a tiny synth on the shared audio context. everything goes through one bus
-// with a compressor so nothing clips.
+// a tiny synth on the shared audio context. everything goes through one bus,
+// a lowpass for the warm lo-fi top end, and a compressor so nothing clips.
 let musicAC = null, musicBus = null, noiseBuf = null;
 function musicSetup(ac) {
   musicAC = ac;
-  const comp = ac.createDynamicsCompressor();
+  const comp = ac.createDynamicsCompressor(), warm = ac.createBiquadFilter();
   comp.threshold.value = -16; comp.ratio.value = 3;
+  warm.type = 'lowpass'; warm.frequency.value = 3400; warm.Q.value = 0.5;
   musicBus = ac.createGain();
   musicBus.gain.value = 0;
-  musicBus.connect(comp).connect(ac.destination);
+  musicBus.connect(warm).connect(comp).connect(ac.destination);
   noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -2625,7 +2630,7 @@ function mNote(type, f, t, dur, vol, o = {}) {
   if (o.vib) {
     const lfo = ac.createOscillator(), lg = ac.createGain();
     lfo.frequency.value = o.vib;
-    lg.gain.value = f * 0.01;
+    lg.gain.value = f * 0.008;
     lfo.connect(lg).connect(osc.frequency);
     lfo.start(t + 0.15);
     lfo.stop(t + dur + rel);
@@ -2641,47 +2646,51 @@ function mNoise(t, dur, vol, type, freq, q = 1) {
   src.start(t, Math.random() * 0.5);
   src.stop(t + dur + 0.02);
 }
-// a struck note that dies away on its own: a sine with a little click on top
-function mallet(f, t, vol, ring) {
+// a struck note that dies away on its own, with a few partials on top: the
+// marimba (warm), or the music box (brighter, rings longer)
+function mallet(f, t, vol, ring, bright) {
   mNote('sine', f, t, 0.01, vol, { at: 0.002, rel: ring });
-  mNote('sine', f * 4, t, 0.005, vol * 0.18, { at: 0.001, rel: 0.05 });
+  mNote('sine', f * 2, t, 0.01, vol * (bright ? 0.35 : 0.12), { at: 0.002, rel: ring * 0.6 });
+  mNote('sine', f * 4, t, 0.005, vol * (bright ? 0.2 : 0.1), { at: 0.001, rel: 0.06 });
 }
 // everything that happens on one 16th note
 function songStep(bar, step, t) {
-  const b = ARR[bar], chord = CH[b.ch], st = 60 / SONG.bpm / 4, root = chord[0] - 12;
-  const full = b.part === 'full', soft = b.part !== 'full';
-  // pads: a soft chord held through each bar of the intro and the breakdown
-  if (step === 0 && soft) {
-    chord.forEach(n => mNote('triangle', midiHz(n), t, st * 15, 0.035, { lp: 1400, at: 0.4, rel: 0.5 }));
-  }
-  // the marimba
+  const b = ARR[bar], chord = CH[b.ch], st = 60 / SONG.bpm / 4, root = BASS_ROOT[b.ch] || chord[0] - 12;
+  const full = b.part === 'full', intro = b.part.startsWith('intro'), late = b.part === 'intro2' || b.part === 'break';
+  // pads: a soft chord held through each bar outside the main section
+  if (step === 0 && !full) chord.forEach(n => mNote('triangle', midiHz(n), t, st * 15, 0.04, { lp: 1200, at: 0.5, rel: 0.6 }));
+  // the marimba picking out the chord in the 3-3-2 rhythm
   const m = MARIMBA[step];
-  if (m !== REST) mallet(midiHz(chord[m] + 12), t, soft ? 0.16 : 0.13, 0.32);
-  // the shaker, every eighth, and the rim clicks on 2 and 4
-  if ((full || bar >= 2) && step % 2 === 0) mNoise(t, 0.04, step % 4 === 2 ? 0.05 : 0.03, 'highpass', 8000);
+  if (m !== REST) mallet(midiHz(chord[m] + 12), t, intro ? 0.24 : 0.2, 0.35, false);
+  // plucked bass, from the second half of the intro on
+  if ((full || late) && BASS[step] !== undefined) {
+    mNote('triangle', midiHz(root + BASS[step]), t, st * (step === 14 ? 1 : 2.2), step === 14 ? 0.08 : 0.15, { lp: 1000, rel: 0.08 });
+    mNote('sine', midiHz(root + BASS[step] - 12), t, st * 2, step === 14 ? 0.03 : 0.06);
+  }
   if (full) {
-    if (KICK[step]) mNote('sine', 95, t, 0.1, 0.32, { slide: 50, slideT: 0.08, rel: 0.06 });
-    if (step === 4 || step === 12) { mNoise(t, 0.035, 0.16, 'bandpass', 2600, 4); mNote('triangle', 900, t, 0.02, 0.06, { rel: 0.02 }); }
+    // a soft kick on the 3-3-2 pulse and a half time clap on beat 3, which
+    // keeps it laid back
+    if (PULSE.includes(step)) mNote('sine', 95, t, 0.1, 0.24, { slide: 48, slideT: 0.09, rel: 0.06 });
+    if (step === 8) { mNoise(t, 0.09, 0.2, 'bandpass', 1500, 1.2); mNoise(t + 0.012, 0.07, 0.12, 'bandpass', 2200, 1.5); }
+    // a very quiet shaker on the eighths
+    if (step % 2 === 0) mNoise(t, 0.03, 0.025, 'highpass', 6000);
   }
-  // the bass: short and plucked, bouncing between root and fifth
-  if ((full || b.part === 'break') && BASS[step] !== REST) {
-    const f = midiHz(root + BASS[step]);
-    mNote('triangle', f, t, st * 1.2, 0.2, { lp: 1200, rel: 0.06 });
-  }
-  // the lead: soft and round, a little vibrato on the long notes. a '-'
-  // holds the note before it.
-  const line = b.lead && LEAD[b.lead];
-  if (line && line[step] !== REST && line[step] !== HOLD) {
-    let len = 1;
-    while (step + len < 16 && line[step + len] === HOLD) len++;
-    const f = midiHz(line[step]), dur = st * (len > 1 ? len * 0.95 : 0.7);
-    mNote('triangle', f, t, dur, 0.26, { lp: 2400, at: 0.02, vib: len > 1 ? 5 : 0 });
-    mNote('sine', f * 2, t, dur, 0.05, { at: 0.02 });
+  // the lead, a music box: a motif built from the chord, or a long note to
+  // end the phrase
+  if (b.lead === 'hold' && step === 0) {
+    mallet(midiHz(chord[0] + 24), t, 0.32, 1.2, true);
+    mNote('triangle', midiHz(chord[0] + 24), t, st * 10, 0.09, { at: 0.05, vib: 5 });
+  } else if (b.lead !== undefined && b.lead !== 'hold') {
+    const mo = MOTIFS[b.lead], k = mo.at.indexOf(step);
+    if (k >= 0) {
+      const ladder = [chord[0], chord[1], chord[2], chord[0] + 12, chord[1] + 12];
+      mallet(midiHz(ladder[mo.tone[k]] + 24), t, 0.32, 0.5, true);
+      mNote('triangle', midiHz(ladder[mo.tone[k]] + 12), t, st * 1.5, 0.07, { lp: 2400 });
+    }
   }
 }
 // the scheduler: looks a little ahead and books each 16th note on the audio
-// clock, which keeps time even when a frame stutters. every other sixteenth
-// is pushed a little late, which is what gives it its shuffle.
+// clock, which keeps time even when a frame stutters
 const song = { on: false, timer: null, next: 0, bar: 0, step: 0 };
 function songStart() {
   if (song.on) return;
@@ -2692,7 +2701,7 @@ function songStart() {
   song.next = ac.currentTime + 0.1;
   musicBus.gain.cancelScheduledValues(ac.currentTime);
   musicBus.gain.setValueAtTime(0.0001, ac.currentTime);
-  musicBus.gain.exponentialRampToValueAtTime(0.8, ac.currentTime + 0.4);
+  musicBus.gain.exponentialRampToValueAtTime(0.85, ac.currentTime + 0.4);
   clearInterval(song.timer);
   song.timer = setInterval(songTick, 25);
   songTick();
@@ -2701,7 +2710,7 @@ function songTick() {
   if (!song.on) return;
   const st = 60 / SONG.bpm / 4;
   while (song.next < musicAC.currentTime + 0.15) {
-    songStep(song.bar, song.step, song.next + (song.step % 2 ? st * SONG.swing : 0));
+    songStep(song.bar, song.step, song.next);
     song.next += st;
     if (++song.step === 16) { song.step = 0; song.bar = song.bar + 1 >= ARR.length ? LOOP_FROM : song.bar + 1; }
   }

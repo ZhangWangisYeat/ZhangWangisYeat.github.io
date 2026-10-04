@@ -1814,12 +1814,13 @@ function rotPrep(G) {
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) src.push(G.get(x, y));
   return { big: epx2(epx2(src, w, h), w * 2, h * 2), BW: w * 4, BH: h * 4 };
 }
-// one angle, optionally blown up (scale) while staying on the 1x pixel grid
-function rotDraw(P, px, py, D, a, scale) {
+// one angle, optionally blown up while staying on the 1x pixel grid: along
+// stretches it down its length, across (if given) through its thickness
+function rotDraw(P, px, py, D, a, along, across = along) {
   const ca = Math.cos(a), sa = Math.sin(a), c = mk(D, D), g = c.getContext('2d');
   for (let oy = 0; oy < D; oy++) for (let ox = 0; ox < D; ox++) {
-    const vx = (ox + 0.5 - D / 2) / scale, vy = (oy + 0.5 - D / 2) / scale;
-    const bx = Math.floor((px + vx * ca + vy * sa) * 4), by = Math.floor((py - vx * sa + vy * ca) * 4);
+    const vx = ox + 0.5 - D / 2, vy = oy + 0.5 - D / 2;
+    const bx = Math.floor((px + (vx * ca + vy * sa) / along) * 4), by = Math.floor((py + (-vx * sa + vy * ca) / across) * 4);
     if (bx < 0 || by < 0 || bx >= P.BW || by >= P.BH) continue;
     const col = P.big[by * P.BW + bx];
     if (col) { g.fillStyle = col; g.fillRect(ox, oy, 1, 1); }
@@ -1829,10 +1830,11 @@ function rotDraw(P, px, py, D, a, scale) {
 const DRILL_STEPS = 32, DRILL_D = 74;
 const DRILL_ROT = [0, 1, 2].map(spin => rotSet(makeDrillGrid(spin), 3.5, 7.5, DRILL_D, DRILL_STEPS));
 // when he comes up out of the floor the drill he's holding over his head is
-// bigger (1.6x), and it only ever points straight up, so that one angle is all
-// that's drawn
-const DRILL_BIG = 1.6, DRILL_BIG_D = 116;
-const DRILL_UP = [0, 1, 2].map(spin => rotDraw(rotPrep(makeDrillGrid(spin)), 3.5, 7.5, DRILL_BIG_D, -Math.PI / 2, DRILL_BIG));
+// huge: exactly as wide as his hole (13px thick x 4 = 52, HOLE_RX * 2), so what
+// you see is what hurts you, and 2.4 times as long. it only ever points
+// straight up, so that one angle is all that's drawn.
+const DRILL_BIG = 2.4, DRILL_WIDE = 4, DRILL_BIG_D = 172;
+const DRILL_UP = [0, 1, 2].map(spin => rotDraw(rotPrep(makeDrillGrid(spin)), 3.5, 7.5, DRILL_BIG_D, -Math.PI / 2, DRILL_BIG, DRILL_WIDE));
 
 // a pile of rocks that comes down over the way out when the fight starts
 function makeRubble() {
@@ -2334,7 +2336,7 @@ function updateMoe(c, dt) {
         c.lunges++;
         c.t = 0;
         c.state = c.lunges >= (mad ? 1 : 2) ? 'dig' : 'face';
-        if (c.state === 'dig') sfx.rumble();
+        if (c.state === 'dig') { sfx.rumble(); moeCallMoles(2); }
       }
       break;
     case 'dig':
@@ -2402,7 +2404,7 @@ function updateMoe(c, dt) {
         c.pops++;
         if (c.pops >= (mad ? MOE.popsMad : MOE.pops)) { c.state = 'climb'; c.t = 0; }
         // straight back under, carrying on from halfway down
-        else { c.state = 'dig'; c.t = MOE.dig * MOE.stuckSink; sfx.rumble(); }
+        else { c.state = 'dig'; c.t = MOE.dig * MOE.stuckSink; sfx.rumble(); moeCallMoles(1); }
       }
       break;
     case 'climb':
@@ -2443,11 +2445,11 @@ function updateMoe(c, dt) {
 // how much a hit on moe actually does. above ground his drill is between you
 // and him: swings barely scratch him unless you've caught him
 // side on (straight after a lunge), but arrows get round it. half out of the
-// ground he can't turn, so swings land for half again as much. underground
-// you can't hit him at all.
+// ground he can't turn, so swings land for a quarter again as much (it was
+// half, alex toned it down). underground you can't hit him at all.
 function bossHit(c, dmg, how) {
   if (c.under || ['wait', 'intro', 'tell', 'dying'].includes(c.state)) return { dmg: 0 };
-  if (c.state === 'stuck' || c.state === 'pop') return how === 'arrow' ? { dmg } : { dmg: dmg * 1.5, col: '#ffd23f' };
+  if (c.state === 'stuck' || c.state === 'pop') return how === 'arrow' ? { dmg } : { dmg: dmg * 1.25, col: '#ffd23f' };
   if (how === 'arrow' || ['dazed', 'dig', 'climb'].includes(c.state)) return { dmg };
   const img = moeFrame(c, performance.now()), hand = moePoint(c, MOE_HAND, img);
   const toYou = Math.atan2(player.y - 10 - hand.y, player.x - hand.x);
@@ -2463,9 +2465,42 @@ function bossDown(c) {
   bossMusic(false);
   sfx.roar();
 }
+// every time he goes under, moles burst up out of the floor round you: two
+// when he first digs down, one more each time he dives back in between pops,
+// up to 3 at once (4 when he's angry). they're what makes the underground part
+// dangerous: you have to keep moving for the tells while they're biting you.
+function moeCallMoles(n) {
+  const alive = creatures.filter(k => k.summoned && !k.dead).length;
+  const cap = moeMad(moe) ? 4 : 3;
+  for (let i = 0; i < n && alive + i < cap; i++) {
+    let x = player.x, y = player.y;
+    for (let tries = 0; tries < 20; tries++) {
+      const a = Math.random() * Math.PI * 2, d = (3 + Math.random() * 2) * TILE;
+      x = clamp(player.x + Math.cos(a) * d, 32, denRoom.w - 32);
+      y = clamp(player.y + Math.sin(a) * d, 56, denRoom.h - 28);
+      if (Math.hypot(x - player.x, y - player.y) > 2.5 * TILE && Math.hypot(x - moe.x, y - moe.y) > 2 * TILE) break;
+    }
+    const m = spawnRoomCreature('mole', denRoom, x, y);
+    m.summoned = true;
+    dirtSpray(x, y - 2, 12);
+    aggro(m);
+  }
+}
+function clearMoeMoles(poof) {
+  for (let i = creatures.length - 1; i >= 0; i--) {
+    const k = creatures[i];
+    if (!k.summoned) continue;
+    if (poof && !k.dead) burst(k.x, k.y - 6, k.def.chip, 10);
+    creatures.splice(i, 1);
+    const j = denRoom.things.indexOf(k);
+    if (j >= 0) denRoom.things.splice(j, 1);
+  }
+}
 function finishMoe(c) {
   c.dead = true;
   c.gone = true;
+  // his moles scatter back underground when he goes
+  clearMoeMoles(true);
   quest.moe.dead = true;
   quest.killed.moe = true;
   dirtSpray(c.x, c.y - 10, 40);
@@ -2761,6 +2796,7 @@ function endCine(fight) {
 function resetMoe() {
   if (cine) endCine(false);
   bossMusic(false);
+  clearMoeMoles(false);
   denRoom.sealed = false;
   rubble.gone = true;
   bossBar(false);
@@ -4976,10 +5012,21 @@ function coreMotes(dt) {
 function playFrozen() { return ui !== null || player.dead || !!sleeping || !!cine; }
 // which layer of img/player-armor.png to paint over you, or -1 for none
 const ARMOR_LAYERS = ['hide', 'wool', 'gold', 'marble', 'iron', 'emerald', 'diamond'];
-// (the sheet only has the torso, so it's the chestplate that shows)
-function playArmorIndex() {
-  const chest = inv.armor.chest;
-  return started && chest ? ARMOR_LAYERS.indexOf(ITEMS[chest.id].armor) : -1;
+// every worn piece is painted on you: the chestplate from img/player-armor.png,
+// the helmet, leggings and boots from img/player-armor-pieces.png (blocks 0, 1
+// and 2 of seven materials each). boots and leggings go down first, then the
+// chestplate, then the helmet.
+const PIECE_BLOCK = { head: 0, legs: 1, feet: 2 };
+function playArmorLayers() {
+  if (!started) return [];
+  const out = [];
+  ['feet', 'legs', 'chest', 'head'].forEach(k => {
+    const st = inv.armor[k];
+    if (!st) return;
+    const m = ARMOR_LAYERS.indexOf(ITEMS[st.id].armor);
+    out.push(k === 'chest' ? ['torso', m] : ['pieces', PIECE_BLOCK[k] * 7 + m]);
+  });
+  return out;
 }
 // how much of you is in gold, for the shine
 const goldShare = () => armorSum(A => (A.shine ? 1 : 0));
@@ -5429,21 +5476,23 @@ function sweepTo(x, y) {
   }
   dragFrom = { x, y };
 }
-// double click a stack to pull everything of that kind together: the stack
-// you clicked fills up first, then the others in order, and any left empty
-// are cleared. works in your bag and hotbar together, or inside a chest.
-function restack(ref) {
-  const [box, i] = ref.split(':');
-  if (box !== 'inv' && box !== 'chest') return;
-  const list = box === 'inv' ? inv.slots : openChest, st = list[+i];
-  if (!st || maxStack(st.id) <= 1) return;
-  const max = maxStack(st.id), id = st.id;
-  let total = list.reduce((n, x) => n + (x && x.id === id ? x.n : 0), 0);
-  [+i, ...list.map((x, k) => (x && x.id === id && k !== +i ? k : -1)).filter(k => k >= 0)].forEach(k => {
-    const take = Math.min(max, total);
-    list[k] = take > 0 ? { id, n: take } : null;
-    total -= take;
-  });
+// double click while holding a stack that isn't full (like minecraft): it
+// pulls more of the same thing out of your bag, hotbar and an open chest onto
+// the cursor, the smallest stacks first so full ones aren't broken up, until
+// it's full or there's none left
+function gatherHeld() {
+  if (!heldStack || maxStack(heldStack.id) <= 1) return;
+  const max = maxStack(heldStack.id), id = heldStack.id;
+  const refs = [...inv.slots.map((_, i) => `inv:${i}`), ...(ui === 'chest' ? openChest.map((_, i) => `chest:${i}`) : [])]
+    .filter(r => { const x = slotGet(r); return x && x.id === id; })
+    .sort((a, b) => slotGet(a).n - slotGet(b).n);
+  for (const r of refs) {
+    if (heldStack.n >= max) break;
+    const x = slotGet(r), k = Math.min(max - heldStack.n, x.n);
+    heldStack.n += k;
+    x.n -= k;
+    if (!x.n) slotSet(r, null);
+  }
   sfx.ui();
   afterInventoryChange();
 }
@@ -5453,11 +5502,12 @@ invWrap.addEventListener('mousedown', e => {
     e.preventDefault();
     const ref = slot.dataset.ref, now = performance.now();
     // a real dblclick event can't be used: the first click redraws the
-    // inventory, so the two clicks land on different elements
+    // inventory, so the two clicks land on different elements. the second
+    // click of a double gathers instead of putting the stack down.
     const dbl = e.button === 0 && !e.shiftKey && lastClick.ref === ref && now - lastClick.t < 350;
     lastClick = { ref, t: dbl ? 0 : now };
+    if (dbl && heldStack) { gatherHeld(); return; }
     slotClick(ref, e.button, e.shiftKey);
-    if (dbl && !heldStack) restack(ref);
     if (e.button === 2 && heldStack && !e.shiftKey) { rightDrag = new Set([ref]); dragFrom = { x: e.clientX, y: e.clientY }; }
     return;
   }

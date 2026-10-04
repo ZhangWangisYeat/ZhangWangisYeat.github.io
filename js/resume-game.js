@@ -1102,6 +1102,11 @@ sheetPlay.src = 'img/player-swing.png';
 // cells lined up with player-swing.png. only the chest pixels are filled in.
 const armorSheet = new Image();
 armorSheet.src = 'img/player-armor.png';
+// the other pieces, built the same way from player-swing.png: helmets (the
+// hair above your face), then leggings (your jeans), then boots (your shoes),
+// each block the same seven materials of 10 rows
+const piecesSheet = new Image();
+piecesSheet.src = 'img/player-armor-pieces.png';
 
 // rows on the sheet: idle, walk, swing, each facing down / side (right) / up
 const ROWS = { idle: { down: 0, side: 1, up: 2 }, walk: { down: 3, side: 4, up: 5 }, swing: { down: 6, side: 7, up: 8 } };
@@ -2027,8 +2032,10 @@ function drawPlayer(toX, toY, t) {
   const srcH = wading ? CELL - 8 : CELL;
   const dx = toX(player.x - 24), dy = toY(player.y - 42 + sink);
   const img = sheetPlay.complete && sheetPlay.naturalWidth ? sheetPlay : sheet;
-  const armor = typeof playArmorIndex === 'function' ? playArmorIndex() : -1;
-  const armorY = armor >= 0 && armorSheet.naturalWidth ? (armor * 10 + row) * CELL : -1;
+  // whatever armor you're wearing, as [sheet, layer] from the play layer
+  const layers = (typeof playArmorLayers === 'function' ? playArmorLayers() : [])
+    .map(([which, layer]) => [which === 'torso' ? armorSheet : piecesSheet, (layer * 10 + row) * CELL])
+    .filter(([im]) => im.naturalWidth);
   if (typeof playDrawHeld === 'function') playDrawHeld(dx, dy, row, col, false);
   ctx.save();
   if (player.blink) ctx.globalAlpha = 0.4;
@@ -2036,10 +2043,10 @@ function drawPlayer(toX, toY, t) {
     ctx.translate(dx + CELL * S, dy);
     ctx.scale(-1, 1);
     ctx.drawImage(img, col * CELL, row * CELL, CELL, srcH, 0, 0, CELL * S, srcH * S);
-    if (armorY >= 0) ctx.drawImage(armorSheet, col * CELL, armorY, CELL, srcH, 0, 0, CELL * S, srcH * S);
+    layers.forEach(([im, y]) => ctx.drawImage(im, col * CELL, y, CELL, srcH, 0, 0, CELL * S, srcH * S));
   } else {
     ctx.drawImage(img, col * CELL, row * CELL, CELL, srcH, dx, dy, CELL * S, srcH * S);
-    if (armorY >= 0) ctx.drawImage(armorSheet, col * CELL, armorY, CELL, srcH, dx, dy, CELL * S, srcH * S);
+    layers.forEach(([im, y]) => ctx.drawImage(im, col * CELL, y, CELL, srcH, dx, dy, CELL * S, srcH * S));
   }
   ctx.restore();
   if (typeof playDrawHeld === 'function') playDrawHeld(dx, dy, row, col, true);

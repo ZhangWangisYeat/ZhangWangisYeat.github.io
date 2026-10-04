@@ -1847,10 +1847,11 @@ function rotDraw(P, px, py, D, a, along, across = along) {
 const DRILL_STEPS = 32, DRILL_D = 74;
 const DRILL_ROT = [0, 1, 2].map(spin => rotSet(makeDrillGrid(spin), 3.5, 7.5, DRILL_D, DRILL_STEPS));
 // when he comes up out of the floor the drill he's holding over his head is
-// huge: exactly as wide as his hole (13px thick x 4 = 52, HOLE_RX * 2), so what
-// you see is what hurts you, and 2.4 times as long. it only ever points
-// straight up, so that one angle is all that's drawn.
-const DRILL_BIG = 2.4, DRILL_WIDE = 4, DRILL_BIG_D = 172;
+// exactly as wide as his hole (13px thick x 4 = 52, HOLE_RX * 2), so what you
+// see is what hurts you, but only 1.5 times as long (it was 2.4, which looked
+// like a tower, alex wanted it squatter and more believable). it only ever
+// points straight up, so that one angle is all that's drawn.
+const DRILL_BIG = 1.5, DRILL_WIDE = 4, DRILL_BIG_D = 124;
 const DRILL_UP = [0, 1, 2].map(spin => rotDraw(rotPrep(makeDrillGrid(spin)), 3.5, 7.5, DRILL_BIG_D, -Math.PI / 2, DRILL_BIG, DRILL_WIDE));
 
 // a pile of rocks that comes down over the way out when the fight starts
@@ -2192,10 +2193,18 @@ const burrowRooms = BURROWS.map((B, i) => {
   B.moles.forEach(([x, y], j) => {
     if (save.dead[j]) return;
     const m = spawnRoomCreature('mole', r, x, y);
-    m.onDeath = () => { save.dead[j] = true; markDirty(); };
+    m.onDeath = () => {
+      save.dead[j] = true;
+      markDirty();
+      if (burrowsCleared()) setTimeout(() => toast('The Mines', 'Mole holes cleared', 'Something bigger is digging nearby'), 900);
+    };
   });
   return r;
 });
+// a hole is cleared once every mole in it is dead. moe's den stays shut until
+// all three are (alex), so you've fought the little ones before the big one.
+const burrowsCleared = () => BURROWS.every((B, i) => B.moles.every((_, j) => quest.burrows[i] && quest.burrows[i].dead[j]));
+const burrowsLeft = () => BURROWS.filter((B, i) => !B.moles.every((_, j) => quest.burrows[i] && quest.burrows[i].dead[j])).length;
 
 // moe's den: 24 x 16 tiles, too big to fit on screen, so the camera follows
 // you round it (roomCam in the engine). torches on the timbers, a few loose
@@ -2260,7 +2269,9 @@ denRoom.glows.push(moeLamp, moeBeam);
 
 BUILDINGS.push(
   ...burrowRooms.map((r, i) => ({ thing: holeThings[i], tile: MOLE_HOLES[i], room: r, name: 'Mole Hole', hole: true, open: () => true, hint: () => false })),
-  { thing: denHole, tile: denPoi.at, room: denRoom, name: 'Moe\'s Den', hole: true, pit: { x: denHole.x, y: denHole.y - 15, w: 12 }, open: () => true, hint: () => false }
+  { thing: denHole, tile: denPoi.at, room: denRoom, name: 'Moe\'s Den', hole: true, pit: { x: denHole.x, y: denHole.y - 15, w: 12 },
+    open: () => burrowsCleared() || !!quest.moe.dead, hint: () => false,
+    shut: () => ['Not yet', 'Something big is down there', `Clear the mole holes first (${burrowsLeft()} left)`] }
 );
 
 // the numbers for the fight. tell is how long the floor cracks before he
@@ -3130,6 +3141,9 @@ function inArc(c, a, tool, cone = 1.15) {
   return Math.abs(diff) < cone;
 }
 
+// how long a click waits for the swing cooldown to finish before it's dropped
+const SWING_BUFFER = 0.15;
+let swingAsk = 0;
 function attack() {
   const tool = heldTool();
   if (vitals.atkCD > 0) return;
@@ -3619,10 +3633,11 @@ function useRanged(it) {
 // the bow: hold right click to draw, aim with the cursor while you hold (you
 // turn to face it and the bow follows), let go to loose. the longer you draw,
 // up to BOW.draw seconds, the harder and farther the arrow flies: a quick tap
-// barely does anything, a full draw hits for 1.2 times the arrow's damage.
+// barely does anything, a full draw hits for 1.4 times the arrow's damage
+// (it was 1.2, alex found the bow felt weak).
 // switching slots, opening a menu or dying while drawn lets the string go
 // without wasting the arrow.
-const BOW = { draw: 1, minMult: 0.3, maxMult: 1.2, minSpeed: 180, maxSpeed: 380, minRange: 5, maxRange: ARROW_RANGE };
+const BOW = { draw: 1, minMult: 0.35, maxMult: 1.4, minSpeed: 180, maxSpeed: 380, minRange: 5, maxRange: ARROW_RANGE };
 let bowDraw = null;
 const bowCharge = () => (bowDraw ? Math.min(1, bowDraw.t / BOW.draw) : 0);
 function startBowDraw() {
@@ -4731,7 +4746,7 @@ const meadowsComplete = () => QUEST_STEPS.slice(0, -1).every(q => q.done());
 // the mines so far: find the holes, beat moe, open his chest. the other four
 // bosses come later.
 const MINES_STEPS = [
-  { done: () => quest.burrows.some(b => b && b.visited) || !!quest.moe.introSeen, title: 'Search the mole holes' },
+  { done: () => burrowsCleared() || !!quest.moe.dead, title: () => `Clear the mole holes (${BURROWS.length - burrowsLeft()} of ${BURROWS.length})` },
   { done: () => !!quest.moe.dead, title: () => (quest.moe.introSeen ? 'Defeat Moe the Mole' : 'Find what\'s doing all the digging') },
   { done: () => !!quest.moe.chestOpened, title: 'Open Moe\'s chest' },
   { done: () => false, title: 'More bosses coming soon' }
@@ -4823,11 +4838,15 @@ function playDrawHeld(dx, dy, row, col, front) {
   if (!s) return;
   const face = ['down', 'side', 'up'][row % 3];
   const pose = (SWING_POSE[row] && SWING_POSE[row][col]) || REST_POSE[face];
-  if ((pose.front !== false) !== front) return;
   const it = ITEMS[s.id], img = ICON_CANVAS[s.id];
+  // the bow goes behind you when it points up, in front otherwise
+  if (it.ranged && !it.throw) {
+    if ((Math.sin(bowAng) > -0.35) === front) drawDrawnBow(dx + 24 * S, dy + 42 * S);
+    return;
+  }
+  if ((pose.front !== false) !== front) return;
   let x = pose.x, a = pose.a;
   if (player.flip) { x = CELL - x; a = 180 - a; }
-  if (bowDraw && it.ranged) { drawDrawnBow(dx + 24 * S, dy + 42 * S); return; }
   // the drill points where you're drilling, spins, and shudders in your hands
   const spinning = drilling && it.tool === 'drill';
   if (spinning) a = (aimAngle() * 180) / Math.PI;
@@ -4859,14 +4878,31 @@ function playDrawHeld(dx, dy, row, col, front) {
   ctx.restore();
 }
 
-// the bow while you're drawing it, drawn for real instead of as its rotated
-// icon (that turned round the icon's corner, so the bow sat at odd angles and
-// the arrow wasn't on it). the grip is held out in front of you along your aim,
-// the limbs curve back towards you and bend further the more you draw, the
-// string runs from tip to tip and is pulled back to you, and the arrow lies
-// along your aim with its nock on the string. hx, hy is your feet on screen.
+// the bow in your hand, drawn for real instead of as its rotated icon (that
+// turned round the icon's corner, so the bow sat at odd angles and the arrow
+// wasn't on it). it's the same bow whether you're drawing it or not (alex):
+// at rest it's held out at your side, and when you draw it swings round to
+// your aim (bowAng eases between the two, see tickBowAngle), an arrow appears
+// on the string and you pull it back. the grip is out in front of you along
+// bowAng, the limbs curve back towards you and bend further the more you draw,
+// and the arrow lies along the aim with its nock on the string. hx, hy is
+// your feet on screen.
+let bowAng = Math.PI / 2;
+function bowRestAngle() {
+  // held low at your side in your bow hand, a little out from the body
+  if (player.face === 'down') return 0.6;
+  if (player.face === 'up') return -Math.PI + 0.6;
+  return player.flip ? Math.PI - 0.3 : 0.3;
+}
+function tickBowAngle(dt) {
+  const aiming = bowDraw || player.swing >= 0;
+  const want = aiming ? aimAngle() : bowRestAngle();
+  let d = want - bowAng;
+  d = Math.atan2(Math.sin(d), Math.cos(d));
+  bowAng += d * Math.min(1, dt * (aiming ? 22 : 12));
+}
 function drawDrawnBow(hx, hy) {
-  const a = aimAngle(), ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux, c = bowCharge();
+  const a = bowAng, ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux, c = bowCharge();
   const head = MAT_PAL[ITEMS[bestArrow() || 'wood-arrow'].arrow];
   const plot = (x, y, col) => { ctx.fillStyle = col; ctx.fillRect(hx + Math.round(x) * S, hy + Math.round(y) * S, S, S); };
   const line = (x0, y0, x1, y1, col) => {
@@ -4876,6 +4912,10 @@ function drawDrawnBow(hx, hy) {
   ctx.save();
   if (player.blink) ctx.globalAlpha = 0.4;
   const nock = bowShape(plot, ux * 11, -9 + uy * 10, ux, uy, 8, 4.3 + c * 2.5, c * 6);
+  ctx.restore();
+  if (!bowDraw) return;
+  ctx.save();
+  if (player.blink) ctx.globalAlpha = 0.4;
   const tip = [nock[0] + ux * 14, nock[1] + uy * 14];
   line(nock[0], nock[1], tip[0] - ux * 2, tip[1] - uy * 2, '#c48a4f');
   line(tip[0] - ux * 2, tip[1] - uy * 2, tip[0], tip[1], head[1]);
@@ -5060,8 +5100,10 @@ function checkDoors() {
     if (b.hole) {
       const pit = b.pit || { x: b.thing.x, y: b.thing.y - 9, w: 9 };
       if (!player.moving || Math.abs(player.x - pit.x) > pit.w || Math.abs(player.y - pit.y) > 5) continue;
-      if (buildingOpen(b)) enterRoom(b.room);
-      else lockedToast(regionAt(b.tile[0] + 0.5, b.tile[1] + 0.5));
+      if (!buildingOpen(b)) lockedToast(regionAt(b.tile[0] + 0.5, b.tile[1] + 0.5));
+      else if (b.open()) enterRoom(b.room);
+      // a shut hole: say so once in a while, not every frame you walk over it
+      else if (performance.now() > (b.shutAt || 0)) { b.shutAt = performance.now() + 4000; toast(...b.shut()); sfx.deny(); }
       return;
     }
     // a doorway takes you in as soon as you've stepped into it far enough to
@@ -5076,7 +5118,7 @@ function checkDoors() {
 function useBuilding(b) {
   if (!buildingOpen(b)) { lockedToast(regionAt(b.tile[0] + 0.5, b.tile[1] + 0.5)); return; }
   if (b.open()) { enterRoom(b.room); return; }
-  toast(...b.shut);
+  toast(...(typeof b.shut === 'function' ? b.shut() : b.shut));
   sfx.deny();
 }
 
@@ -5274,6 +5316,8 @@ function playUpdate(dt, t) {
   // right button too, so left click with it does nothing. holding on the
   // rock with the core under it doesn't swing either, see tickSecretRock.)
   const held = heldItem() && ITEMS[heldItem().id];
+  tickBowAngle(dt);
+  swingAsk = Math.max(0, swingAsk - dt);
   if (mouse.down && !ui && !player.dead && !cine && !drilling && !onRock && !(held && held.tool === 'drill')) {
     const tool = heldTool();
     const a = aimAngle();
@@ -5281,12 +5325,16 @@ function playUpdate(dt, t) {
     const ranged = shootsHere() && held && held.throw;
     const diggable = tgt && !CLICK_ONLY.has(tgt.type) && inReach(tgt) && (!ranged || mineInfo(tgt).time !== Infinity);
     const fighting = !ranged && creatures.some(c => inArc(c, a, tool));
-    if (!fighting && diggable) mineStep(tgt, dt);
+    if (!fighting && diggable) { mineStep(tgt, dt); swingAsk = 0; }
     else {
       if (mining && mining.thing) mining.thing.shake = 0;
       mining = null;
       if (ranged) useRanged(held);
-      else attack();
+      // a swing is one click (alex): holding the button down doesn't keep
+      // swinging, so you have to time your hits. a click that lands just
+      // before the cooldown runs out still counts (swingAsk), otherwise
+      // quick clicking would feel like it eats your clicks.
+      else if (swingAsk > 0 && vitals.atkCD <= 0) { attack(); swingAsk = 0; }
     }
   } else if (mining && !drilling) {
     if (mining.thing) mining.thing.shake = 0;
@@ -5592,6 +5640,7 @@ canvas.addEventListener('pointerdown', e => {
     }
   }
   mouse.down = true;
+  swingAsk = SWING_BUFFER;
 });
 window.addEventListener('pointerup', e => { if (e.button === 2) { releaseBow(); stopDrill(); } else mouse.down = false; });
 // letting go of one button while holding the other comes through as a move,

@@ -149,14 +149,14 @@ const REGIONS = [
             date: 'Jun 2026 – Aug 2026',
             desc: "PowerShell tool that transfers files up to 100 GB between remote desktops. Picks the fastest available TCP connection, verifies every transfer end to end with SHA-256, and lets you copy and paste files through a remote desktop connection's clipboard.",
             loot: ['PowerShell', 'TCP Sockets', 'SHA-256', '.NET', 'Clipboard IPC'],
-            poi: { id: 'mailsisibox', kind: 'lair', at: [108, 76], label: 'MailSISIBox' }
+            poi: { id: 'mailsisibox', kind: 'lair', at: [78, 55], label: 'MailSISIBox' }
           },
           {
             title: 'BruinPop',
             date: 'Mar 2026 – Jun 2026',
             desc: 'Full-stack social platform for pop-ups around UCLA. Built an interactive, location-aware posting interface. Secured with NextAuth JWTs and bcrypt encryption. 100+ campus users.',
             loot: ['React', 'Next.js', 'Tailwind CSS', 'Leaflet', 'NextAuth'],
-            poi: { id: 'bruinpop', kind: 'lair', at: [78, 55], label: 'BruinPop' }
+            poi: { id: 'bruinpop', kind: 'lair', at: [108, 76], label: 'BruinPop' }
           },
           {
             title: 'Desperate Measures',

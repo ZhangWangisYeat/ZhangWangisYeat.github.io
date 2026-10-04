@@ -216,6 +216,30 @@ obstacles.forEach(o => {
 });
 // walls you've dug out since beating him
 DQ.mined.forEach(i => { if (i >= 0 && i < RT.length && SOLID[RT[i]]) RT[i] = T.FLOOR; });
+// the start and the finish are a row of checkered tiles right across the
+// floor (they were painted lines; alex wanted tiles, like everything else)
+const T_FLAG = 18;
+PAL[T_FLAG] = { base: '#f2f0ea' };
+TEX[T_FLAG] = [0, 1, 2, 3].map(v => {
+  const c = mk(TILE, TILE), g = c.getContext('2d');
+  for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+    g.fillStyle = (x + y) % 2 ? '#1c1c22' : (hash2(x, y, 7380 + v) < 0.3 ? '#e2ded4' : '#f2f0ea');
+    g.fillRect(x * 4, y * 4, 4, 4);
+  }
+  g.fillStyle = 'rgba(0,0,0,0.12)';
+  g.fillRect(0, 15, TILE, 1);
+  return c;
+});
+const FLAG_ROWS = [S_START, S_FIN].map(s0 => {
+  const p = trackPt(s0), ty = Math.floor(p.y / TILE);
+  let x0 = Infinity, x1 = -Infinity;
+  for (let tx = Math.floor((p.x - HALF - 32) / TILE); tx <= Math.floor((p.x + HALF + 32) / TILE); tx++) {
+    if (rtAt(tx, ty) !== T.FLOOR) continue;
+    RT[rti(tx, ty)] = T_FLAG;
+    x0 = Math.min(x0, tx); x1 = Math.max(x1, tx);
+  }
+  return { ty, x0, x1 };
+});
 
 // the art. a crystal cluster for the gems, a jagged spray of rock, ore set in
 // the wall, the minecarts, darryl himself, the big door and the statue.
@@ -461,7 +485,12 @@ function makeDoor(open) {
     if (!inner) { G.set(x, y, hash2(x >> 1, y >> 1, 930) < 0.5 ? '#6e6a66' : '#585450'); continue; }
     if (y < 7) continue;
     const left = x < 25.5 - gap, right = x > 25.5 + gap;
-    if (!left && !right) { G.set(x, y, '#060505'); continue; }
+    if (!left && !right) {
+      // the vault's lava light spilling out through the gap
+      const glow = 1 - Math.abs(x - 25.5) / (gap + 1), hot = glow * (0.6 + (y / DOOR_H) * 0.6);
+      G.set(x, y, open < 0.05 ? '#060505' : hot > 0.75 ? '#ffd27a' : hot > 0.45 ? '#ff8a2a' : hot > 0.2 ? '#b8401a' : '#3a1208');
+      continue;
+    }
     const lx = left ? x : x - gap * 2;
     const band = y === 18 || y === 19 || y === 44 || y === 45;
     G.set(x, y, band ? '#7a7a84' : lx % 6 === 0 ? '#2a1a10' : (lx % 6 < 3 ? '#5e3a1e' : '#4e301a'));
@@ -477,7 +506,8 @@ function makeDoor(open) {
   [[23, 4], [24, 4], [27, 4], [28, 4]].forEach(([x, y]) => G.set(x, y, BONE.gap));
   return G.outline(() => '#141210').canvas();
 }
-const DOOR_ART = [0, 0.25, 0.5, 0.75, 1].map(makeDoor);
+const DOOR_STEPS = 10;
+const DOOR_ART = Array.from({ length: DOOR_STEPS + 1 }, (_, k) => makeDoor(k / DOOR_STEPS));
 
 // the lord of lava, a boss still to come, carved in obsidian with lava
 // running in the cracks: a hulking figure with a horned helm and burning eyes,
@@ -568,20 +598,9 @@ function paintRaceTile(g, tx, ty) {
     if (t === T.WATER && above !== t && !SOLID[above]) { g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(px, py, TILE, 1); }
   }
 }
-function paintRaceLines(g) {
-  [S_START, S_FIN].forEach(s => {
-    for (let d = -HALF - 10; d <= HALF + 10; d++) for (let k = 0; k < 4; k++) {
-      const p = trackPt(s + k - 2, d);
-      if (raceSolid(p.x, p.y)) continue;
-      g.fillStyle = (Math.floor((d + 80) / 4) + Math.floor(k / 2)) % 2 ? '#f2f0ea' : '#1c1c22';
-      g.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
-    }
-  });
-}
 function paintRaceRoom() {
   const c = mk(RACE_W, RACE_H), g = c.getContext('2d');
   for (let ty = 0; ty < RACE_ROWS; ty++) for (let tx = 0; tx < RACE_COLS; tx++) paintRaceTile(g, tx, ty);
-  paintRaceLines(g);
   return c;
 }
 // after digging a block out: that tile and the ones round it (for the shading)
@@ -769,9 +788,46 @@ function addBones(x, y) {
   DQ.bones.push([Math.round(px), Math.round(py)]);
 }
 showRemains();
-const door = { x: DOOR_X, y: DOOR_Y, frames: [DOOR_ART[DQ.doorOpen ? 4 : 0]], k: DQ.doorOpen ? 1 : 0 };
+// the banner over the finish: a post either side of the track and a red
+// banner hung between them with FINISH across it in big letters, gold edges,
+// and a row of little pennants hanging underneath
+const BANNER_FONT = {
+  F: ['11111', '10000', '11110', '10000', '10000', '10000', '10000'],
+  I: ['111', '010', '010', '010', '010', '010', '111'],
+  N: ['10001', '11001', '10101', '10101', '10011', '10001', '10001'],
+  S: ['01111', '10000', '10000', '01110', '00001', '00001', '11110'],
+  H: ['10001', '10001', '10001', '11111', '10001', '10001', '10001']
+};
+function makeBanner(w) {
+  const h = 56, G = pixelGrid(w, h), top = 6, bh = 15;
+  for (let y = 2; y < h; y++) [[1, 3], [w - 4, w - 2]].forEach(([a, b]) => { for (let x = a; x <= b; x++) G.set(x, y, x === a ? '#c48a4f' : x === b ? '#5e3a1e' : '#8a5a32'); });
+  [[2, 1], [w - 3, 1]].forEach(([x, y]) => pxBlob(G, x, y, 1.6, 1.6, '#ffd23f'));
+  for (let y = top; y < top + bh; y++) for (let x = 5; x < w - 5; x++) {
+    const edge = y === top || y === top + bh - 1;
+    G.set(x, y, edge ? '#ffd23f' : y === top + 1 ? '#e04a3a' : y === top + bh - 2 ? '#8a2018' : '#c0302a');
+  }
+  for (let x = 6; x < w - 6; x += 6) for (let k = 0; k < 4; k++) for (let j = -2 + k; j <= 2 - k; j++) G.set(x + j + 2, top + bh + k, (x / 6) % 2 ? '#f2f0ea' : '#ffd23f');
+  const word = 'FINISH', gap = 2, tw = [...word].reduce((n, ch) => n + BANNER_FONT[ch][0].length + gap, -gap);
+  let cx = Math.round(w / 2 - tw / 2);
+  [...word].forEach(ch => {
+    BANNER_FONT[ch].forEach((row, y) => [...row].forEach((on, x) => {
+      if (on !== '1') return;
+      G.set(cx + x + 1, top + 4 + y + 1, '#5a1410');
+      G.set(cx + x, top + 4 + y, '#fff6dc');
+    }));
+    cx += BANNER_FONT[ch][0].length + gap;
+  });
+  return G.outline(() => '#1a0c08').canvas();
+}
+{
+  const f = FLAG_ROWS[1], w = (f.x1 - f.x0 + 1) * TILE + 8;
+  raceRoom.things.push({ x: Math.round(((f.x0 + f.x1 + 1) * TILE) / 2), y: f.ty * TILE + 15, frames: [makeBanner(w)] });
+  raceRoom.glows.push({ x: ((f.x0 + f.x1 + 1) * TILE) / 2, y: f.ty * TILE - 30, rgb: '255,200,140', rad: 3.6, flicker: true, strength: 0.22 });
+}
+const door = { x: DOOR_X, y: DOOR_Y, frames: [DOOR_ART[DQ.doorOpen ? DOOR_STEPS : 0]], k: DQ.doorOpen ? 1 : 0 };
 raceRoom.things.push(door);
-raceRoom.glows.push({ x: DOOR_X, y: DOOR_Y + 8, rgb: GLOW.torch, rad: 3.2, flicker: true, strength: 0.26 });
+door.glow = { x: DOOR_X, y: DOOR_Y + 8, rgb: GLOW.torch, rad: 3.2, flicker: true, strength: 0.26 };
+raceRoom.glows.push(door.glow);
 
 // the carts. yours is driven with the keys (see driveCart), darryl's runs
 // along the track by itself (see driveDarryl). a cart with a rider draws the
@@ -845,7 +901,8 @@ function resetFree() {
 if (DQ.won) resetFree(); else resetRace();
 
 // the moving bits of a cart that's yours to drive
-function cartFits(x, y) { return onFloor(x, y, 8); }
+// (a cart can't go through the big door, even open, or out the way you came in)
+function cartFits(x, y) { return !(Math.abs(x - DOOR_X) < 60 && y < DOOR_Y + 16) && y < RACE_H - 24 && onFloor(x, y, 8); }
 function surfaceAt(x, y) {
   const t = rtAt(Math.floor(x / TILE), Math.floor(y / TILE));
   return t === T_MUD ? 'mud' : t === T.WATER ? 'water' : null;
@@ -860,7 +917,10 @@ function mashPress() {
 }
 function driveCart(c, dt) {
   const k = code => keys.has(code);
-  const auto = c.fin;
+  // past the finish line in a race it drives itself to a stop. after you've
+  // won (the free ride) it never does: you can drive it up and down the whole
+  // track as you like (alex)
+  const auto = c.fin && race.phase !== 'free';
   let up = !auto && (k('KeyW') || k('ArrowUp')), down = !auto && (k('KeyS') || k('ArrowDown'));
   let steer = auto ? 0 : (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0);
   const here = trackAt(c.x, c.y);
@@ -1124,7 +1184,6 @@ function nextLine() {
   talkEl.classList.toggle('is-reply', !!st.you);
   talkName.textContent = st.you ? 'You' : 'Darryl';
   talkText.textContent = '';
-  if (st.d) sfx.talk();
 }
 function advanceTalk() {
   if (!talk) return;
@@ -1132,7 +1191,8 @@ function advanceTalk() {
   if (st.act) return;
   const text = st.d || st.you;
   if (st.d && talk.t * TALK_RATE < text.length) { talk.t = text.length / TALK_RATE; return; }
-  sfx.ui();
+  if (st.you) sfx.you(text);
+  else sfx.ui();
   nextLine();
 }
 function endTalk(quiet) {
@@ -1151,9 +1211,11 @@ function tickTalk(dt) {
   const text = st.d || st.you;
   const n = st.you ? text.length : Math.min(text.length, Math.floor(talk.t * TALK_RATE));
   if (n !== talk.shown) {
+    const was = talk.shown;
     talk.shown = n;
     talkText.textContent = (st.you ? '▶ ' : '') + text.slice(0, n);
-    if (st.d && n < text.length && n % 3 === 0) sfx.blip();
+    // his voice, a little blip on every other letter as it's typed out
+    if (st.d && n > was && /[a-z0-9]/i.test(text[n - 1] || '') && (n % 2 === 0 || n - was > 1)) sfx.darryl(st.mood);
   }
 }
 const typing = () => talk && talk.steps[talk.i].d && talk.t * TALK_RATE < talk.steps[talk.i].d.length;
@@ -1175,24 +1237,40 @@ function winTalk() {
   const bling = STASH_SLOTS.some(k => DQ.stash[k]);
   const steps = [
     { d: 'Wow, bested by some random dude.' },
-    { d: 'Well, actually, you do look like this one guy from Universe N03e$, but I can\'t put my bony finger on it.' },
-    { you: 'So I assume you can open that suspicious looking door?' },
+    { d: 'You do look kinda familiar though?' },
+    { d: 'Like that one guy from that other universe!' },
+    { d: 'Well, that\'s impossible I guess.' },
+    { you: 'Uhhh.... ok.' },
+    { you: 'So I assume you can open that door?' },
     { d: 'A deal is a deal.' },
     { act: popArm, wait: 1.2 }
   ];
-  if (bling) steps.push({ d: 'Sorry for taking your bling, I couldn\'t help it.' }, { act: giveBling, wait: 0.8 });
+  if (bling) steps.push({ d: 'Sorry for taking your bling, I couldn\'t help it.' }, { act: giveBling, wait: 0.4 + STASH_SLOTS.filter(k => DQ.stash[k]).length * 0.35 });
   return steps;
 }
 function coreTalk() {
   return [
     { d: 'Hey, what\'s that glowing in your bag?', mood: 'idle' },
+    { you: 'Huh?' },
     { d: 'Wait. No. No no no no no.', mood: 'scared' },
     { d: 'It\'s YOU! You came back! They said you\'d come back for it!', mood: 'scared' },
-    { d: 'The gate, the timelines, Universe N03e$... I didn\'t touch anything, I swear! I just race carts!', mood: 'scared' },
-    { you: 'Darryl, what are you talking about?' },
+    { d: 'The universes, the timelines, the horrors! I didn\'t touch anything, I swear! I just race carts!', mood: 'scared' },
+    { you: 'Darryl, you good bro?' },
     { d: 'Take it! Take it and leave me alone!', mood: 'scared' },
-    { act: fleeDarryl, wait: 0.6 }
+    { act: fleeDarryl, wait: 1.8 },
+    { you: 'That was weird...' }
   ];
+}
+
+// losing: what he says before he zaps you, depending on how many times he's
+// beaten you already (alex's lines). he frowns through all of it.
+function loseTalk() {
+  const L = DQ.losses;
+  const lines = L === 0 ? ['Guess I\'m still the best racer.', 'Sorry about this man...']
+    : L <= 2 ? ['Told you I am the best racer. At least, I think I did.', 'I\'m sorry...']
+      : L <= 8 ? ['Told you I am the best racer. Right?', 'Yeah, I\'m pretty sure I did.']
+        : ['Told you I am the best racer.', 'Am I getting deja vu?', 'Wait, is that?', 'Nah, I\'m probably seeing things.'];
+  return lines.map(d => ({ d, mood: 'frown' }));
 }
 
 // winning: he pops his near arm off and it lands as the bone key. then he
@@ -1207,13 +1285,13 @@ function popArm() {
   markDirty();
 }
 function giveBling() {
-  STASH_SLOTS.forEach(k => {
-    const st = DQ.stash[k];
-    if (!st) return;
+  // one at a time, each tossed over to you (it's all off him and saved at
+  // once, so nothing's lost if the page closes halfway)
+  const back = STASH_SLOTS.filter(k => DQ.stash[k]).map(k => { const st = DQ.stash[k]; DQ.stash[k] = null; return st; });
+  back.forEach((st, i) => setTimeout(() => {
     dropStack(st, player.x + (Math.random() - 0.5) * 30, player.y + 8 + Math.random() * 10, raceRoom, 0.6, { x: darryl.x, y: darryl.y - 14 });
-    DQ.stash[k] = null;
-  });
-  sfx.pickup();
+    sfx.pickup();
+  }, i * 350));
   markDirty();
 }
 // the core gives him the fright of his life: he drops a map and legs it back
@@ -1225,7 +1303,6 @@ function fleeDarryl() {
   darryl.t = 0;
   darryl.fleeS = trackAt(darryl.x, darryl.y)?.s || S_STOP;
   sfx.deny();
-  setTimeout(() => toast('Darryl ran off', 'Crumpled Map', 'He dropped something...'), 900);
   markDirty();
 }
 
@@ -1378,13 +1455,14 @@ function raceTick(dt) {
       startTalk(greeting(), () => {
         race.phase = 'go';
         race.t = 0;
+        bossMusic(true, RACE_TUNE);
         walkDarryl(Dc.x + 12, Dc.y + 2, 120, () => { darryl.state = 'hop'; darryl.t = 0; });
         if (!DQ.tutorial) { DQ.tutorial = true; openHelp(); markDirty(); }
       });
     } else if (race.phase === 'free' && DQ.won && !DQ.fled) {
-      if (countItem('exotic-core')) startTalk(coreTalk());
+      if (countItem('exotic-core')) startTalk(coreTalk(), () => toast('Darryl ran off', 'Crumpled Map', 'He dropped something...'));
       else if (!DQ.keyGiven) startTalk(winTalk());
-      else startTalk([{ d: DQ.doorOpen ? 'Door\'s open, champ. Go on in.' : 'Go on, the key fits the door. Trust me, I\'d know.' }]);
+      else startTalk([{ d: DQ.doorOpen ? 'Yeah, the door\'s open. By the way, where\'d you put my arm?' : 'Go on, the key fits the door. Trust me, I\'d know.' }]);
     }
   }
 
@@ -1427,7 +1505,8 @@ function raceTick(dt) {
   if (race.phase === 'go' || race.phase === 'race') race.t += dt;
   race.goT = Math.max(0, race.goT - dt);
   // hopping in your own cart: just walk into it
-  if (!race.riding && !player.dead && ['go', 'race', 'free'].includes(race.phase) && !Y.fin && !Y.gone && Math.hypot(Y.x - player.x, Y.y - player.y) < 14) {
+  if (Y.noBoard && Math.hypot(Y.x - player.x, Y.y - player.y) > 24) Y.noBoard = false;
+  if (!race.riding && !player.dead && ['go', 'race', 'free'].includes(race.phase) && (!Y.fin || race.phase === 'free') && !Y.gone && !Y.noBoard && Math.hypot(Y.x - player.x, Y.y - player.y) < 14) {
     race.riding = true;
     Y.rider = 'you';
     Y.stopped = false;
@@ -1444,12 +1523,12 @@ function raceTick(dt) {
     if (!Y.fin && Y.s >= S_FIN && race.phase !== 'free') {
       Y.fin = true;
       race.pFin = race.t;
-      if (!race.result) { race.result = 'win'; victoryJingle(); toast('Finish', 'You win!', 'Darryl\'s gonna hate this.'); }
-      else toast('Finish', 'Darryl wins', 'Last one there\'s a rotting skeleton...');
+      bossMusic(false);
+      if (!race.result) { race.result = 'win'; victoryJingle(); toast('Finish', 'You win!', 'Oh boy...'); }
+      else { musicQuietUntil = performance.now() + 2500; toast('Finish', 'Darryl wins', 'Last one there\'s a rotting skeleton...'); }
     }
-    if (!Y.fin && race.phase === 'free' && Y.s >= S_FIN) Y.fin = true;
-    // stopped at the end: hop out next to the cart
-    if (Y.fin && Math.abs(Y.v) < 3 && Y.s > S_STOP - 12) {
+    // stopped at the end of a race: hop out next to the cart
+    if (Y.fin && race.phase !== 'free' && Math.abs(Y.v) < 3 && Y.s > S_STOP - 12) {
       race.riding = false;
       Y.rider = null;
       Y.stopped = true;
@@ -1474,6 +1553,7 @@ function raceTick(dt) {
   if (done && youThere) {
     race.phase = 'over';
     race.poof = { t: 0 };
+    if (musicOn && musicTune === RACE_TUNE) bossMusic(false);
     const live = Object.values(carts).filter(c => !c.gone);
     if (live.length) darryl.flip = live.reduce((n, c) => n + c.x, 0) / live.length < darryl.x;
     darryl.pose = 'point';
@@ -1509,21 +1589,20 @@ function raceTick(dt) {
           markDirty();
           startTalk(winTalk(), () => { race.phase = 'free'; Y.rider = null; });
         } else {
-          startTalk([{ d: 'Sorry bro, but I guess I\'m still the best racer.', mood: 'frown' }], startJudge);
+          startTalk(loseTalk(), startJudge);
         }
       });
     }
   }
 
   // the big door: the bone key opens it, then walk through
-  if (!DQ.doorOpen && Math.hypot(player.x - DOOR_X, player.y - (DOOR_Y + 14)) < 30 && !player.dead) {
+  if (!DQ.doorOpen && !door.seq && Math.hypot(player.x - DOOR_X, player.y - (DOOR_Y + 14)) < 30 && !player.dead) {
     if (countItem('bone-key')) {
       takeItem('bone-key', 1);
       DQ.doorOpen = true;
       door.k = 0;
-      sfx.boom();
-      addShake(2);
-      toast('Unlocked', 'The big door', 'The key crumbles to dust in the lock.');
+      door.seq = { t: 0, fired: {} };
+      faceToward(DOOR_X, DOOR_Y);
       afterInventoryChange();
       markDirty();
     } else if (performance.now() > (door.hintAt || 0)) {
@@ -1532,9 +1611,10 @@ function raceTick(dt) {
       sfx.deny();
     }
   }
-  if (DQ.doorOpen && door.k < 1) door.k = Math.min(1, door.k + dt * 0.9);
-  door.frames = [DOOR_ART[Math.round(door.k * 4)]];
-  if (DQ.doorOpen && door.k > 0.7 && !player.dead && player.y < DOOR_Y + 8 && Math.abs(player.x - DOOR_X) < 14) enterRoom(vaultRoom);
+  if (door.seq) tickDoor(dt);
+  else if (DQ.doorOpen) door.k = 1;
+  door.frames = [DOOR_ART[Math.round(door.k * DOOR_STEPS)]];
+  if (DQ.doorOpen && !door.seq && !player.dead && !race.riding && player.y < DOOR_Y + 8 && Math.abs(player.x - DOOR_X) < 14) enterRoom(vaultRoom);
 
   // the carts' lamps go where the carts go, and his helmet lamp where he goes
   // (in his cart or out of it, and not at all once he's wearing your helmet)
@@ -1543,6 +1623,35 @@ function raceTick(dt) {
   darryl.lamp.off = !!DQ.stash.head || (!inCart && darryl.gone);
   darryl.lamp.x = (inCart ? Dc.x : darryl.x) + face * 8;
   darryl.lamp.y = (inCart ? Dc.y - 24 : darryl.y - 30);
+}
+// the door opening, about two and a half seconds of it: the key turns in the
+// lock (two clicks), the skull over the arch lights up, something heavy gives
+// with a clunk and a rumble, then the doors grind apart with dust pouring off
+// the top of the arch and the vault's lava light flooding out, and a thud at
+// the end. you stand and watch.
+function tickDoor(dt) {
+  const q = door.seq;
+  q.t += dt;
+  const at = (time, f) => { if (q.t >= time && !q.fired[time]) { q.fired[time] = true; f(); } };
+  at(0.05, () => sfx.click());
+  at(0.4, () => sfx.click());
+  at(0.75, () => { sfx.clunk(); addShake(1.5); });
+  at(1, () => { sfx.creak(); sfx.rumble(); });
+  at(2.6, () => {
+    sfx.boom();
+    addShake(3);
+    burst(DOOR_X, DOOR_Y - 4, '160,150,140', 20);
+    toast('Unlocked', 'The big door', 'The key crumbles to dust in the lock.');
+  });
+  const k = clamp((q.t - 1) / 1.6, 0, 1);
+  door.k = k * k * (3 - 2 * k);
+  door.glow.rgb = '255,150,60';
+  door.glow.strength = 0.26 + 0.34 * door.k;
+  if (q.t > 1 && q.t < 2.6) {
+    shakeAmp = Math.max(shakeAmp, 0.8);
+    if (!reduceMotion && Math.random() < dt * 40) particles.push({ x: DOOR_X + (Math.random() - 0.5) * 44, y: DOOR_Y - 50 - Math.random() * 6, vx: (Math.random() - 0.5) * 6, vy: 10 + Math.random() * 20, g: 90, life: 0.8, t: 0, col: Math.random() < 0.5 ? '#9a948c' : '#6e6a66', size: 1 });
+  }
+  if (q.t > 2.9) door.seq = null;
 }
 // in the vault: the ladder up the back wall takes you outside
 function vaultTick() {
@@ -1577,10 +1686,11 @@ function raceEnter(r) {
 function raceLeave(r) {
   if (r !== raceRoom) return;
   if (talk) endTalk(true);
+  if (musicOn && musicTune === RACE_TUNE) bossMusic(false);
   race.riding = false;
   if (DQ.won) resetFree(); else resetRace();
 }
-function raceHolds() { return !!talk || race.riding || !!race.judge || !!race.poof || helpOpen || (room === raceRoom && darryl.state === 'walk' && race.phase === 'over'); }
+function raceHolds() { return !!talk || race.riding || !!race.judge || !!race.poof || !!door.seq || helpOpen || (room === raceRoom && darryl.state === 'walk' && race.phase === 'over'); }
 function raceKey(e) {
   if (helpOpen) {
     if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') { e.preventDefault(); closeHelp(); }
@@ -1591,6 +1701,9 @@ function raceKey(e) {
     return !['j', 'k', 'm'].includes(e.key.toLowerCase());
   }
   if (race.riding) {
+    // once the race is over (riding down to the door after you've beaten him,
+    // or rolling in after you've crossed the line) shift hops you out
+    if (e.key === 'Shift' && !e.repeat && (race.phase === 'free' || carts.you.fin)) { hopOut(); return true; }
     if ((e.code === 'KeyW' || e.code === 'ArrowUp') && !e.repeat) mashPress();
     if (MOVE_KEYS[e.code]) { e.preventDefault(); return false; }
     return ['e', 'q', 'f'].includes(e.key.toLowerCase());
@@ -1598,6 +1711,24 @@ function raceKey(e) {
   return raceHolds() && ['e', 'q', 'f'].includes(e.key.toLowerCase());
 }
 function raceClick() { if (talk) advanceTalk(); }
+// out of your cart: it stops where it is and you step off to one side (or
+// behind it if there's a wall), and it won't take you back until you've
+// stepped away and walked into it again
+function hopOut() {
+  const Y = carts.you, t = trackAt(Y.x, Y.y), a = t ? track.ang[t.i] : Y.a;
+  Object.assign(Y, { v: 0, spin: null, hole: null, sink: 0, rider: null, stopped: true, noBoard: true });
+  race.riding = false;
+  const spots = [[-Math.sin(a), Math.cos(a)], [Math.sin(a), -Math.cos(a)], [-Math.cos(a), -Math.sin(a)], [Math.cos(a), Math.sin(a)]];
+  let out = { x: Y.x, y: Y.y + 18 };
+  for (const r of [22, 30]) {
+    const hit = spots.find(([ox, oy]) => !raceRoom.blocked(Y.x + ox * r, Y.y + oy * r));
+    if (hit) { out = { x: Y.x + hit[0] * r, y: Y.y + hit[1] * r }; break; }
+  }
+  player.x = out.x;
+  player.y = out.y;
+  player.face = 'down';
+  sfx.ui();
+}
 function raceCam() {
   if (room !== raceRoom) return null;
   if (talk || race.judge) return { x: (player.x + darryl.x) / 2, y: (player.y + darryl.y) / 2 - 12 };
@@ -1749,6 +1880,17 @@ function raceOverlay(toX, toY, t) {
       ctx.fillText('GO!', toX(Dc.x), toY(Dc.y - 40));
     }
   }
+  // after the race, a reminder that shift gets you out
+  if (race.riding && (race.phase === 'free' || Y.fin) && !Y.spin && !Y.hole) {
+    const sfs = Math.max(8, 8 * Math.round((S * 3) / 8));
+    ctx.font = `${sfs}px Silkscreen, monospace`;
+    ctx.fillStyle = 'rgba(12,12,16,0.75)';
+    const label = 'SHIFT: HOP OUT', tw = ctx.measureText(label).width;
+    ctx.fillRect(toX(Y.x) - tw / 2 - sfs * 0.5, toY(Y.y + 16) - sfs * 0.8, tw + sfs, sfs * 1.6);
+    ctx.fillStyle = '#cfcfcf';
+    ctx.fillText(label, toX(Y.x), toY(Y.y + 16) + 1);
+    ctx.font = `${fs}px Silkscreen, monospace`;
+  }
   // mash w: a big prompt and how close you are to getting out of trouble
   const m = Y.spin || Y.hole;
   if (race.riding && m) {
@@ -1800,6 +1942,31 @@ function raceOverlay(toX, toY, t) {
         ctx.fillStyle = rg;
         ctx.fillRect(toX(tx) - 12 * S, toY(ty) - 12 * S, 24 * S, 24 * S);
       }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  // the door's lock: the keyhole glowing as the key turns, then the skull's
+  // eyes over the arch lighting up
+  if (door.seq) {
+    const q = door.seq, kx = DOOR_X - 0.5, ky = DOOR_Y - 24;
+    ctx.globalCompositeOperation = 'lighter';
+    const key = Math.min(1, q.t / 0.3) * Math.max(0, 1 - Math.max(0, q.t - 1.2) / 0.6);
+    if (key > 0) {
+      const g = ctx.createRadialGradient(toX(kx), toY(ky), 0, toX(kx), toY(ky), 8 * S);
+      g.addColorStop(0, `rgba(255,236,190,${0.9 * key})`);
+      g.addColorStop(1, 'rgba(255,180,90,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(toX(kx) - 8 * S, toY(ky) - 8 * S, 16 * S, 16 * S);
+    }
+    if (q.t > 0.75) {
+      const e = Math.min(1, (q.t - 0.75) / 0.2) * (0.75 + Math.sin(q.t * 30) * 0.25);
+      [-2.5, 2.5].forEach(dx => {
+        const g = ctx.createRadialGradient(toX(DOOR_X + dx), toY(DOOR_Y - 53), 0, toX(DOOR_X + dx), toY(DOOR_Y - 53), 5 * S);
+        g.addColorStop(0, `rgba(255,140,50,${e})`);
+        g.addColorStop(1, 'rgba(255,90,30,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(toX(DOOR_X + dx) - 5 * S, toY(DOOR_Y - 53) - 5 * S, 10 * S, 10 * S);
+      });
     }
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -1889,10 +2056,98 @@ function tickHelpDemo(dt) {
 }
 
 // the extra sounds
+// voices, the undertale way (every character gets their own little blip as
+// their words are typed out): darryl's is a low, square, slightly rattly blip
+// with a tiny click of teeth on it, pitched up when he's scared and down when
+// he's frowning. yours, when you pick a reply, is a softer, higher murmur, a
+// blip per word or so.
 Object.assign(sfx, {
-  talk:  () => tone(300, 0.04, 'square', 0.02),
-  blip:  () => tone(240 + Math.random() * 120, 0.03, 'square', 0.015),
+  darryl: mood => {
+    const f = (mood === 'scared' ? 300 : mood === 'frown' ? 150 : 190) * (0.97 + Math.random() * 0.06);
+    tone(f, 0.045, 'square', 0.03);
+    tone(f * 2.01, 0.02, 'square', 0.008);
+    noiseBurst(0.012, 4200, 0.025);
+  },
+  you: text => {
+    const n = Math.min(6, Math.max(2, Math.round(text.split(' ').length * 0.8)));
+    for (let i = 0; i < n; i++) tone((392 + (i % 2) * 49) * (0.97 + Math.random() * 0.06), 0.04, 'triangle', 0.035, i * 0.075);
+  },
+  click: () => { tone(1800, 0.03, 'square', 0.04); tone(900, 0.04, 'square', 0.03, 0.03); },
+  clunk: () => { noiseBurst(0.14, 500, 0.14); tone(95, 0.18, 'square', 0.05); },
+  creak: () => {
+    if (!soundOn) return;
+    try {
+      const ac = getAudio(), t0 = ac.currentTime + 0.02;
+      const o = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(85, t0);
+      o.frequency.linearRampToValueAtTime(58, t0 + 0.5);
+      o.frequency.linearRampToValueAtTime(104, t0 + 0.9);
+      o.frequency.linearRampToValueAtTime(66, t0 + 1.55);
+      f.type = 'bandpass'; f.frequency.value = 520; f.Q.value = 2.5;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.07, t0 + 0.12);
+      g.gain.setValueAtTime(0.07, t0 + 1.35);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.6);
+      o.connect(f).connect(g).connect(ac.destination);
+      o.start(t0);
+      o.stop(t0 + 1.65);
+    } catch { /* no audio */ }
+  },
   mash:  () => tone(520 + Math.random() * 80, 0.03, 'square', 0.025),
   zap:   () => { tone(1400, 0.12, 'sawtooth', 0.03); tone(700, 0.2, 'sawtooth', 0.03, 0.06); noiseBurst(0.2, 3200, 0.08); },
   cart:  v => noiseBurst(0.06, 220 + v * 1.5, 0.02 + v / 170 * 0.035)
 });
+
+// the race music: a fast, bouncy chiptune chase in c major (alex asked for
+// something in the spirit of kirby's gourmet race, so it borrows the feel,
+// not the tune: a quick tempo, an oom-pah bass jumping between root and fifth,
+// offbeat chord stabs, a busy snare and hats, and a square wave lead that
+// scurries up and down the chord). the lead is built from scale steps over
+// each bar's chord (RACE_MOTIFS), so it's its own melody. it plays from when
+// darryl says go until you cross the line, then the victory fanfare if you
+// won. bright: it opens up the lo-fi filter moe's theme uses.
+const RACE_SCALE = [0, 2, 4, 5, 7, 9, 11];
+const RACE_CHORD = { C: 0, Dm: 1, Em: 2, F: 3, G: 4, Am: 5 };
+const RACE_BARS = [
+  ['C', 0], ['C', 1], ['F', 0], ['G', 3],
+  ['C', 0], ['Am', 2], ['F', 1], ['G', 4],
+  ['F', 2], ['G', 1], ['Em', 0], ['Am', 3],
+  ['F', 1], ['G', 2], ['C', 0], ['G', 4]
+];
+const RACE_MOTIFS = [
+  { 0: 4, 2: 5, 4: 4, 6: 2, 8: 0, 10: 2, 12: 4, 14: 7 },
+  { 0: 7, 1: 6, 2: 5, 3: 4, 4: 3, 6: 2, 8: 1, 10: 2, 12: 4, 14: 2 },
+  { 0: 0, 3: 2, 6: 4, 8: 7, 11: 4, 12: 5, 14: 4 },
+  { 0: 4, 2: 4, 3: 5, 4: 4, 6: 2, 7: 4, 8: 7, 12: 6, 14: 4 },
+  { 0: 7, 4: 4, 6: 5, 8: 7, 10: 9, 12: 8 }
+];
+const raceNote = (ch, deg, base) => {
+  const k = RACE_CHORD[ch] + deg;
+  return base + 12 * Math.floor(k / 7) + RACE_SCALE[((k % 7) + 7) % 7];
+};
+function raceStep(bar, step, t) {
+  const [ch, mo] = RACE_BARS[bar], st = 60 / RACE_TUNE.bpm / 4;
+  const triad = [0, 2, 4].map(d => raceNote(ch, d, 48));
+  // oom-pah bass: root on the beat, fifth on the backbeat, octaves between
+  if (step % 2 === 0) {
+    const n = step % 8 === 0 ? triad[0] - 12 : step % 8 === 4 ? triad[2] - 12 : triad[0];
+    mNote('triangle', midiHz(n), t, st * 1.5, step % 4 === 0 ? 0.28 : 0.16, { rel: 0.03 });
+  }
+  // drums: kick on 1 and 3 (and a pickup), snare on 2 and 4, hats on every offbeat 16th
+  if (step === 0 || step === 8 || step === 14) mNote('sine', 130, t, 0.07, 0.3, { slide: 50, slideT: 0.06, rel: 0.03 });
+  if (step === 4 || step === 12) { mNoise(t, 0.09, 0.2, 'bandpass', 1900, 1); mNoise(t, 0.05, 0.08, 'highpass', 5000); }
+  if (step % 2 === 1) mNoise(t, 0.02, 0.045, 'highpass', 7500);
+  // chord stabs on the offbeats
+  if (step % 4 === 2) triad.forEach(n => mNote('square', midiHz(n + 12), t, st * 0.6, 0.022, { lp: 2600, rel: 0.02 }));
+  // the lead, doubled with a slightly detuned copy so it sounds fat
+  const m = RACE_MOTIFS[mo], deg = m[step];
+  if (deg !== undefined) {
+    let next = 16;
+    for (let k = step + 1; k < 16; k++) if (m[k] !== undefined) { next = k; break; }
+    const n = raceNote(ch, deg, 72), len = st * (next - step) * 0.85;
+    mNote('square', midiHz(n), t, len, 0.06, { lp: 5200, rel: 0.03 });
+    mNote('square', midiHz(n), t, len, 0.025, { lp: 5200, rel: 0.03, detune: 9 });
+  }
+}
+const RACE_TUNE = { bpm: 176, bars: RACE_BARS.length, loopFrom: 0, bright: true, step: raceStep };

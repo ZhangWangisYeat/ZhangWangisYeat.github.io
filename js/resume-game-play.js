@@ -2661,12 +2661,13 @@ const midiHz = m => 440 * 2 ** ((m - 69) / 12);
 
 // a tiny synth on the shared audio context. everything goes through one bus,
 // a lowpass for the warm lo-fi top end, and a compressor so nothing clips.
-let musicAC = null, musicBus = null, noiseBuf = null;
+let musicAC = null, musicBus = null, musicWarm = null, noiseBuf = null;
 function musicSetup(ac) {
   musicAC = ac;
   const comp = ac.createDynamicsCompressor(), warm = ac.createBiquadFilter();
   comp.threshold.value = -16; comp.ratio.value = 3;
   warm.type = 'lowpass'; warm.frequency.value = 3400; warm.Q.value = 0.5;
+  musicWarm = warm;
   musicBus = ac.createGain();
   musicBus.gain.value = 0;
   musicBus.connect(warm).connect(comp).connect(ac.destination);
@@ -2760,11 +2761,17 @@ function songStep(bar, step, t) {
 }
 // the scheduler: looks a little ahead and books each 16th note on the audio
 // clock, which keeps time even when a frame stutters
-const song = { on: false, timer: null, next: 0, bar: 0, step: 0 };
-function songStart() {
-  if (song.on) return;
+// a tune is its tempo, how many bars it has, which bar it loops back to, what
+// happens on each 16th note, and whether it wants the lo-fi filter opened up
+// (moe's theme is warm and muffled, darryl's race music is bright chiptune)
+const MOE_TUNE = { bpm: SONG.bpm, bars: ARR.length, loopFrom: LOOP_FROM, step: songStep };
+const song = { on: false, timer: null, next: 0, bar: 0, step: 0, tune: MOE_TUNE };
+function songStart(tune = MOE_TUNE) {
+  if (song.on && song.tune === tune) return;
   const ac = getAudio();
   if (musicAC !== ac) musicSetup(ac);
+  song.tune = tune;
+  musicWarm.frequency.setValueAtTime(tune.bright ? 9000 : 3400, ac.currentTime);
   song.on = true;
   song.bar = 0; song.step = 0;
   song.next = ac.currentTime + 0.1;
@@ -2777,11 +2784,11 @@ function songStart() {
 }
 function songTick() {
   if (!song.on) return;
-  const st = 60 / SONG.bpm / 4;
+  const tune = song.tune, st = 60 / tune.bpm / 4;
   while (song.next < musicAC.currentTime + 0.15) {
-    songStep(song.bar, song.step, song.next);
+    tune.step(song.bar, song.step, song.next);
     song.next += st;
-    if (++song.step === 16) { song.step = 0; song.bar = song.bar + 1 >= ARR.length ? LOOP_FROM : song.bar + 1; }
+    if (++song.step === 16) { song.step = 0; song.bar = song.bar + 1 >= tune.bars ? tune.loopFrom : song.bar + 1; }
   }
 }
 function songStop() {
@@ -2799,13 +2806,14 @@ function songStop() {
 // follows the sound button like every other sound (off by default, and turning
 // sound off mid fight stops it), and it fades out when he goes down, when you
 // die or when you leave. the next fight starts it from the top.
-let musicOn = false;
-function bossMusic(on) {
+let musicOn = false, musicTune = MOE_TUNE;
+function bossMusic(on, tune = MOE_TUNE) {
   musicOn = on;
-  if (on && soundOn) songStart();
+  musicTune = tune;
+  if (on && soundOn) songStart(tune);
   else songStop();
 }
-soundBtn.addEventListener('click', () => bossMusic(musicOn));
+soundBtn.addEventListener('click', () => bossMusic(musicOn, musicTune));
 
 // the cave music (from desperate measures itself) plays underground: out in
 // the mines, down the mole holes, in the grizzly's cave, and in moe's den once
@@ -4007,7 +4015,7 @@ function mineInfo(tgt) {
   const where = room ? null : regionAt(tgt.cx / TILE, tgt.cy / TILE);
   if (where && !biomeOpen(where)) return { time: Infinity, locked: where };
   // the walls along darryl's track won't budge until you've beaten him
-  if (tgt.type === 'racetile' && !raceWon()) return { time: Infinity, hint: ['Not now', tgt.ore ? ITEMS[tgt.ore].name : 'Stone', 'Darryl won\'t let you touch the track. Beat him first.'] };
+  if (tgt.type === 'racetile' && !raceWon()) return { time: Infinity, hint: ['Not now', tgt.ore ? ITEMS[tgt.ore].name : 'Stone', 'Beat Darryl first.'] };
   if (tgt.type === 'tree') {
     if (!tgt.great && !quest.greatTree) return { time: Infinity };
     const base = MINE_TIME.wood * (tgt.great ? 1.4 : 1);

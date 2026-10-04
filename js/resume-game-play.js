@@ -1937,12 +1937,14 @@ function paintDig(cols, rows, door, seed, den) {
 // stack lying somewhere (out in the world, or in a room) that bobs a little
 // and is picked up by walking over it. dropping the same thing on the same
 // spot piles it onto what's already there. everything on the ground goes
-// after 5 minutes, wherever you are (the last 15 seconds it blinks).
+// after 5 minutes, wherever you are (the last 15 seconds it blinks), except
+// the special things.
 const GROUND_LIFE = 300, PICKUP_R = 12;
 const ground = [];
-// quest parts and moe's drill are one of a kind, so they never leave you: you
-// can't drop them, and you keep them when you die
-const keepOnDeath = st => !!ITEMS[st.id].part || st.id === 'moe-drill';
+// quest parts and moe's drill are one of a kind, so they can be dropped (and
+// spill when you die) like anything else, but they never despawn: they'd be
+// gone for good
+const special = st => !!ITEMS[st.id].part || st.id === 'moe-drill';
 function groundThing(g) {
   g.thing = { x: g.x, y: g.y, frames: [ICON_CANVAS[g.st.id]], draw: drawGround, ground: g };
   (g.room ? roomById(g.room).things : things).push(g.thing);
@@ -1985,7 +1987,7 @@ function tickGround(dt) {
     const g = ground[i];
     g.age += dt;
     g.wait = Math.max(0, g.wait - dt);
-    if (g.age >= GROUND_LIFE) { removeGround(g); continue; }
+    if (g.age >= GROUND_LIFE && !special(g.st)) { removeGround(g); continue; }
     if (player.dead || g.wait > 0 || g.room !== here || Math.hypot(g.x - player.x, g.y - player.y) > PICKUP_R) continue;
     const k = Math.min(g.st.n, roomFor(g.st));
     if (!k) {
@@ -2003,7 +2005,7 @@ function tickGround(dt) {
 function drawGround(o, toX, toY, t) {
   const g = o.ground, img = ICON_CANVAS[g.st.id];
   // blinking out in its last 15 seconds
-  if (GROUND_LIFE - g.age < 15 && Math.floor(t / 150) % 2) return;
+  if (!special(g.st) && GROUND_LIFE - g.age < 15 && Math.floor(t / 150) % 2) return;
   const bob = reduceMotion ? 0 : Math.round(Math.sin(t / 350 + g.x) * 1.5);
   ctx.fillStyle = 'rgba(0,0,0,0.3)';
   ctx.fillRect(toX(g.x - 5), toY(g.y - 1), 10 * S, 2 * S);
@@ -2020,7 +2022,6 @@ function groundAt(m) {
 function dropFrom(ref, all) {
   const st = slotGet(ref);
   if (!st || ref.startsWith('out')) return;
-  if (keepOnDeath(st)) { floatText('You can\'t drop that', player.x, player.y - 34, '#cfcfcf'); sfx.deny(); return; }
   const n = all ? st.n : 1;
   const out = { ...st, n };
   st.n -= n;
@@ -2032,12 +2033,12 @@ function dropFrom(ref, all) {
   sfx.swing();
   afterInventoryChange();
 }
-// dying spills everything round where you fell, except the one of a kind
-// things. it all waits there for 5 minutes, even in a boss's den: walk back
-// in (the boss starts again from full) and it's still lying on the floor.
+// dying spills everything round where you fell. it waits there for 5 minutes
+// (the special things for good), even in a boss's den: walk back in (the boss
+// starts again from full) and it's still lying on the floor.
 function spillInventory() {
   const all = [];
-  inv.slots.forEach((st, i) => { if (st && !keepOnDeath(st)) { all.push(st); inv.slots[i] = null; } });
+  inv.slots.forEach((st, i) => { if (st) { all.push(st); inv.slots[i] = null; } });
   ARMOR_SLOTS.forEach(a => { if (inv.armor[a.key]) { all.push(inv.armor[a.key]); inv.armor[a.key] = null; } });
   all.forEach(st => {
     let x = player.x, y = player.y;
@@ -5405,15 +5406,59 @@ document.addEventListener('mousemove', e => {
   if (heldStack) { heldEl.style.left = `${e.clientX}px`; heldEl.style.top = `${e.clientY}px`; }
 });
 invWrap.addEventListener('contextmenu', e => e.preventDefault());
-// right drag: holding a stack, hold right click and sweep across slots to drop
-// one in each, like laying three diamonds across the top of a pickaxe
-let rightDrag = null;
+// right drag: with a stack on the cursor (or after right-pressing a stack to
+// pick half of it up), hold right click and sweep across squares to leave one
+// in each, like laying three diamonds across the top of a pickaxe. it used to
+// listen for mouseover, which broke two ways: every square redraws the
+// inventory, and the browser can follow a redraw with a mouseover that says
+// no button is down, which ended the drag (often after two squares), and a
+// quick sweep could skip a square between two events. now the drag lasts from
+// the press to the release, and each move checks every few pixels of the path
+// it covered for squares it hasn't filled yet.
+let rightDrag = null, dragFrom = null, lastClick = { ref: null, t: 0 };
+function sweepTo(x, y) {
+  const n = Math.max(1, Math.ceil(Math.hypot(x - dragFrom.x, y - dragFrom.y) / 6));
+  for (let k = 1; k <= n && heldStack; k++) {
+    const el = document.elementFromPoint(dragFrom.x + ((x - dragFrom.x) * k) / n, dragFrom.y + ((y - dragFrom.y) * k) / n)?.closest('[data-ref]');
+    if (!el || rightDrag.has(el.dataset.ref)) continue;
+    const ref = el.dataset.ref, cur = slotGet(ref);
+    rightDrag.add(ref);
+    if (['out', 'output'].includes(ref.split(':')[0]) || slotRefuses(ref, heldStack.id)) continue;
+    if (cur && (cur.id !== heldStack.id || cur.n >= maxStack(cur.id))) continue;
+    slotClick(ref, 2, false);
+  }
+  dragFrom = { x, y };
+}
+// double click a stack to pull everything of that kind together: the stack
+// you clicked fills up first, then the others in order, and any left empty
+// are cleared. works in your bag and hotbar together, or inside a chest.
+function restack(ref) {
+  const [box, i] = ref.split(':');
+  if (box !== 'inv' && box !== 'chest') return;
+  const list = box === 'inv' ? inv.slots : openChest, st = list[+i];
+  if (!st || maxStack(st.id) <= 1) return;
+  const max = maxStack(st.id), id = st.id;
+  let total = list.reduce((n, x) => n + (x && x.id === id ? x.n : 0), 0);
+  [+i, ...list.map((x, k) => (x && x.id === id && k !== +i ? k : -1)).filter(k => k >= 0)].forEach(k => {
+    const take = Math.min(max, total);
+    list[k] = take > 0 ? { id, n: take } : null;
+    total -= take;
+  });
+  sfx.ui();
+  afterInventoryChange();
+}
 invWrap.addEventListener('mousedown', e => {
   const slot = e.target.closest('[data-ref]');
   if (slot) {
     e.preventDefault();
-    if (e.button === 2 && heldStack && !e.shiftKey) rightDrag = new Set([slot.dataset.ref]);
-    slotClick(slot.dataset.ref, e.button, e.shiftKey);
+    const ref = slot.dataset.ref, now = performance.now();
+    // a real dblclick event can't be used: the first click redraws the
+    // inventory, so the two clicks land on different elements
+    const dbl = e.button === 0 && !e.shiftKey && lastClick.ref === ref && now - lastClick.t < 350;
+    lastClick = { ref, t: dbl ? 0 : now };
+    slotClick(ref, e.button, e.shiftKey);
+    if (dbl && !heldStack) restack(ref);
+    if (e.button === 2 && heldStack && !e.shiftKey) { rightDrag = new Set([ref]); dragFrom = { x: e.clientX, y: e.clientY }; }
     return;
   }
   const fill = e.target.closest('[data-fill]');
@@ -5423,14 +5468,10 @@ invWrap.addEventListener('mousedown', e => {
   // clicking the dim backdrop closes it too
   if (e.target === invWrap) closeUI();
 });
-invWrap.addEventListener('mouseover', e => {
+document.addEventListener('mousemove', e => {
   if (!rightDrag) return;
-  if (!(e.buttons & 2) || !heldStack) { rightDrag = null; return; }
-  const slot = e.target.closest('[data-ref]');
-  if (!slot || rightDrag.has(slot.dataset.ref)) return;
-  rightDrag.add(slot.dataset.ref);
-  if (['out', 'output'].includes(slot.dataset.ref.split(':')[0])) return;
-  slotClick(slot.dataset.ref, 2, false);
+  if (!heldStack || !ui) { rightDrag = null; return; }
+  sweepTo(e.clientX, e.clientY);
 });
 window.addEventListener('mouseup', e => { if (e.button === 2) rightDrag = null; });
 $('#hotbar').addEventListener('click', e => {
@@ -5463,7 +5504,7 @@ window.addEventListener('pagehide', () => { if (saveDirty) saveNow(); });
 const roomById = id => [caveRoom, homeRoom, denRoom, ...burrowRooms].find(r => r.id === id) || null;
 savedGround.forEach(g => {
   const st = validStack(g && g.st);
-  if (!st || !(g.age < GROUND_LIFE) || (g.room && !roomById(g.room))) return;
+  if (!st || (!(g.age < GROUND_LIFE) && !special(st)) || (g.room && !roomById(g.room))) return;
   const item = { st, x: +g.x, y: +g.y, room: g.room || null, age: +g.age || 0, wait: 0 };
   ground.push(item);
   groundThing(item);

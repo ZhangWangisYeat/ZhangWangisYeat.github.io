@@ -2490,31 +2490,207 @@ function finishMoe(c) {
   renderHUD();
 }
 
+// moe's theme, written for this game and played live by the synth below (no
+// audio file). it's built to sit in the same place as the song alex picked
+// for him: f sharp minor at 105 bpm with a 3-3-2 swing to the kick and bass
+// (a hit every dotted quarter, then a quick one), a quiet opening, then a
+// heavy, bass led boss groove. a 4 bar intro (pads and a twinkling
+// arpeggio), then section a (F#m, A, E, C# with a bouncy square lead),
+// section b (D, E, F#m, C# with the lead up high), a 4 bar breakdown, and
+// back round to a forever. 16 steps to the bar. the melodies are original.
+const SONG = { bpm: 105, steps: 16 };
+const REST = null, HOLD = '-';
+const CH = {
+  A: [57, 61, 64], Fm: [54, 57, 61], E: [52, 56, 59], D: [50, 54, 57], C: [49, 53, 56]
+};
+const LEAD = {
+  a1: [73, REST, 76, REST, 81, HOLD, HOLD, 80, 78, REST, 76, REST, 73, HOLD, HOLD, REST],
+  a2: [78, REST, 76, REST, 73, HOLD, 71, REST, 69, HOLD, HOLD, 71, 73, REST, REST, REST],
+  a3: [71, REST, 76, REST, 80, HOLD, HOLD, 78, 76, REST, 73, REST, 71, HOLD, HOLD, REST],
+  a4: [73, REST, 71, REST, 68, HOLD, HOLD, REST, 73, REST, 77, REST, 80, HOLD, HOLD, REST],
+  a5: [80, HOLD, HOLD, HOLD, 77, HOLD, 73, HOLD, 80, HOLD, HOLD, HOLD, REST, REST, 80, 81],
+  b1: [81, REST, REST, 78, REST, REST, 74, REST, 78, REST, 81, REST, 83, HOLD, HOLD, REST],
+  b2: [80, REST, REST, 76, REST, REST, 71, REST, 76, REST, 80, REST, 83, HOLD, 81, 80],
+  b3: [78, REST, REST, 73, REST, REST, 69, REST, 73, REST, 78, REST, 81, HOLD, HOLD, HOLD],
+  b4: [80, HOLD, 77, HOLD, 80, HOLD, 85, HOLD, HOLD, HOLD, 80, HOLD, HOLD, HOLD, REST, REST]
+};
+// one entry per bar: the chord, the lead line, and what's playing
+const ARR = [
+  { ch: 'Fm', part: 'intro' }, { ch: 'A', part: 'intro' }, { ch: 'E', part: 'intro' }, { ch: 'C', part: 'introFill' },
+  { ch: 'Fm', lead: 'a1', part: 'full', crash: true }, { ch: 'A', lead: 'a2', part: 'full' }, { ch: 'E', lead: 'a3', part: 'full' }, { ch: 'C', lead: 'a4', part: 'full' },
+  { ch: 'Fm', lead: 'a1', part: 'full' }, { ch: 'A', lead: 'a2', part: 'full' }, { ch: 'E', lead: 'a3', part: 'full' }, { ch: 'C', lead: 'a5', part: 'fill' },
+  { ch: 'D', lead: 'b1', part: 'full', crash: true }, { ch: 'E', lead: 'b2', part: 'full' }, { ch: 'Fm', lead: 'b3', part: 'full' }, { ch: 'C', lead: 'b4', part: 'full' },
+  { ch: 'D', lead: 'b1', part: 'full' }, { ch: 'E', lead: 'b2', part: 'full' }, { ch: 'Fm', lead: 'b3', part: 'full' }, { ch: 'C', lead: 'b4', part: 'fill' },
+  { ch: 'Fm', part: 'break', crash: true }, { ch: 'D', part: 'break' }, { ch: 'E', part: 'break' }, { ch: 'C', part: 'breakFill' }
+];
+const LOOP_FROM = 4;
+const BASS = [0, REST, REST, 12, REST, REST, 0, REST, REST, 12, REST, REST, 0, REST, 12, REST];
+const KICK = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0];
+const midiHz = m => 440 * 2 ** ((m - 69) / 12);
+
+// a tiny synth on the shared audio context. everything goes through one bus
+// with a compressor so the drums and the bass don't clip each other.
+let musicAC = null, musicBus = null, noiseBuf = null;
+function musicSetup(ac) {
+  musicAC = ac;
+  const comp = ac.createDynamicsCompressor();
+  comp.threshold.value = -16; comp.ratio.value = 4;
+  musicBus = ac.createGain();
+  musicBus.gain.value = 0;
+  musicBus.connect(comp).connect(ac.destination);
+  noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+}
+function mNote(type, f, t, dur, vol, o = {}) {
+  const ac = musicAC, osc = ac.createOscillator(), g = ac.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(f, t);
+  if (o.slide) osc.frequency.exponentialRampToValueAtTime(o.slide, t + (o.slideT || dur));
+  if (o.detune) osc.detune.value = o.detune;
+  if (o.lp) {
+    const fl = ac.createBiquadFilter();
+    fl.type = 'lowpass';
+    fl.Q.value = o.q || 1;
+    fl.frequency.setValueAtTime(o.lp, t);
+    if (o.lpTo) fl.frequency.exponentialRampToValueAtTime(o.lpTo, t + dur);
+    osc.connect(fl).connect(g);
+  } else osc.connect(g);
+  const at = o.at || 0.004, rel = o.rel || 0.04;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + at);
+  g.gain.setValueAtTime(vol, t + Math.max(at, dur - rel));
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur + rel);
+  g.connect(musicBus);
+  osc.start(t);
+  osc.stop(t + dur + rel + 0.02);
+  if (o.vib) {
+    const lfo = ac.createOscillator(), lg = ac.createGain();
+    lfo.frequency.value = o.vib;
+    lg.gain.value = f * 0.012;
+    lfo.connect(lg).connect(osc.frequency);
+    lfo.start(t + 0.1);
+    lfo.stop(t + dur + rel);
+  }
+}
+function mNoise(t, dur, vol, type, freq, q = 1) {
+  const ac = musicAC, src = ac.createBufferSource(), fl = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = noiseBuf;
+  fl.type = type; fl.frequency.value = freq; fl.Q.value = q;
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(fl).connect(g).connect(musicBus);
+  src.start(t, Math.random() * 0.5);
+  src.stop(t + dur + 0.02);
+}
+// everything that happens on one 16th note
+function songStep(bar, step, t) {
+  const b = ARR[bar], chord = CH[b.ch], st = 60 / SONG.bpm / 4, root = chord[0] - 12;
+  const full = b.part === 'full' || b.part === 'fill', fill = b.part.endsWith('ill') || b.part === 'breakFill';
+  if (step === 0 && b.crash) mNoise(t, 1.4, 0.16, 'highpass', 5000);
+  // pads: a soft detuned chord held through each bar of the intro and the breakdown
+  if (step === 0 && (b.part.startsWith('intro') || b.part.startsWith('break'))) {
+    chord.forEach(n => [-8, 8].forEach(det => mNote('sawtooth', midiHz(n + 12), t, st * 16, 0.03, { lp: 1600, at: 0.25, rel: 0.4, detune: det })));
+  }
+  // the arpeggio twinkling over the top, up and down the chord
+  const arpN = chord[[0, 1, 2, 1][step % 4]] + 12 + (step >= 8 ? 12 : 0);
+  mNote('square', midiHz(arpN), t, st * 0.5, b.part.startsWith('intro') ? 0.07 : 0.06, { lp: 2600, rel: 0.03 });
+  // hats: eighths in the intro once it gets going, sixteenths in the groove
+  if ((full && step % 1 === 0) || ((b.part.startsWith('intro') && bar >= 2) || b.part.startsWith('break')) && step % 2 === 0) {
+    mNoise(t, step % 4 === 2 && full ? 0.1 : 0.035, full ? (step % 2 ? 0.07 : 0.12) : 0.08, 'highpass', 6500);
+  }
+  if (full) {
+    if (KICK[step]) mNote('sine', 120, t, 0.16, 0.42, { slide: 48, slideT: 0.07, rel: 0.05 });
+    if (step === 4 || step === 12) { mNoise(t, 0.2, 0.4, 'bandpass', 2000, 0.6); mNote('triangle', 220, t, 0.07, 0.18, { slide: 160 }); }
+  }
+  // fills: snare rolling in sixteenths over the last half bar
+  if (fill && step >= 8) { mNoise(t, 0.1, 0.12 + (step - 8) * 0.025, 'bandpass', 2000, 0.7); }
+  // the bass: a pumping octave line on the chord's root
+  if ((full || b.part.startsWith('break')) && BASS[step] !== null) {
+    const f = midiHz(root - 12 + BASS[step]);
+    mNote('sawtooth', f, t, st * 2.4, 0.13, { lp: 1400, lpTo: 380, q: 4 });
+    mNote('sine', f / (BASS[step] ? 2 : 1), t, st * 2.4, 0.05);
+  }
+  // the lead: a square wave with a little vibrato, doubled slightly out of
+  // tune for width. a '-' holds the note before it.
+  const line = b.lead && LEAD[b.lead];
+  if (line && line[step] !== null && line[step] !== HOLD) {
+    let len = 1;
+    while (step + len < 16 && line[step + len] === HOLD) len++;
+    const f = midiHz(line[step]);
+    mNote('square', f, t, st * len * 0.95, 0.22, { lp: 3600, vib: len > 1 ? 5.5 : 0 });
+    mNote('square', f, t, st * len * 0.95, 0.11, { lp: 2600, detune: 9 });
+  }
+}
+// the scheduler: looks a little ahead and books each 16th note on the audio
+// clock, which keeps time even when a frame stutters
+const song = { on: false, timer: null, next: 0, bar: 0, step: 0 };
+function songStart() {
+  if (song.on) return;
+  const ac = getAudio();
+  if (musicAC !== ac) musicSetup(ac);
+  song.on = true;
+  song.bar = 0; song.step = 0;
+  song.next = ac.currentTime + 0.1;
+  musicBus.gain.cancelScheduledValues(ac.currentTime);
+  musicBus.gain.setValueAtTime(0.0001, ac.currentTime);
+  musicBus.gain.exponentialRampToValueAtTime(0.55, ac.currentTime + 0.4);
+  clearInterval(song.timer);
+  song.timer = setInterval(songTick, 25);
+  songTick();
+}
+function songTick() {
+  if (!song.on) return;
+  const st = 60 / SONG.bpm / 4;
+  while (song.next < musicAC.currentTime + 0.15) {
+    songStep(song.bar, song.step, song.next);
+    song.next += st;
+    if (++song.step === 16) { song.step = 0; song.bar = song.bar + 1 >= ARR.length ? LOOP_FROM : song.bar + 1; }
+  }
+}
+function songStop() {
+  if (!song.on) return;
+  song.on = false;
+  const now = musicAC.currentTime;
+  musicBus.gain.cancelScheduledValues(now);
+  musicBus.gain.setValueAtTime(Math.max(0.0001, musicBus.gain.value), now);
+  musicBus.gain.exponentialRampToValueAtTime(0.0001, now + 1);
+  clearTimeout(song.stopT);
+  song.stopT = setTimeout(() => { if (!song.on) clearInterval(song.timer); }, 1200);
+}
+
 // moe's theme plays from the intro to the end of the fight, on a loop. it
 // follows the sound button like every other sound (off by default, and turning
 // sound off mid fight stops it), and it fades out when he goes down, when you
 // die or when you leave. the next fight starts it from the top.
-const moeMusic = new Audio('audio/moe-the-mole.mp3');
-moeMusic.loop = true;
-moeMusic.preload = 'auto';
-const MUSIC_VOL = 0.45;
 let musicOn = false;
 function bossMusic(on) {
   musicOn = on;
-  if (on && soundOn) {
-    moeMusic.volume = MUSIC_VOL;
-    if (moeMusic.paused) moeMusic.play().catch(() => { /* blocked or missing, the fight goes on without it */ });
+  if (on && soundOn) songStart();
+  else songStop();
+}
+soundBtn.addEventListener('click', () => bossMusic(musicOn));
+
+// the cave music (from desperate measures itself) plays underground: out in
+// the mines, down the mole holes, in the grizzly's cave, and in moe's den once
+// he's beaten. moe's theme takes over while he's fighting. it fades in and out
+// rather than cutting, and follows the sound button.
+const caveMusic = new Audio('audio/cave.mp3');
+caveMusic.loop = true;
+caveMusic.preload = 'auto';
+const CAVE_VOL = 0.35;
+function tickMusic(dt) {
+  const under = room ? room === caveRoom || room === denRoom || room.burrow !== undefined : amb.mines > 0.5;
+  const want = soundOn && started && under && !musicOn;
+  if (want) {
+    if (caveMusic.paused) { caveMusic.volume = 0; caveMusic.play().catch(() => { /* no audio, carry on */ }); }
+    caveMusic.volume = Math.min(CAVE_VOL, caveMusic.volume + dt * 0.4);
+  } else if (!caveMusic.paused) {
+    const v = caveMusic.volume - dt * 0.6;
+    if (v > 0) caveMusic.volume = v;
+    else caveMusic.pause();
   }
 }
-function tickMusic(dt) {
-  if (moeMusic.paused) return;
-  if (musicOn && soundOn) { moeMusic.volume = Math.min(MUSIC_VOL, moeMusic.volume + dt); return; }
-  const v = moeMusic.volume - dt * 0.5;
-  if (v > 0) { moeMusic.volume = v; return; }
-  moeMusic.pause();
-  moeMusic.currentTime = 0;
-}
-soundBtn.addEventListener('click', () => { if (musicOn) bossMusic(true); });
 
 // the intro, every time you walk in while he's alive: black bars, the camera
 // goes to the middle of the room, the floor cracks, he bursts up out of it and
@@ -5271,7 +5447,7 @@ function showTip(x, y) {
   const under = !heldStack && document.elementFromPoint(x, y);
   const el = under && under.closest('[data-tip]');
   // a pile on the ground: its name, and how many if there's more than one
-  const pile = under === canvas && started && !ui && groundAt(mouseWorld());
+  const pile = under === canvas && started && !ui && groundAt({ x: cam.x + (x * dpr) / S, y: cam.y + (y * dpr) / S });
   if (!el && !pile) { tipEl.hidden = true; return; }
   tipEl.textContent = el ? el.dataset.tip : `${ITEMS[pile.st.id].name}${pile.st.n > 1 ? ` ×${pile.st.n}` : ''}`;
   tipEl.hidden = false;

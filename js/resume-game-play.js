@@ -4690,9 +4690,7 @@ function playDrawHeld(dx, dy, row, col, front) {
   const it = ITEMS[s.id], img = ICON_CANVAS[s.id];
   let x = pose.x, a = pose.a;
   if (player.flip) { x = CELL - x; a = 180 - a; }
-  // a drawn bow is turned so its string runs across your aim, the way you'd
-  // actually hold it
-  if (bowDraw && it.ranged) a = (aimAngle() * 180) / Math.PI - 90;
+  if (bowDraw && it.ranged) { drawDrawnBow(dx + 24 * S, dy + 42 * S); return; }
   // the drill points where you're drilling, spins, and shudders in your hands
   const spinning = drilling && it.tool === 'drill';
   if (spinning) a = (aimAngle() * 180) / Math.PI;
@@ -4721,6 +4719,41 @@ function playDrawHeld(dx, dy, row, col, front) {
   } else {
     ctx.drawImage(img, -8 * k * S, -8 * k * S, 16 * k * S, 16 * k * S);
   }
+  ctx.restore();
+}
+
+// the bow while you're drawing it, drawn for real instead of as its rotated
+// icon (that turned round the icon's corner, so the bow sat at odd angles and
+// the arrow wasn't on it). the grip is held out in front of you along your aim,
+// the limbs curve back towards you and bend further the more you draw, the
+// string runs from tip to tip and is pulled back to you, and the arrow lies
+// along your aim with its nock on the string. hx, hy is your feet on screen.
+function drawDrawnBow(hx, hy) {
+  const a = aimAngle(), ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux, c = bowCharge();
+  const head = MAT_PAL[ITEMS[bestArrow() || 'wood-arrow'].arrow];
+  const plot = (x, y, col) => { ctx.fillStyle = col; ctx.fillRect(hx + Math.round(x) * S, hy + Math.round(y) * S, S, S); };
+  const line = (x0, y0, x1, y1, col) => {
+    const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 1.5));
+    for (let i = 0; i <= n; i++) plot(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, col);
+  };
+  const gx = ux * 11, gy = -9 + uy * 10, L = 8, bend = 2 + c * 3;
+  const limb = t => [gx + vx * L * t - ux * bend * t * t, gy + vy * L * t - uy * bend * t * t];
+  const [ax, ay] = limb(-1), [bx, by] = limb(1);
+  const nock = [gx - ux * (bend + c * 6), gy - uy * (bend + c * 6)];
+  ctx.save();
+  if (player.blink) ctx.globalAlpha = 0.4;
+  line(ax, ay, nock[0], nock[1], '#f2efe8');
+  line(bx, by, nock[0], nock[1], '#f2efe8');
+  for (let t = -1; t <= 1.001; t += 0.06) {
+    const [x, y] = limb(t);
+    plot(x, y, Math.abs(t) < 0.2 ? '#3b2412' : Math.abs(t) > 0.85 ? '#6b4020' : '#b07a42');
+  }
+  const tip = [nock[0] + ux * 14, nock[1] + uy * 14];
+  line(nock[0], nock[1], tip[0] - ux * 2, tip[1] - uy * 2, '#c48a4f');
+  line(tip[0] - ux * 2, tip[1] - uy * 2, tip[0], tip[1], head[1]);
+  plot(tip[0], tip[1], head[0]);
+  plot(nock[0] + ux + vx, nock[1] + uy + vy, '#ffffff');
+  plot(nock[0] + ux - vx, nock[1] + uy - vy, '#ffffff');
   ctx.restore();
 }
 
@@ -5304,8 +5337,9 @@ function playRenderOverlay(toX, toY, t) {
     }
   });
 
-  // drawing the bow: a bar filling over your head, the arrow nocked along your
-  // aim, and a dotted line out the way it'll go, longer the further you draw
+  // drawing the bow: a bar filling over your head, and a dotted line out the
+  // way it'll go, longer the further you draw (the bow and the nocked arrow
+  // are drawn with you, see drawDrawnBow)
   if (bowDraw) {
     const charge = bowCharge(), a = aimAngle(), o = aimOrigin();
     const bx = toX(player.x - 10), by = toY(player.y - 46);
@@ -5313,14 +5347,10 @@ function playRenderOverlay(toX, toY, t) {
     ctx.fillRect(bx, by, 20 * S, 3 * S);
     ctx.fillStyle = charge >= 1 ? '#ffffff' : '#ffd23f';
     ctx.fillRect(bx + S, by + S, Math.round(18 * S * charge), S);
-    const ux = Math.cos(a), uy = Math.sin(a), pull = 4 - charge * 3;
-    for (let k = 0; k < 9; k++) {
-      ctx.fillStyle = k > 6 ? MAT_PAL[ITEMS[bestArrow() || 'wood-arrow'].arrow][1] : '#c48a4f';
-      ctx.fillRect(toX(o.x + ux * (k - pull)), toY(o.y + uy * (k - pull)), S, S);
-    }
+    const ux = Math.cos(a), uy = Math.sin(a);
     const reachPx = (BOW.minRange + (BOW.maxRange - BOW.minRange) * charge) * TILE;
     ctx.fillStyle = `rgba(255,240,200,${0.45 + charge * 0.45})`;
-    for (let d = 16; d < reachPx; d += 7) ctx.fillRect(toX(o.x + ux * d), toY(o.y + uy * d), S * 2, S * 2);
+    for (let d = 24; d < reachPx; d += 7) ctx.fillRect(toX(o.x + ux * d), toY(o.y + uy * d), S * 2, S * 2);
   }
 
   if (eating) {
@@ -5462,7 +5492,7 @@ invWrap.addEventListener('contextmenu', e => e.preventDefault());
 // quick sweep could skip a square between two events. now the drag lasts from
 // the press to the release, and each move checks every few pixels of the path
 // it covered for squares it hasn't filled yet.
-let rightDrag = null, dragFrom = null, lastClick = { ref: null, t: 0 };
+let rightDrag = null, dragFrom = null, lastClick = { x: -99, y: -99, t: 0 };
 function sweepTo(x, y) {
   const n = Math.max(1, Math.ceil(Math.hypot(x - dragFrom.x, y - dragFrom.y) / 6));
   for (let k = 1; k <= n && heldStack; k++) {
@@ -5477,13 +5507,17 @@ function sweepTo(x, y) {
   dragFrom = { x, y };
 }
 // double click while holding a stack that isn't full (like minecraft): it
-// pulls more of the same thing out of your bag, hotbar and an open chest onto
-// the cursor, the smallest stacks first so full ones aren't broken up, until
+// pulls more of the same thing onto the cursor from everything on screen, your
+// bag and hotbar plus whatever's open (a chest, the crafting grid, the
+// furnace), the smallest stacks first so full ones aren't broken up, until
 // it's full or there's none left
 function gatherHeld() {
   if (!heldStack || maxStack(heldStack.id) <= 1) return;
   const max = maxStack(heldStack.id), id = heldStack.id;
-  const refs = [...inv.slots.map((_, i) => `inv:${i}`), ...(ui === 'chest' ? openChest.map((_, i) => `chest:${i}`) : [])]
+  const open = ui === 'chest' ? openChest.map((_, i) => `chest:${i}`)
+    : ui === 'craft' ? craftGrid.map((_, i) => `craft:${i}`)
+    : ui === 'furnace' ? ['input', 'fuel', 'output'] : [];
+  const refs = [...inv.slots.map((_, i) => `inv:${i}`), ...open]
     .filter(r => { const x = slotGet(r); return x && x.id === id; })
     .sort((a, b) => slotGet(a).n - slotGet(b).n);
   for (const r of refs) {
@@ -5502,10 +5536,14 @@ invWrap.addEventListener('mousedown', e => {
     e.preventDefault();
     const ref = slot.dataset.ref, now = performance.now();
     // a real dblclick event can't be used: the first click redraws the
-    // inventory, so the two clicks land on different elements. the second
+    // inventory, so the two clicks land on different elements. it used to
+    // also need both clicks on the same slot within 350ms, which missed
+    // doubles that were a little slow or landed a pixel over the edge of the
+    // slot. now it's any second press within half a second and a few pixels
+    // of the first (or one the browser itself counts as a double). the second
     // click of a double gathers instead of putting the stack down.
-    const dbl = e.button === 0 && !e.shiftKey && lastClick.ref === ref && now - lastClick.t < 350;
-    lastClick = { ref, t: dbl ? 0 : now };
+    const dbl = e.button === 0 && !e.shiftKey && (e.detail >= 2 || (now - lastClick.t < 500 && Math.hypot(e.clientX - lastClick.x, e.clientY - lastClick.y) < 16));
+    lastClick = { x: e.clientX, y: e.clientY, t: dbl ? 0 : now };
     if (dbl && heldStack) { gatherHeld(); return; }
     slotClick(ref, e.button, e.shiftKey);
     if (e.button === 2 && heldStack && !e.shiftKey) { rightDrag = new Set([ref]); dragFrom = { x: e.clientX, y: e.clientY }; }

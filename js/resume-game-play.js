@@ -210,13 +210,14 @@ const CREATURES = {
     drops: [['stick', 1, 3], ['forest-heart', 1, 1, 0.03]], intro: ['Night', 'It keeps its distance and throws poison tipped sticks.']
   },
   // the mines. moles wait under the floor of their burrows and come up when
-  // you get close; they're a bit tougher than the hyena and their teeth hurt
-  // more. moe the mole is the first boss (updateMoe runs him): six times the
+  // you get close; about as tough as the hyena (they were 6 hp with a 1.25
+  // heart bite, which alex found too much with two or three at once). moe the
+  // mole is the first boss (updateMoe runs him): six times the
   // grizzly's health, 3 hearts if his drill lunge catches you, and 5 if he
   // comes up out of the floor right under you.
   mole: {
-    name: 'Mole', hp: 6, speed: 62, aggro: 3.5, leash: 99, range: 2.2, minion: true,
-    windup: 0.5, lunge: { speed: 240, time: 0.22 }, cooldown: 1.5, dmg: 1.25,
+    name: 'Mole', hp: 5, speed: 62, aggro: 3.5, leash: 99, range: 2.2, minion: true,
+    windup: 0.5, lunge: { speed: 240, time: 0.22 }, cooldown: 1.5, dmg: 1,
     knock: 120, h: 20, box: { w: 20, h: 12 }, rest: 'burrowed', regen: 0.04, chip: '120,104,150',
     drops: [['iron-ore', 0, 1]], intro: ['Ambush', 'Moles. Mind the teeth.']
   },

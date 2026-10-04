@@ -2001,7 +2001,9 @@ function groundThing(g) {
 }
 function dropStack(st, x, y, r, wait = 1, from = null) {
   const max = maxStack(st.id), rid = r ? r.id : null;
-  if (max > 1) {
+  // (something thrown lands first and joins a pile there when it lands, see
+  // tickGround, so it gets its arc even when it's going onto a pile)
+  if (max > 1 && !from) {
     const pile = ground.find(g => g.room === rid && g.st.id === st.id && g.st.n < max && Math.hypot(g.x - x, g.y - y) < 10);
     if (pile) {
       const k = Math.min(max - pile.st.n, st.n);
@@ -2045,6 +2047,14 @@ function tickGround(dt) {
         g.fly = null;
         burst(g.x, g.y - 2, '150,140,120', 4);
         sfx.chip();
+        const max = maxStack(g.st.id), pile = max > 1 && ground.find(o => o !== g && !o.fly && o.room === g.room && o.st.id === g.st.id && o.st.n < max && Math.hypot(o.x - g.x, o.y - g.y) < 10);
+        if (pile) {
+          const k = Math.min(max - pile.st.n, g.st.n);
+          pile.st.n += k;
+          pile.age = 0;
+          g.st.n -= k;
+          if (!g.st.n) removeGround(g);
+        }
       }
       continue;
     }
@@ -2104,7 +2114,9 @@ function dropFrom(ref, all) {
   const a = aimAngle();
   let x = player.x + Math.cos(a) * 20, y = player.y + Math.sin(a) * 20;
   if (blocked(x, y)) { x = player.x; y = player.y + 2; }
-  dropStack(out, x, y, room, 1.2);
+  // tossed out of your hand with the same spinning arc as everything else that
+  // gets dropped (dying, darryl, mobs' loot)
+  dropStack(out, x, y, room, 1.2, { x: player.x, y: player.y - 10 });
   sfx.swing();
   afterInventoryChange();
 }

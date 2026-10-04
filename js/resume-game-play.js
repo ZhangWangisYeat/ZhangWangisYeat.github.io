@@ -1556,7 +1556,7 @@ function roomWalls(cols, rows, door) {
   };
 }
 const caveRoom = {
-  id: 'cave', w: CAVE_COLS * TILE, h: CAVE_ROWS * TILE, dust: '#6e6a64', shade: 0.62,
+  id: 'cave', w: CAVE_COLS * TILE, h: CAVE_ROWS * TILE, dust: '#6e6a64', shade: 0.95,
   canvas: paintCaveRoom(),
   outside: { x: caveThing.x, y: caveThing.y },
   exit: { x: caveThing.x, y: caveThing.y + 10 },
@@ -2175,7 +2175,7 @@ const burrowRooms = BURROWS.map((B, i) => {
   const save = quest.burrows[i] || (quest.burrows[i] = { visited: false, dead: [], chest: null });
   if (!Array.isArray(save.chest)) save.chest = rollBurrowLoot();
   const r = {
-    id: `burrow-${i}`, burrow: i, w: BURROW_COLS * TILE, h: BURROW_ROWS * TILE, dust: '#7a5c40', shade: 0.55, fight: true,
+    id: `burrow-${i}`, burrow: i, w: BURROW_COLS * TILE, h: BURROW_ROWS * TILE, dust: '#7a5c40', shade: 0.95, fight: true,
     canvas: paintDig(BURROW_COLS, BURROW_ROWS, BURROW_DOOR, 7000 + i * 31, false),
     outside: { x: hole.x, y: hole.y }, exit: { x: hole.x, y: hole.y + HOLE_STEP }, door: BURROW_DOOR,
     blocked: roomWalls(BURROW_COLS, BURROW_ROWS, BURROW_DOOR), things: [],
@@ -2558,13 +2558,10 @@ function finishMoe(c) {
   rubble.gone = true;
   burst(rubble.x, rubble.y - 10, '140,140,140', 20);
   lockDenChest(false);
-  // his drill. if your bag's full it's waiting in his chest instead.
-  if (inv.slots.some(st => !st)) gain('moe-drill', 1, c.x, c.y - 40);
-  else {
-    const free = quest.denChest.findIndex(st => !st);
-    if (free >= 0) quest.denChest[free] = makeStack('moe-drill');
-    toast('Bag full', 'Moe\'s Drill', 'It\'s in his chest');
-  }
+  // his drill drops where he went down (special, so it never despawns), and
+  // the victory jingle plays
+  lootOut('moe-drill', 1, c.x, c.y - 10);
+  victoryJingle();
   setTimeout(() => discover(MINE_ORDER[0]), 900);
   setTimeout(() => toast('Defeated', c.def.name, 'His drill is yours. Hold right-click to use it.'), 3200);
   markDirty();
@@ -2774,9 +2771,19 @@ const caveMusic = new Audio('audio/cave.mp3');
 caveMusic.loop = true;
 caveMusic.preload = 'auto';
 const CAVE_VOL = 0.35;
+// after a boss, the victory jingle gets the stage before the cave music fades
+// back in
+let musicQuietUntil = 0;
+function victoryJingle() {
+  musicQuietUntil = performance.now() + 4200;
+  // a bright little fanfare in F#: up the chord, a quick turn, and a held top note
+  [[66, 0], [69, 0.13], [73, 0.26], [78, 0.39], [76, 0.62], [78, 0.75], [81, 0.9]].forEach(([n, at], i) =>
+    tone(440 * 2 ** ((n - 69) / 12), i === 6 ? 0.9 : 0.16, 'square', 0.045, 0.6 + at));
+  [54, 61, 66].forEach(n => tone(440 * 2 ** ((n - 69) / 12), 1.1, 'triangle', 0.05, 0.6 + 0.9));
+}
 function tickMusic(dt) {
   const under = room ? room === caveRoom || room === denRoom || room.burrow !== undefined : amb.mines > 0.5;
-  const want = soundOn && started && under && !musicOn;
+  const want = soundOn && started && under && !musicOn && performance.now() > musicQuietUntil;
   if (want) {
     if (caveMusic.paused) { caveMusic.volume = 0; caveMusic.play().catch(() => { /* no audio, carry on */ }); }
     caveMusic.volume = Math.min(CAVE_VOL, caveMusic.volume + dt * 0.4);
@@ -3180,12 +3187,23 @@ function aggro(c) {
 
 // a creature's drop. a drop with a chance only sometimes happens, and a machine
 // part only ever drops once and never into a full bag (where it'd be lost).
+// loot isn't put straight in your bag: it pops out of the body and lands on
+// the ground next to it, to be picked up like anything else (x, y is where
+// it comes from, a little above the creature's feet)
+function lootOut(id, n, x, y) {
+  if (n <= 0) return;
+  let lx = x, ly = y + 12;
+  for (let tries = 0; tries < 8; tries++) {
+    const tx = x + (Math.random() - 0.5) * 30, ty = y + 8 + Math.random() * 14;
+    if (!blocked(tx, ty)) { lx = tx; ly = ty; break; }
+  }
+  dropStack(makeStack(id, n), lx, ly, room, 0.5, { x, y });
+}
 function dropLoot(id, n, chance, x, y) {
   if (chance && Math.random() >= chance) return;
-  if (!ITEMS[id].part) { gain(id, n, x, y); return; }
+  if (!ITEMS[id].part) { lootOut(id, n, x, y); return; }
   if (quest.parts.includes(id)) return;
-  if (!inv.slots.some(st => !st)) { toast('Bag full', ITEMS[id].name, 'Something slipped through your fingers'); return; }
-  gain(id, 1, x, y);
+  lootOut(id, 1, x, y);
   quest.parts.push(id);
   burst(x, y, '200,255,90', 30);
   sfx.found();
@@ -3199,7 +3217,7 @@ function killCreature(c) {
   if (c.def.passive || c.def.nightly || c.def.minion) {
     const cc = creatureCenter(c);
     burst(cc.x, cc.y, c.def.chip, 14);
-    c.def.drops.forEach(([id, a, b, chance], line) => dropLoot(id, rand(a, b), chance, cc.x, cc.y - 10 - line * 10));
+    c.def.drops.forEach(([id, a, b, chance]) => dropLoot(id, rand(a, b), chance, cc.x, cc.y));
     creatures.splice(creatures.indexOf(c), 1);
     const list = c.room ? c.room.things : things;
     list.splice(list.indexOf(c), 1);
@@ -3209,7 +3227,7 @@ function killCreature(c) {
   quest.killed[c.kind] = true;
   const cc = creatureCenter(c);
   burst(cc.x, cc.y, c.def.chip, 26);
-  c.def.drops.forEach(([id, a, b], line) => gain(id, rand(a, b), cc.x, cc.y - 14 - line * 10));
+  c.def.drops.forEach(([id, a, b]) => lootOut(id, rand(a, b), cc.x, cc.y));
   if (c.kind === 'bear') openCave();
   // ucla is the pair of them, so it's found the moment the second one falls.
   // the landmark toast goes first, then the "what you got" one once it's had
@@ -5304,7 +5322,7 @@ function visibleInDark(x, y) {
   if (room) return true;
   const night = nightAmount() > 0.5, mine = amb.mines > 0.5;
   if (!night && !mine) return true;
-  if (Math.hypot(x - player.x, y - player.y) < TILE * (night ? 3.6 : 6)) return true;
+  if (Math.hypot(x - player.x, y - player.y) < TILE * 3.6) return true;
   return glows.some(gl => !gl.off && gl.flicker && Math.hypot(gl.x - x, gl.y - y) < gl.rad * TILE * 1.2);
 }
 function drawEyes(c, toX, toY, t) {

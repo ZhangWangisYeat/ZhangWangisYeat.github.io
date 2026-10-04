@@ -1890,9 +1890,11 @@ function render(t) {
   // and fire, so in the dark you only see what something is lighting up.
   const dark = amb.mines;
   const night = typeof playNight === 'function' ? playNight() : 0;
-  const shade = Math.max(0.74 * dark, night);
+  // the mines are as dark as the night now: you only see right round you and
+  // whatever a torch is lighting
+  const shade = Math.max(0.97 * dark, night);
   if (shade > 0.01) {
-    const tight = night > 0.5;
+    const tight = night > 0.5 || dark > 0.5;
     drawShade(shade, toX, toY, TILE * S * (tight ? 1.6 : 2.6), TILE * S * (tight ? 4.5 : 8.5), glows);
   }
   const lit = Math.max(dark, night);

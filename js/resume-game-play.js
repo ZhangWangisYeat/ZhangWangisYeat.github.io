@@ -2269,7 +2269,7 @@ BUILDINGS.push(
 // tells, shorter openings, more pops before he climbs out.
 const MOE = {
   dig: 0.8, chase: 1.3, chaseAgain: 0.8, tell: 0.95, tellMad: 0.75, pop: 0.3, stuck: 2.4, stuckMad: 2, climb: 0.6,
-  pops: 3, popsMad: 4, stuckSink: 0.3, under: 150, underMad: 190, mad: 0.5,
+  pops: 3, popsMad: 4, stuckSink: 0.42, under: 150, underMad: 190, mad: 0.5,
   // how far his drill reaches from his hand: anywhere in front of him closer
   // than this and the bit is in you
   reach: 40, keep: 4.5, backOff: 2.5
@@ -2442,7 +2442,7 @@ function updateMoe(c, dt) {
       // you (see below). hit him from just outside the hole.
       c.aim = -Math.PI / 2;
       c.flip = player.x < c.x;
-      if (Math.random() < dt * 30) burst(moePoint(c, MOE_HAND, img).x + (Math.random() - 0.5) * 6, moePoint(c, MOE_HAND, img).y - 16 - 34 * DRILL_BIG, Math.random() < 0.5 ? '255,220,140' : '255,140,60', 1);
+      if (Math.random() < dt * 30) burst(c.x + (Math.random() - 0.5) * 6, c.y - 4 - 34 * DRILL_BIG, Math.random() < 0.5 ? '255,220,140' : '255,140,60', 1);
       if (c.t >= (mad ? MOE.stuckMad : MOE.stuck)) {
         c.pops++;
         if (c.pops >= (mad ? MOE.popsMad : MOE.pops)) { c.state = 'climb'; c.t = 0; }
@@ -2471,7 +2471,9 @@ function updateMoe(c, dt) {
   // above ground his reach is the whole length of the drill, and since it's
   // always pointed at you, getting anywhere near him means getting drilled
   const up = ['face', 'windup', 'lunge', 'recover', 'climb'].includes(c.state);
-  if (!player.dead && !c.under && up && (overlap(playerBox(), creatureBox(c)) || Math.hypot(player.x - hand.x, player.y - 10 - hand.y) < MOE.reach)) {
+  // (except mid dash: then only his body counts, the old hitbox. with the
+  // drill's whole reach a dash was a guaranteed hit, there was no dodging it.)
+  if (!player.dead && !c.under && up && (overlap(playerBox(), creatureBox(c)) || (c.state !== 'lunge' && Math.hypot(player.x - hand.x, player.y - 10 - hand.y) < MOE.reach))) {
     hurtPlayer(c.state === 'lunge' ? def.lungeDmg : def.dmg, c.x, c.y - 10);
   }
   if (!player.dead && (c.state === 'pop' || c.state === 'stuck') && inMoeHole(c)) {
@@ -2896,7 +2898,10 @@ function drawMoe(c, toX, toY, t) {
   // up out of the floor he holds the drill over his head, bigger, glowing hot
   // at the tip and throwing sparks (see the glow after he's drawn)
   const raised = c.state === 'stuck' || c.state === 'pop';
-  if (raised) hand.y -= 16;
+  // stuck, the drill stands straight up out of the middle of his hole, as
+  // wide as the hole (its bottom down in it), and only his dizzy head pokes
+  // out in front of it (stuckSink)
+  if (raised) { hand.x = c.x; hand.y = c.y - 4; }
   const k = ((Math.round((c.aim / (Math.PI * 2)) * DRILL_STEPS) % DRILL_STEPS) + DRILL_STEPS) % DRILL_STEPS;
   const drill = raised
     ? () => ctx.drawImage(DRILL_UP[Math.floor(c.spin) % 3], toX(hand.x - DRILL_BIG_D / 2), toY(hand.y - DRILL_BIG_D / 2), DRILL_BIG_D * S, DRILL_BIG_D * S)
@@ -3439,6 +3444,16 @@ function updateCreature(c, dt) {
     if (c.state !== 'return') hurtPlayer(def.dmg, c.x, c.y);
     if (c.burning) ignite();
   }
+  // creatures in a room (the moles) shove each other apart instead of piling
+  // up on one spot and walking through each other
+  if (c.room) creatures.forEach(o => {
+    if (o === c || o.room !== c.room || o.dead || o.gone || o.def.boss || o.state === 'burrowed') return;
+    const dx = c.x - o.x, dy = c.y - o.y, dd = Math.hypot(dx, dy), min = (def.box.w + o.def.box.w) / 2 - 2;
+    if (dd >= min) return;
+    const k = (min - dd) / 2, ux = dd ? dx / dd : Math.random() - 0.5, uy = dd ? dy / dd : Math.random() - 0.5;
+    moveBody(c, ux * k, uy * k);
+    moveBody(o, -ux * k, -uy * k);
+  });
   if (c.moving) c.anim += dt;
 }
 

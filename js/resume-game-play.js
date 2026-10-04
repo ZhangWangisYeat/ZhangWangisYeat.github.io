@@ -344,6 +344,28 @@ function armorIcon(G, P) {
   }
   [5, 7].forEach(y => G.set(8, y, P[2]));
 }
+// the bow, one shape for its icon and for the bow you draw, so they're the
+// same bow: wooden limbs curving back from a dark grip to dark tips, and the
+// string from tip to tip, pulled back by `pull`. it faces along (ux, uy) with
+// the grip at (gx, gy), and plot(x, y, colour) puts down one pixel. hands back
+// where the nock is, for the arrow.
+function bowShape(plot, gx, gy, ux, uy, L, bend, pull) {
+  const vx = -uy, vy = ux;
+  const limb = t => [gx + vx * L * t - ux * bend * t * t, gy + vy * L * t - uy * bend * t * t];
+  const line = (x0, y0, x1, y1, col) => {
+    const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 1.5));
+    for (let i = 0; i <= n; i++) plot(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, col);
+  };
+  const [ax, ay] = limb(-1), [bx, by] = limb(1);
+  const nock = [gx - ux * (bend + pull), gy - uy * (bend + pull)];
+  line(ax, ay, nock[0], nock[1], '#f2efe8');
+  line(bx, by, nock[0], nock[1], '#f2efe8');
+  for (let t = -1; t <= 1.001; t += 0.06) {
+    const [x, y] = limb(t);
+    plot(x, y, Math.abs(t) < 0.2 ? '#3b2412' : Math.abs(t) > 0.85 ? '#6b4020' : '#b07a42');
+  }
+  return nock;
+}
 function arrowIcon(G, P) {
   pxLine(G, 3, 13, 11, 5, HANDLE[0]);
   [[2, 12], [3, 14], [1, 12], [3, 15]].forEach(([x, y]) => G.set(x, y, '#f2efe8'));
@@ -491,14 +513,9 @@ function makeIcon(id) {
       pxLine(G, 3, 13, 6, 6, '#bdb8ac'); pxLine(G, 10, 13, 13, 6, '#bdb8ac');
       break;
     case 'bow':
-      // the limb bows out towards the top left, the string runs straight
-      pxLine(G, 13, 2, 2, 13, '#e8e4da');
-      for (let k = 0; k <= 22; k++) {
-        const t = k / 22, b = Math.sin(t * Math.PI) * 4;
-        const x = 13 - 11 * t - b * 0.7, y = 2 + 11 * t - b * 0.7;
-        G.set(x, y, t > 0.4 && t < 0.6 ? '#3b2412' : HANDLE[0]);
-        G.set(x + 1, y, HANDLE[1]);
-      }
+      // the same bow you see when you draw it (bowShape), at rest, facing up
+      // to the top right like the other tools
+      bowShape((x, y, c) => G.set(Math.round(x), Math.round(y), c), 10, 6, Math.SQRT1_2, -Math.SQRT1_2, 6.5, 3.5, 0);
       break;
     case 'poison-meat':
       pxBlob(G, 8, 9, 6, 4.2, (dx, dy, x, y) => (hash2(x, y, 8) < 0.2 ? '#7a3f8f' : dy < -0.5 ? '#9fbf6a' : '#6f8f3a'));
@@ -4742,18 +4759,9 @@ function drawDrawnBow(hx, hy) {
     const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 1.5));
     for (let i = 0; i <= n; i++) plot(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, col);
   };
-  const gx = ux * 11, gy = -9 + uy * 10, L = 8, bend = 2 + c * 3;
-  const limb = t => [gx + vx * L * t - ux * bend * t * t, gy + vy * L * t - uy * bend * t * t];
-  const [ax, ay] = limb(-1), [bx, by] = limb(1);
-  const nock = [gx - ux * (bend + c * 6), gy - uy * (bend + c * 6)];
   ctx.save();
   if (player.blink) ctx.globalAlpha = 0.4;
-  line(ax, ay, nock[0], nock[1], '#f2efe8');
-  line(bx, by, nock[0], nock[1], '#f2efe8');
-  for (let t = -1; t <= 1.001; t += 0.06) {
-    const [x, y] = limb(t);
-    plot(x, y, Math.abs(t) < 0.2 ? '#3b2412' : Math.abs(t) > 0.85 ? '#6b4020' : '#b07a42');
-  }
+  const nock = bowShape(plot, ux * 11, -9 + uy * 10, ux, uy, 8, 4.3 + c * 2.5, c * 6);
   const tip = [nock[0] + ux * 14, nock[1] + uy * 14];
   line(nock[0], nock[1], tip[0] - ux * 2, tip[1] - uy * 2, '#c48a4f');
   line(tip[0] - ux * 2, tip[1] - uy * 2, tip[0], tip[1], head[1]);
@@ -5070,10 +5078,11 @@ function playArmorLayers() {
 // how much of you is in gold, for the shine
 const goldShare = () => armorSum(A => (A.shine ? 1 : 0));
 function playSpeedMult() {
-  // iron slows you down by its share: a full set is the old 85%
+  // iron slows you down by its share: a full set is the old 85%. drawing the
+  // bow slows you a little too, like holding it steady.
   const slow = 1 - armorSum(A => 1 - (A.slow || 1));
   return (vitals.slowT > 0 ? 0.55 : 1) * slow
-    * (vitals.hunger <= 0.5 ? STARVING_SLOW : 1) * (eating ? 0.5 : 1);
+    * (vitals.hunger <= 0.5 ? STARVING_SLOW : 1) * (eating ? 0.5 : 1) * (bowDraw ? 0.65 : 1);
 }
 
 let questT = 0, tipShown = false, wasSoaked = false;

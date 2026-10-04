@@ -1968,7 +1968,7 @@ function groundThing(g) {
   g.thing = { x: g.x, y: g.y, frames: [ICON_CANVAS[g.st.id]], draw: drawGround, ground: g };
   (g.room ? roomById(g.room).things : things).push(g.thing);
 }
-function dropStack(st, x, y, r, wait = 1) {
+function dropStack(st, x, y, r, wait = 1, from = null) {
   const max = maxStack(st.id), rid = r ? r.id : null;
   if (max > 1) {
     const pile = ground.find(g => g.room === rid && g.st.id === st.id && g.st.n < max && Math.hypot(g.x - x, g.y - y) < 10);
@@ -1981,6 +1981,8 @@ function dropStack(st, x, y, r, wait = 1) {
     }
   }
   const g = { st: { ...st }, x, y, room: rid, age: 0, wait };
+  // thrown from somewhere (your body when you die): it arcs over and lands
+  if (from) g.fly = { x0: from.x, y0: from.y, t: 0, dur: 0.45 + Math.random() * 0.35, h: 16 + Math.random() * 18, spin: (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 3) };
   ground.push(g);
   groundThing(g);
   markDirty();
@@ -2006,6 +2008,15 @@ function tickGround(dt) {
     const g = ground[i];
     g.age += dt;
     g.wait = Math.max(0, g.wait - dt);
+    if (g.fly) {
+      g.fly.t += dt;
+      if (g.fly.t >= g.fly.dur) {
+        g.fly = null;
+        burst(g.x, g.y - 2, '150,140,120', 4);
+        sfx.chip();
+      }
+      continue;
+    }
     if (g.age >= GROUND_LIFE && !special(g.st)) { removeGround(g); continue; }
     if (player.dead || g.wait > 0 || g.room !== here || Math.hypot(g.x - player.x, g.y - player.y) > PICKUP_R) continue;
     const k = Math.min(g.st.n, roomFor(g.st));
@@ -2023,6 +2034,20 @@ function tickGround(dt) {
 }
 function drawGround(o, toX, toY, t) {
   const g = o.ground, img = ICON_CANVAS[g.st.id];
+  // still in the air: along an arc from where it was thrown, spinning, with
+  // its shadow sliding along the ground under it
+  if (g.fly) {
+    const f = g.fly, k = Math.min(1, f.t / f.dur), e = 1 - (1 - k) * (1 - k);
+    const x = f.x0 + (g.x - f.x0) * e, gy = f.y0 + (g.y - f.y0) * e, lift = 4 * f.h * k * (1 - k);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(toX(x - 4), toY(gy - 1), 8 * S, 2 * S);
+    ctx.save();
+    ctx.translate(toX(x), toY(gy - 7 - lift));
+    ctx.rotate(f.spin * k * Math.PI);
+    ctx.drawImage(img, -6 * S, -6 * S, 12 * S, 12 * S);
+    ctx.restore();
+    return;
+  }
   // blinking out in its last 15 seconds
   if (!special(g.st) && GROUND_LIFE - g.age < 15 && Math.floor(t / 150) % 2) return;
   const bob = reduceMotion ? 0 : Math.round(Math.sin(t / 350 + g.x) * 1.5);
@@ -2052,7 +2077,8 @@ function dropFrom(ref, all) {
   sfx.swing();
   afterInventoryChange();
 }
-// dying spills everything round where you fell. it waits there for 5 minutes
+// dying spills everything round where you fell: it all bursts out of you and
+// arcs over to land in a ring round your body (see dropStack's from). it waits there for 5 minutes
 // (the special things for good), even in a boss's den: walk back in (the boss
 // starts again from full) and it's still lying on the floor.
 function spillInventory() {
@@ -2066,7 +2092,7 @@ function spillInventory() {
       const tx = player.x + Math.cos(a) * d, ty = player.y + Math.sin(a) * d * 0.8;
       if (!blocked(tx, ty)) { x = tx; y = ty; break; }
     }
-    dropStack(st, x, y, room, 2);
+    dropStack(st, x, y, room, 2, { x: player.x, y: player.y - 4 });
   });
   markDirty();
 }
@@ -3219,15 +3245,50 @@ function hurtPlayer(raw, fromX, fromY) {
   return true;
 }
 
+// dying: you crumple (the sheet's death frames), everything you carry bursts
+// out of you, a burst of red goes up, the world closes in to a dark ring round
+// you, your ghost drifts up out of your body, and the screen fades to black
+// before you wake up at your bed or camp. DEATH is how long all that takes.
+const DEATH = 2.8;
 function die() {
   player.dead = true;
   player.deadT = 0;
   player.swing = -1;
   mining = null;
+  bowDraw = null;
+  stopDrill();
   closeUI();
   spillInventory();
+  burst(player.x, player.y - 14, '230,60,60', 22);
+  addShake(3);
   renderHUD();
   sfx.die();
+}
+function drawDeath(toX, toY) {
+  const k = player.deadT;
+  // the world closing in round you
+  const cx = toX(player.x), cy = toY(player.y - 14), dark = Math.min(0.75, k * 0.45);
+  const g = ctx.createRadialGradient(cx, cy, TILE * S * Math.max(1, 5 - k * 2), cx, cy, TILE * S * 12);
+  g.addColorStop(0, 'rgba(20,0,4,0)');
+  g.addColorStop(1, `rgba(20,0,4,${dark})`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // your ghost, a pale copy of you rising out of the body and fading
+  const img = sheetPlay.naturalWidth ? sheetPlay : sheet;
+  if (k > 0.7 && img.naturalWidth) {
+    const u = Math.min(1, (k - 0.7) / 1.8);
+    ctx.save();
+    ctx.globalAlpha = 0.55 * (1 - u);
+    ctx.globalCompositeOperation = 'lighter';
+    const sway = reduceMotion ? 0 : Math.sin(k * 5) * 2;
+    ctx.drawImage(img, 0, 0, CELL, CELL, toX(player.x - 24 + sway), toY(player.y - 42 - u * 30), CELL * S, CELL * S);
+    ctx.restore();
+  }
+  // and the fade to black at the end
+  if (k > DEATH - 0.6) {
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(1, (k - (DEATH - 0.6)) / 0.5)})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 }
 function respawn() {
   if (room) playLeaveRoom(true);
@@ -4959,9 +5020,13 @@ function checkDoors() {
       else lockedToast(regionAt(b.tile[0] + 0.5, b.tile[1] + 0.5));
       return;
     }
-    if (!pushing) continue;
+    // a doorway takes you in as soon as you've stepped into it far enough to
+    // be drawn behind the building. it used to need you pushing up inside the
+    // top few pixels of the doorway, so you could stand in the tent's flap,
+    // hidden behind the canvas, and still be outside.
     const doorX = b.tile[0] * TILE + 8, doorY = b.tile[1] * TILE;
-    if (Math.abs(player.x - doorX) < 7 && player.y < doorY + 7 && player.y > doorY && b.open() && buildingOpen(b)) { enterRoom(b.room); return; }
+    const inDoor = Math.abs(player.x - doorX) < 8 && player.y > doorY - 4 && player.y < b.thing.y;
+    if (inDoor && (player.moving || pushing) && b.open() && buildingOpen(b)) { enterRoom(b.room); return; }
   }
 }
 function useBuilding(b) {
@@ -5109,7 +5174,7 @@ function playUpdate(dt, t) {
 
   if (player.dead) {
     player.deadT += dt;
-    if (player.deadT > 2) respawn();
+    if (player.deadT > DEATH) respawn();
   } else {
     if (Math.abs(vitals.kx) + Math.abs(vitals.ky) > 1) {
       moveBody(player, vitals.kx * dt, vitals.ky * dt);
@@ -5238,6 +5303,7 @@ function drawEyes(c, toX, toY, t) {
 
 function playRenderOverlay(toX, toY, t) {
   if (!started) return;
+  if (player.dead) drawDeath(toX, toY);
   const fs = Math.max(16, 8 * Math.round((S * 5.3) / 8));
 
   // gold armor gets a soft warm halo, brighter the more of it you're wearing

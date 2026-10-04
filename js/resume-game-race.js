@@ -21,17 +21,24 @@ DQ.mined = Array.isArray(DQ.mined) ? DQ.mined.filter(n => Number.isInteger(n)) :
 DQ.losses = Math.max(0, DQ.losses | 0);
 
 // the track. it's a long winding tunnel drawn as a centre line through these
-// points (in tiles), smoothed into a curve, with the floor HALF px either side
-// of it. it comes in through the bottom wall (the way in and out) and ends at
-// the big door in the top wall on the right.
-const RACE_COLS = 104, RACE_ROWS = 72;
+// points (in tiles, scaled up by TRACK_SCALE), smoothed into a curve. the room
+// itself is made of the same tiles as the rest of the mines (RT, alex): floor
+// wherever a tile's middle is within about HALF px of the centre line, so the
+// edges come out as jagged as anywhere else in the mines, and wall everywhere
+// else, with ore in it. it comes in through the bottom wall (the way in and
+// out) and ends at the big door in the top wall on the right. HALF used to be
+// 40, which left darryl's line about the only clean one and the race nearly
+// unwinnable (alex), so the track is 64 px either side now, room for a few
+// different ways through.
+const TRACK_SCALE = 1.3;
+const RACE_COLS = 136, RACE_ROWS = 94;
 const RACE_W = RACE_COLS * TILE, RACE_H = RACE_ROWS * TILE;
-const HALF = 40, DS = 4;
+const HALF = 64, DS = 4;
 const TRACK_PTS = [
   [8, 75], [8, 60], [9, 47], [16, 41], [27, 42], [31, 50], [33, 59], [42, 64], [56, 63], [63, 55],
   [58, 46], [45, 41], [39, 31], [26, 26], [13, 23], [11, 13], [20, 8], [34, 9], [45, 15], [57, 21],
-  [70, 24], [79, 33], [77, 45], [80, 58], [92, 62], [97, 52], [93, 40], [89, 28], [88, 16], [88, 5]
-];
+  [70, 24], [79, 33], [77, 45], [80, 58], [92, 62], [97, 52], [93, 40], [89, 28], [88, 18], [88, 8]
+].map(([x, y]) => [x * TRACK_SCALE, y * TRACK_SCALE]);
 const track = (() => {
   const P = TRACK_PTS.map(([x, y]) => [x * TILE + 8, y * TILE + 8]);
   const dense = [];
@@ -84,9 +91,9 @@ const trackPt = (s, d = 0) => {
   return { x: track.xs[i] - Math.sin(a) * d, y: track.ys[i] + Math.cos(a) * d, a };
 };
 // where things happen along it, in px from the bottom: the carts wait at the
-// start line, the finish line comes a little before the end, the carts roll
-// to a stop at S_STOP, and the door is the very end.
-const S_START = 230, S_FIN = track.len - 170, S_STOP = track.len - 72, S_DOOR = track.len - 30;
+// start line, the finish line comes a little before the end, and the carts
+// roll to a stop at S_STOP, short of the door
+const S_START = 300, S_FIN = track.len - 230, S_STOP = track.len - 120;
 
 // a coarse map of the room in 4px cells: which point of the centre line each
 // cell is nearest, and how far from it. everything asks this where it is.
@@ -104,8 +111,6 @@ const cellI = new Int32Array(GW * GH).fill(-1), cellD = new Float32Array(GW * GH
     }
   }
 }
-// the walls wobble in and out a little, so it's dug, not drawn with a ruler
-const edgeAt = (x, y) => HALF + (vnoise(x / 26, y / 26, 7311) - 0.5) * 12;
 function trackAt(x, y) {
   const gx = Math.floor(x / 4), gy = Math.floor(y / 4);
   if (gx < 0 || gy < 0 || gx >= GW || gy >= GH) return null;
@@ -119,18 +124,64 @@ function trackAt(x, y) {
   const a = track.ang[best], dx = x - track.xs[best], dy = y - track.ys[best];
   return { i: best, s: best * DS, dist: Math.sqrt(bd), d: -dx * Math.sin(a) + dy * Math.cos(a) };
 }
-// room to stand (on foot) or to fit a cart: the floor, short of the walls, and
-// not past the door while it's shut
-function onFloor(x, y, margin) {
-  const t = trackAt(x, y);
-  if (!t || t.dist > edgeAt(x, y) - margin) return false;
-  return t.s < (DQ.doorOpen ? track.len : S_DOOR);
+// the tiles. mud has its own texture, made the same way as the rest.
+const T_MUD = 17;
+PAL[T_MUD] = { base: '#5a4028', dots: ['#4a3420', '#6e5034', '#3e2c1a', '#7a5a3a'], n: 46, style: 'speckle' };
+TEX[T_MUD] = [0, 1, 2, 3].map(v => makeTileTexture(T_MUD, v));
+const RT = new Uint8Array(RACE_COLS * RACE_ROWS).fill(T.WALL);
+const rti = (tx, ty) => ty * RACE_COLS + tx;
+const rtAt = (tx, ty) => (tx < 0 || ty < 0 || tx >= RACE_COLS || ty >= RACE_ROWS ? T.WALL : RT[rti(tx, ty)]);
+const raceSolid = (x, y) => SOLID[rtAt(Math.floor(x / TILE), Math.floor(y / TILE))] === 1;
+for (let ty = 0; ty < RACE_ROWS; ty++) for (let tx = 0; tx < RACE_COLS; tx++) {
+  const t = trackAt(tx * TILE + 8, ty * TILE + 8);
+  if (t && t.dist < HALF + (hash2(tx, ty, 7360) - 0.5) * 12) RT[rti(tx, ty)] = T.FLOOR;
+}
+// smooth the worst of the jaggedness: a one tile dent in the wall gets filled
+// in and a one tile spike of wall gets knocked off, so the edges stay rough
+// but there are no pockets for a cart to wedge itself into
+for (let pass = 0; pass < 2; pass++) {
+  const next = RT.slice();
+  for (let ty = 1; ty < RACE_ROWS - 1; ty++) for (let tx = 1; tx < RACE_COLS - 1; tx++) {
+    const n = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => RT[rti(tx + dx, ty + dy)] === T.FLOOR).length;
+    if (RT[rti(tx, ty)] === T.FLOOR && n <= 1) next[rti(tx, ty)] = T.WALL;
+    else if (RT[rti(tx, ty)] === T.WALL && n >= 3) next[rti(tx, ty)] = T.FLOOR;
+  }
+  RT.set(next);
+}
+// ore in the walls along the track, the same blocks as out in the mines:
+// mostly iron, then gold and ruby, the odd emerald. none of it (or any of the
+// wall) can be dug until you've beaten darryl.
+{
+  const r = mulberry32(7361);
+  for (let ty = 0; ty < RACE_ROWS; ty++) for (let tx = 0; tx < RACE_COLS; tx++) {
+    if (RT[rti(tx, ty)] !== T.WALL) continue;
+    if (![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => rtAt(tx + dx, ty + dy) === T.FLOOR) || r() > 0.11) continue;
+    const roll = r();
+    RT[rti(tx, ty)] = roll < 0.58 ? T.IRON : roll < 0.83 ? T.GOLD : roll < 0.97 ? T.RUBY : T.EMERALD;
+  }
+}
+// the big door sits in the wall right above the top of the track's end
+const DOOR_X = Math.floor(track.xs[track.n - 1] / TILE) * TILE + 8;
+const DOOR_Y = (() => {
+  const tx = Math.floor(DOOR_X / TILE);
+  let ty = 0;
+  while (ty < RACE_ROWS && RT[rti(tx, ty)] !== T.FLOOR) ty++;
+  return ty * TILE + 4;
+})();
+// room to stand (on foot) or to fit a cart: clear of the walls, and not past
+// the door while it's shut
+function onFloor(x, y, m) {
+  if (!DQ.doorOpen && y < DOOR_Y + 10) return false;
+  for (const [dx, dy] of [[0, 0], [-m, -m], [m, -m], [-m, m], [m, m], [-m, 0], [m, 0], [0, -m], [0, m]]) if (raceSolid(x + dx, y + dy)) return false;
+  return true;
 }
 
 // what's in the way. gems spin you out, jagged rocks crack your cart, holes
 // swallow it, and mud and water slow you down (mud more). s is how far along,
-// d is how far right of the centre line. darryl takes the gem at index MISTAKE.gem
-// and the mud at MISTAKE.mud on purpose, his two slip ups.
+// d is how far right of the centre line (written for the old narrow track and
+// spread out by D_SCALE). darryl takes the gem at index MISTAKE.gem and the
+// mud at MISTAKE.mud on purpose, his two slip ups. mud and water are tiles,
+// like everything else on the floor.
 const OBST = [
   [0.075, 'gem', 18, 'ruby'], [0.1, 'mud', -14], [0.13, 'rock', 12], [0.155, 'hole', -20], [0.18, 'gem', 2, 'amethyst'],
   [0.205, 'water', -12], [0.235, 'gem', -24, 'sapphire'], [0.237, 'gem', 24, 'ruby'], [0.265, 'rock', -6], [0.29, 'mud', 16],
@@ -141,18 +192,29 @@ const OBST = [
   [0.82, 'water', -14], [0.85, 'gem', 18, 'sapphire'], [0.875, 'hole', -10], [0.9, 'rock', 20]
 ];
 const MISTAKE = { gem: 11, mud: 25 };
-const OB_SIZE = { gem: 7, rock: 9, hole: 11, mud: 15, water: 15 };
-const PATCH_LEN = { mud: 30, water: 26 };
+const D_SCALE = 1.6;
+const OB_SIZE = { gem: 7, rock: 9, hole: 11, mud: 24, water: 24 };
+const PATCH_LEN = { mud: 40, water: 34 };
 const obstacles = OBST.map(([f, kind, d, gem], n) => {
-  const s = S_START + 120 + f * (S_FIN - S_START - 160);
-  const p = trackPt(s, d);
-  return { n, kind, s, d, x: p.x, y: p.y, a: p.a, r: OB_SIZE[kind], gem, along: PATCH_LEN[kind] || OB_SIZE[kind] };
+  const s = S_START + 160 + f * (S_FIN - S_START - 200);
+  const p = trackPt(s, d * D_SCALE);
+  return { n, kind, s, d: d * D_SCALE, x: p.x, y: p.y, a: p.a, r: OB_SIZE[kind], gem, along: PATCH_LEN[kind] || OB_SIZE[kind] };
 });
 const inPatch = (o, x, y) => {
-  const dx = x - o.x, dy = y - o.y, c = Math.cos(-o.a), s = Math.sin(-o.a);
-  const lx = dx * c - dy * s, ly = dx * s + dy * c;
+  const dx = x - o.x, dy = y - o.y, c = Math.cos(-o.a), sn = Math.sin(-o.a);
+  const lx = dx * c - dy * sn, ly = dx * sn + dy * c;
   return (lx / o.along) ** 2 + (ly / o.r) ** 2 <= 1;
 };
+obstacles.forEach(o => {
+  if (o.kind !== 'mud' && o.kind !== 'water') return;
+  for (let ty = Math.floor((o.y - 48) / TILE); ty <= Math.floor((o.y + 48) / TILE); ty++) {
+    for (let tx = Math.floor((o.x - 48) / TILE); tx <= Math.floor((o.x + 48) / TILE); tx++) {
+      if (rtAt(tx, ty) === T.FLOOR && inPatch(o, tx * TILE + 8, ty * TILE + 8)) RT[rti(tx, ty)] = o.kind === 'mud' ? T_MUD : T.WATER;
+    }
+  }
+});
+// walls you've dug out since beating him
+DQ.mined.forEach(i => { if (i >= 0 && i < RT.length && SOLID[RT[i]]) RT[i] = T.FLOOR; });
 
 // the art. a crystal cluster for the gems, a jagged spray of rock, ore set in
 // the wall, the minecarts, darryl himself, the big door and the statue.
@@ -178,137 +240,178 @@ function makeJagged() {
   });
   return G.outline(() => '#1a1a1a').canvas();
 }
-const ORE_COL = { 'iron-ore': ['#f0ebe2', '#a39d94'], 'gold-ore': ['#ffe066', '#a8800f'], ruby: ['#ff6a5a', '#8a1a14'], emerald: ['#7ef0a6', '#1a6e3a'] };
-function makeWallOre(id) {
-  const G = pixelGrid(16, 14);
-  pxBlob(G, 8, 8, 7, 5.5, (dx, dy, x, y) => {
-    const lit = -(dx * 0.6 + dy * 0.8) + (hash2(x, y, 901) - 0.5) * 0.4;
-    return lit > 0.4 ? '#8a8a8a' : lit > -0.2 ? '#6a6a6a' : '#4c4c4c';
-  });
-  const [hi, lo] = ORE_COL[id];
-  [[5, 6], [9, 5], [11, 9], [6, 10], [8, 8]].forEach(([x, y]) => { G.set(x, y, hi); G.set(x + 1, y, lo); G.set(x, y + 1, lo); });
-  return G.outline(() => '#1a1a1a').canvas();
-}
 const GEM_ART = Object.fromEntries(Object.keys(GEM_PAL).map(k => [k, makeGemCluster(k)]));
 const JAGGED = makeJagged();
-const WALL_ORE = Object.fromEntries(Object.keys(ORE_COL).map(k => [k, makeWallOre(k)]));
 
 // a minecart seen from above, nose to the right, so it can be turned any way:
-// a wooden tub with iron bands and rim, wheels at the corners and a lamp on
-// the front. yours is plain wood, darryl's is painted black with bone trim.
-function makeCartGrid(look) {
-  const G = pixelGrid(26, 18);
-  const [hi, mid, lo] = look.wood, rim = look.rim;
-  [[5, 0], [16, 0], [5, 16], [16, 16]].forEach(([x, y]) => {
-    for (let k = 0; k < 4; k++) { G.set(x + k, y, '#1c1c22'); G.set(x + k, y + 1, k === 1 || k === 2 ? '#6e6e78' : '#1c1c22'); }
+// a wooden tub with an iron rim riveted at the corners, planks along the sides
+// lit from the top left, a dark well inside, chunky wheels just poking out,
+// and a lamp on the nose. yours is plain wood, darryl's is painted black with
+// bone trim. cracks is how many rocks it's been through (up to 3): each one is
+// a dark split across the wood with pale splinters along it, so a battered
+// cart looks battered.
+const darken = (hex, k) => '#' + [1, 3, 5].map(i => Math.round(parseInt(hex.slice(i, i + 2), 16) * (1 - k)).toString(16).padStart(2, '0')).join('');
+function makeCartGrid(look, cracks) {
+  const G = pixelGrid(28, 20);
+  // the wood gets duller and darker the more of a beating it's taken
+  const [hi, mid, lo] = look.wood.map(c => darken(c, cracks * 0.1));
+  [[5, 0], [18, 0], [5, 17], [18, 17]].forEach(([x, y]) => {
+    for (let k = 0; k < 5; k++) for (let j = 0; j < 3; j++) G.set(x + k, y + j, j === 1 && k > 0 && k < 4 ? '#55555f' : '#16161b');
   });
-  for (let y = 2; y <= 15; y++) for (let x = 1; x <= 22; x++) {
-    const edge = x === 1 || x === 22 || y === 2 || y === 15;
-    const inside = x >= 4 && x <= 19 && y >= 5 && y <= 12;
-    let col = edge ? rim : inside ? (y === 5 ? '#1e140c' : (y % 3 === 0 ? '#2e1e12' : '#3b2616')) : (y < 5 ? hi : y > 12 ? lo : mid);
-    if (!inside && !edge && (x === 7 || x === 16)) col = look.band;
+  for (let y = 2; y <= 17; y++) for (let x = 1; x <= 24; x++) {
+    const rim = x === 1 || x === 24 || y === 2 || y === 17;
+    const inner = x >= 4 && x <= 21 && y >= 5 && y <= 14;
+    let col;
+    if (rim) col = look.rim;
+    else if (inner) col = y === 5 || x === 4 ? '#120b06' : (y - 5) % 3 === 2 ? '#22160c' : '#2c1d11';
+    else if (y < 5) col = y === 3 ? hi : mid;
+    else if (y > 14) col = y === 15 ? mid : lo;
+    else col = x < 4 ? (x === 2 ? hi : mid) : (x === 23 ? lo : mid);
     G.set(x, y, col);
   }
-  G.set(23, 8, '#ffd23f'); G.set(23, 9, '#ffd23f'); G.set(24, 8, '#fff3c4'); G.set(24, 9, '#fff3c4');
-  if (look.skull) [[11, 8], [12, 8], [11, 9], [12, 9], [13, 8], [13, 9]].forEach(([x, y]) => G.set(x, y, '#e8e1cc'));
-  return G.outline(() => '#141414');
+  // plank joints along the sides, iron straps over them, rivets on the corners
+  for (let x = 6; x <= 20; x += 7) { G.set(x, 3, lo); G.set(x, 4, lo); G.set(x, 15, '#1c120a'); G.set(x, 16, '#1c120a'); }
+  [10, 17].forEach(x => [3, 4, 15, 16].forEach(y => G.set(x, y, look.band)));
+  [[1, 2], [24, 2], [1, 17], [24, 17]].forEach(([x, y]) => G.set(x, y, '#f2f2f8'));
+  for (let y = 8; y <= 11; y++) { G.set(25, y, '#ffd23f'); G.set(26, y, y === 9 || y === 10 ? '#fff6cc' : '#ffd23f'); }
+  // the cracks: each one a wide black split running in from the rim, pale
+  // splintered wood along one edge of it, and a chunk knocked out of the rim
+  // where it started
+  const SPLITS = [
+    { line: [[8, 2], [9, 3], [9, 4], [10, 5], [11, 6], [11, 7], [12, 8], [12, 9], [13, 10]], chip: [[7, 2], [8, 2], [9, 2]] },
+    { line: [[18, 17], [17, 16], [17, 15], [16, 14], [16, 13], [15, 12], [15, 11], [14, 10]], chip: [[17, 17], [18, 17], [19, 17]] },
+    { line: [[24, 6], [23, 7], [22, 7], [21, 8], [20, 9], [19, 9], [18, 10], [17, 11]], chip: [[24, 5], [24, 6], [24, 7]] }
+  ];
+  SPLITS.slice(0, cracks).forEach(({ line, chip }) => {
+    line.forEach(([x, y], i) => {
+      G.set(x, y, '#030201'); G.set(x + 1, y, '#030201');
+      G.set(i % 2 ? x - 1 : x + 2, y, '#f6e2b4');
+    });
+    chip.forEach(([x, y]) => G.set(x, y, null));
+  });
+  return G.outline(() => '#0c0c10');
 }
-const CART_STEPS = 32, CART_D = 34;
+const CART_STEPS = 32, CART_D = 38;
 const CART_LOOK = {
-  you: { wood: ['#d0955a', '#a8703f', '#74491f'], rim: '#5e5e66', band: '#8a8a94' },
-  darryl: { wood: ['#4a4650', '#2e2b33', '#1c1a20'], rim: '#e8e1cc', band: '#b8af96', skull: true }
+  you: { wood: ['#e0a768', '#b07a42', '#74491f'], rim: '#6a6a74', band: '#9a9aa6' },
+  darryl: { wood: ['#5a5560', '#38343e', '#211e25'], rim: '#e8e1cc', band: '#b8af96' }
 };
-const CART_ROT = Object.fromEntries(Object.entries(CART_LOOK).map(([k, look]) => [k, rotSet(makeCartGrid(look), 12.5, 9, CART_D, CART_STEPS)]));
+const CART_ROT = Object.fromEntries(Object.entries(CART_LOOK).map(([k, look]) => [k, [0, 1, 2, 3].map(n => rotSet(makeCartGrid(look, n), 12.5, 9.5, CART_D, CART_STEPS))]));
 
-// darryl: a chibi skeleton about your size, facing right like every other
-// creature. racing goggles pushed up on his skull and a red neckerchief. he
-// wears whatever he's taken off you. plain is the same skeleton with none of
-// that, which is what you turn into when you lose.
+// darryl: a lanky skeleton about your size, facing right like every other
+// creature. alex wanted him rowdy and carefree, not kingly (the old goggles
+// read as a crown): a red bandana knotted round his skull with the tails
+// hanging off the back, a faded denim vest hanging open over his ribs, a slouch
+// with his head pushed forward, a big crooked grin with a tooth missing, a
+// crack in his skull, and a pinprick of light in his eye socket. he wears
+// whatever he's taken off you. plain is the bare skeleton, which is what you
+// turn into when you lose.
 const BONE = { hi: '#f4eedc', mid: '#d6ccb2', lo: '#a39a80', gap: '#2a2620' };
-const DARRYL_W = 26, DARRYL_H = 32;
+const DARRYL_W = 28, DARRYL_H = 33;
 function makeSkeleton(pose, frame, o = {}) {
   const G = pixelGrid(DARRYL_W, DARRYL_H);
   const put = (x, y, c) => G.set(x, y, c);
   const line = (x0, y0, x1, y1, c) => pxLine(G, x0, y0, x1, y1, c);
   if (pose === 'pile') {
     // what's left of you: a heap of bones with the skull on top
-    [[5, 27, 13, 25], [9, 28, 18, 28], [14, 26, 21, 27], [4, 29, 10, 29], [16, 29, 22, 29]].forEach(([a, b, c, d], i) => line(a, b, c, d, i % 2 ? BONE.mid : BONE.hi));
-    [[5, 26], [13, 24], [18, 27], [22, 26], [10, 29]].forEach(([x, y]) => put(x, y, BONE.hi));
-    pxBlob(G, 12, 21, 4.5, 4, (dx, dy) => (dx + dy < -0.5 ? BONE.hi : dx + dy < 0.6 ? BONE.mid : BONE.lo));
-    [[13, 20], [14, 20], [13, 21]].forEach(([x, y]) => put(x, y, BONE.gap));
+    [[5, 28, 13, 26], [9, 29, 18, 29], [14, 27, 21, 28], [4, 30, 10, 30], [16, 30, 22, 30]].forEach(([a, b, c, d], i) => line(a, b, c, d, i % 2 ? BONE.mid : BONE.hi));
+    [[5, 27], [13, 25], [18, 28], [22, 27], [10, 30]].forEach(([x, y]) => put(x, y, BONE.hi));
+    pxBlob(G, 12, 22, 4.5, 4, (dx, dy) => (dx + dy < -0.5 ? BONE.hi : dx + dy < 0.6 ? BONE.mid : BONE.lo));
+    [[13, 21], [14, 21], [13, 22]].forEach(([x, y]) => put(x, y, BONE.gap));
     return G.outline(() => '#1c1a16').canvas();
   }
+  const plain = !!o.plain;
   const bob = ['idle', 'talk', 'frown'].includes(pose) && frame === 1 ? 1 : 0;
-  const low = pose === 'grab' ? 3 : pose === 'kneel' ? 6 : 0;
+  const low = pose === 'grab' ? 3 : 0;
   const Y = bob + low;
+  // he slouches: the head sits forward of the hips
+  const lean = plain ? 0 : 2;
   const walk = ['walk', 'scared'].includes(pose);
   const stride = walk ? [2, 0, -2, 0][frame % 4] : 0, lift = walk && frame % 2 === 1 ? 1 : 0;
   const gear = o.gear || {};
-  // legs: the far one darker, the near one lit. kneeling folds them under.
+  // legs, a little bent at the knee: the far one darker, the near one lit
   const leg = (hipX, dx, c, raised) => {
-    if (pose === 'kneel') { line(hipX, 23 + Y - 6, hipX + 3, 28, c); line(hipX + 3, 28, hipX - 2, 29, c); return; }
-    line(hipX, 23 + Y, hipX + Math.round(dx / 2), 26 + Y - raised, c);
-    line(hipX + Math.round(dx / 2), 26 + Y - raised, hipX + dx, 29 - raised, c);
-    put(hipX + dx + 1, 29 - raised, c); put(hipX + dx + 2, 29 - raised, c);
+    line(hipX, 23 + Y, hipX + 1 + Math.round(dx / 2), 27 + Y - raised, c);
+    line(hipX + 1 + Math.round(dx / 2), 27 + Y - raised, hipX + dx, 31 - raised, c);
+    put(hipX + dx + 1, 31 - raised, c); put(hipX + dx + 2, 31 - raised, c);
   };
   leg(11, -stride, gear.legs ? MAT_PAL[gear.legs][2] : BONE.lo, frame % 4 === 3 ? lift : 0);
   leg(13, stride, gear.legs ? MAT_PAL[gear.legs][1] : BONE.mid, frame % 4 === 1 ? lift : 0);
-  if (gear.feet) [[10 - stride, 29], [12 + stride, 29]].forEach(([x, y]) => { for (let k = -1; k <= 3; k++) put(x + k, y, MAT_PAL[gear.feet][k < 1 ? 0 : 2]); });
-  // the far arm, behind the ribs
-  const sh = 16 + Y;
-  if (pose === 'scared') line(11, sh, 7, sh - 7, BONE.lo);
-  else line(11, sh, 10 - Math.round(stride / 2), sh + 6, BONE.lo);
-  // pelvis, spine and ribs
-  for (let x = 10; x <= 14; x++) { put(x, 22 + Y, BONE.hi); put(x, 23 + Y, x === 12 ? BONE.gap : BONE.lo); }
-  for (let y = 15; y <= 21; y++) put(10, y + Y, BONE.mid);
-  [[16, 14], [18, 15], [20, 14]].forEach(([ry, x1]) => {
-    for (let x = 10; x <= x1; x++) put(x, ry + Y, x === x1 ? BONE.lo : BONE.hi);
-    if (ry < 20) for (let x = 11; x < x1; x++) put(x, ry + 1 + Y, BONE.gap);
+  if (gear.feet) [[11 - stride, 31], [13 + stride, 31]].forEach(([x, y]) => { for (let k = -1; k <= 3; k++) put(x + k, y, MAT_PAL[gear.feet][k < 1 ? 0 : 2]); });
+  // the far arm, behind the ribs, hanging loose
+  const sh = 15 + Y, swing = Math.round(stride / 2);
+  if (pose === 'scared') line(11 + lean, sh, 7 + lean, sh - 7, BONE.lo);
+  else line(11 + lean, sh, 10 + lean - swing, sh + 7, BONE.lo);
+  // pelvis, a spine that curves forward up to the neck, and crooked ribs
+  for (let x = 10; x <= 15; x++) { put(x, 21 + Y, BONE.hi); put(x, 22 + Y, x === 12 ? BONE.gap : BONE.lo); }
+  for (let y = 14; y <= 20; y++) put(10 + (y < 17 ? lean : y < 19 ? 1 : 0), y + Y, BONE.mid);
+  [[15, 16 + lean], [17, 16 + lean], [19, 15 + lean]].forEach(([ry, x1], i) => {
+    const x0 = 11 + (ry < 17 ? lean : 1);
+    for (let x = x0; x <= x1; x++) put(x, ry + Y + (i === 1 && x > x1 - 2 ? 1 : 0), x === x1 ? BONE.lo : BONE.hi);
+    if (ry < 19) for (let x = x0 + 1; x < x1; x++) put(x, ry + 1 + Y, BONE.gap);
   });
-  put(15, 17 + Y, BONE.lo); put(15, 19 + Y, BONE.lo);
   if (gear.chest) {
     const P = MAT_PAL[gear.chest];
-    for (let y = 15; y <= 21; y++) for (let x = 9; x <= 16; x++) put(x, y + Y, x === 9 || y === 15 ? P[0] : x === 16 || y === 21 ? P[2] : P[1]);
+    for (let y = 14; y <= 20; y++) for (let x = 9 + (y < 17 ? lean : 0); x <= 17 + (y < 17 ? lean : 0); x++) put(x, y + Y, x === 9 || y === 14 ? P[0] : y === 20 ? P[2] : P[1]);
+  } else if (!plain) {
+    // the vest, hanging open: a panel down his back and one down his front,
+    // frayed along the bottom, with his ribs showing in between
+    for (let y = 14; y <= 20; y++) {
+      const off = y < 17 ? lean : 0;
+      put(9 + off, y + Y, '#3e5a80'); put(10 + off, y + Y, '#5c7ea8');
+      if (y <= 19 || frame % 2) { put(16 + off, y + Y, '#5c7ea8'); put(17 + off, y + Y, '#45648c'); }
+    }
+    put(11 + lean, 14 + Y, '#5c7ea8'); put(15 + lean, 14 + Y, '#5c7ea8');
+    put(9, 21 + Y, '#3e5a80'); put(17, 21 + Y, '#45648c');
   }
-  if (gear.legs) { const P = MAT_PAL[gear.legs]; for (let x = 9; x <= 15; x++) { put(x, 22 + Y, P[0]); put(x, 23 + Y, P[1]); } }
-  // neck and the neckerchief
-  put(11, 13 + Y, BONE.mid); put(12, 14 + Y, BONE.mid);
-  if (!o.plain) {
-    for (let x = 9; x <= 15; x++) put(x, 14 + Y, x < 12 ? '#e04a3a' : '#a82a20');
-    put(9, 15 + Y, '#a82a20'); put(8, 16 + Y, '#e04a3a');
-  }
-  // the skull: big and round, lit from the top left, the eye socket and nose
-  // on the front, and a jaw full of teeth that drops when he talks
-  const open = pose === 'talk' && frame === 1 ? 1 : pose === 'scared' ? 2 : 0;
-  pxBlob(G, 12.5, 7 + Y, 6, 5.4, (dx, dy) => (dx + dy < -0.7 ? BONE.hi : dx + dy < 0.5 ? BONE.mid : BONE.lo));
-  for (let x = 11; x <= 18; x++) put(x, 12 + Y + open, x >= 13 && x % 2 ? BONE.hi : BONE.mid);
-  for (let x = 13; x <= 18; x++) put(x, 11 + Y, open ? BONE.gap : x % 2 ? '#ffffff' : BONE.lo);
-  if (open > 1) for (let x = 13; x <= 18; x++) put(x, 12 + Y, BONE.gap);
-  const eye = pose === 'scared' ? [[14, 6], [15, 6], [16, 6], [14, 7], [15, 7], [16, 7], [15, 8]] : [[15, 6], [16, 6], [15, 7], [16, 7]];
+  if (gear.legs) { const P = MAT_PAL[gear.legs]; for (let x = 9; x <= 16; x++) { put(x, 21 + Y, P[0]); put(x, 22 + Y, P[1]); } }
+  // neck
+  put(12 + lean, 12 + Y, BONE.mid); put(13 + lean, 13 + Y, BONE.mid);
+  // the skull, pushed forward, lit from the top left
+  const hx = 13.5 + lean, open = pose === 'talk' && frame === 1 ? 1 : pose === 'scared' ? 2 : 0;
+  pxBlob(G, hx, 6.5 + Y, 6, 5.4, (dx, dy) => (dx + dy < -0.7 ? BONE.hi : dx + dy < 0.5 ? BONE.mid : BONE.lo));
+  // the grin: a jaw that juts forward, teeth all the way along with one
+  // missing, and the corner of the mouth turned up (flat when he's frowning)
+  const jx = Math.round(hx) - 2;
+  for (let x = jx; x <= jx + 8; x++) put(x, 12 + Y + open, x >= jx + 2 ? BONE.hi : BONE.mid);
+  for (let x = jx + 2; x <= jx + 8; x++) put(x, 11 + Y, open ? BONE.gap : x === jx + 6 && !plain ? BONE.gap : (x - jx) % 2 ? '#ffffff' : '#e6dfcc');
+  if (open > 1) for (let x = jx + 2; x <= jx + 8; x++) put(x, 12 + Y, BONE.gap);
+  if (!open && pose !== 'frown') put(jx + 1, 10 + Y, BONE.gap);
+  if (pose === 'frown') put(jx + 1, 12 + Y, BONE.gap);
+  const ex = Math.round(hx) + 2;
+  const eye = pose === 'scared' ? [[ex - 1, 4], [ex, 4], [ex + 1, 4], [ex - 1, 5], [ex, 5], [ex + 1, 5], [ex - 1, 6], [ex, 6], [ex + 1, 6]] : [[ex, 5], [ex + 1, 5], [ex, 6], [ex + 1, 6], [ex + 2, 6]];
   eye.forEach(([x, y]) => put(x, y + Y, BONE.gap));
-  if (pose === 'frown') { put(14, 5 + Y, BONE.gap); put(15, 5 + Y, BONE.gap); put(16, 4 + Y, BONE.gap); }
-  put(18, 9 + Y, BONE.gap);
+  if (!plain && pose !== 'scared') put(ex + 1, 5 + Y, '#ffe9a0');
+  if (pose === 'frown') { put(ex - 1, 4 + Y, BONE.gap); put(ex, 4 + Y, BONE.gap); put(ex + 1, 3 + Y, BONE.gap); }
+  put(Math.round(hx) + 5, 8 + Y, BONE.gap);
+  if (!plain) { put(Math.round(hx) - 3, 2 + Y, BONE.gap); put(Math.round(hx) - 2, 3 + Y, BONE.gap); put(Math.round(hx) - 2, 4 + Y, BONE.gap); }
   if (gear.head) {
     const P = MAT_PAL[gear.head];
-    for (let y = 1; y <= 5; y++) for (let x = 6; x <= 19; x++) {
-      if (!G.get(x, y + Y) && y > 2) continue;
-      if (((x - 12.5) / 7) ** 2 + ((y - 6) / 5.5) ** 2 > 1) continue;
-      put(x, y + Y, y === 5 ? P[2] : x < 11 ? P[0] : P[1]);
+    for (let y = 0; y <= 4; y++) for (let x = Math.round(hx) - 7; x <= Math.round(hx) + 6; x++) {
+      if (((x - hx) / 6.6) ** 2 + ((y - 5.5) / 5.6) ** 2 > 1) continue;
+      put(x, y + Y, y === 4 ? P[2] : x < hx - 2 ? P[0] : P[1]);
     }
-  }
-  if (!o.plain) {
-    for (let x = 7; x <= 17; x++) put(x, 4 + Y, '#5a3a22');
-    [[15, 3], [16, 3], [17, 3], [15, 4], [16, 4], [17, 4]].forEach(([x, y]) => put(x, y + Y, '#f2b33c'));
-    put(16, 3 + Y, '#fff3c4');
+  } else if (!plain) {
+    // the bandana over the top of his skull, white spots, knotted at the back
+    // with the two tails hanging off (they flap when he moves)
+    for (let y = 1; y <= 3; y++) for (let x = Math.round(hx) - 6; x <= Math.round(hx) + 5; x++) {
+      if (((x - hx) / 6.4) ** 2 + ((y - 5.5) / 5.4) ** 2 > 1) continue;
+      put(x, y + Y, (x + y * 3) % 5 === 0 ? '#f6e9e0' : y === 3 ? '#a82a20' : '#d8392c');
+    }
+    const kx = Math.round(hx) - 6, flap = walk ? frame % 2 : 0;
+    put(kx, 3 + Y, '#a82a20'); put(kx - 1, 3 + Y, '#d8392c');
+    line(kx - 1, 4 + Y, kx - 4, 6 + Y + flap, '#d8392c');
+    line(kx - 1, 4 + Y, kx - 3, 8 + Y - flap, '#a82a20');
   }
   // the near arm, in front of everything: hanging, swinging, pointing at you,
-  // reaching down to pick something up, or thrown up in fright. no near arm
-  // once it's been popped off for the key, just a nub where it was.
-  if (o.armless) put(13, sh, BONE.lo);
-  else if (pose === 'point') { line(13, sh, 21, sh - 1, BONE.hi); put(22, sh - 1, BONE.hi); put(23, sh - 1, BONE.mid); }
-  else if (pose === 'grab') line(13, sh, 18, sh + 6, BONE.hi);
-  else if (pose === 'scared') line(13, sh, 18, sh - 8, BONE.hi);
-  else line(13, sh, 14 + Math.round(stride / 2), sh + 6, BONE.hi);
+  // reaching down for something, or thrown up in fright. once it's been
+  // popped off for the key there's only a nub where it was.
+  const ax = 14 + lean;
+  if (o.armless) put(ax, sh, BONE.lo);
+  else if (pose === 'point') { line(ax, sh, ax + 9, sh - 2, BONE.hi); put(ax + 10, sh - 2, BONE.hi); put(ax + 11, sh - 3, BONE.mid); }
+  else if (pose === 'grab') line(ax, sh, ax + 5, sh + 7, BONE.hi);
+  else if (pose === 'scared') line(ax, sh, ax + 4, sh - 8, BONE.hi);
+  else { line(ax, sh, ax + 1 + swing, sh + 4, BONE.hi); line(ax + 1 + swing, sh + 4, ax + 2 + swing, sh + 7, BONE.hi); }
   return G.outline(() => '#1c1a16').canvas();
 }
 const skeletonCache = new Map();
@@ -319,6 +422,24 @@ function skeletonFrame(pose, frame, o = {}) {
   if (!c) { c = makeSkeleton(pose, frame, o); skeletonCache.set(key, c); }
   return c;
 }
+// the skeletons of everyone who's lost to him (you, mostly), lying along the
+// walls of the corridor seen from above. one more for each race you lose, up
+// to ten.
+function makeRemains(v) {
+  const G = pixelGrid(30, 18), r = mulberry32(7370 + v);
+  const bone = (x0, y0, x1, y1) => { pxLine(G, x0, y0, x1, y1, BONE.mid); G.set(x0, y0, BONE.hi); G.set(x1, y1, BONE.hi); };
+  const flip = v % 2 ? -1 : 1, cx = 15;
+  pxBlob(G, cx + flip * 9, 8, 3.6, 3.2, (dx, dy) => (dx + dy < -0.3 ? BONE.hi : BONE.mid));
+  G.set(cx + flip * 10, 8, BONE.gap); G.set(cx + flip * 8, 8, BONE.gap); G.set(cx + flip * 9, 10, BONE.gap);
+  for (let k = 0; k < 4; k++) pxLine(G, cx - 3 - flip, 5 + k * 2, cx + 3 - flip, 5 + k * 2, k % 2 ? BONE.lo : BONE.hi);
+  pxLine(G, cx - 5 * flip, 9, cx + 4 * flip, 9, BONE.mid);
+  bone(cx - flip * 6, 10, cx - flip * 12, 13 + v % 3);
+  bone(cx - flip * 6, 7, cx - flip * 13, 5 + (v % 2));
+  bone(cx + flip * 2, 12, cx + flip * 5 + ((r() * 3) | 0), 16);
+  bone(cx - flip, 3, cx - flip * 4, 1);
+  return G.outline(() => '#1c1a16').canvas();
+}
+const REMAINS_ART = [0, 1, 2, 3].map(makeRemains);
 
 // the big door at the end of the track: two dark wooden leaves bound in iron,
 // a skull over the top and a bone-shaped keyhole between them. open is 0 to 1
@@ -426,74 +547,44 @@ function makeShaft() {
   return G.outline(() => '#262626').canvas();
 }
 
-// painting the race room: rock everywhere, the track's packed floor dug
-// through it, a lit rock face wherever the wall stands above the floor (the
-// game's usual three quarter view), the start and finish lines, and the mud,
-// water and holes, which never move so they're painted straight in
-function paintRaceRoom() {
-  const w = RACE_W, h = RACE_H, c = mk(w, h), g = c.getContext('2d');
-  const img = g.createImageData(w, h), px = img.data;
-  const floor = new Uint8Array(w * h);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const j = (y >> 2) * GW + (x >> 2), i = cellI[j];
-    if (i < 0) continue;
-    const dist = Math.hypot(x + 0.5 - track.xs[i], y + 0.5 - track.ys[i]);
-    if (dist < HALF - 8 || (dist < HALF + 8 && dist < edgeAt(x, y))) floor[y * w + x] = dist < edgeAt(x, y) - 6 ? 1 : 2;
+// painting the race room, tile by tile with the mines' own textures and the
+// same shading as outside: a darker band along the bottom of any wall with
+// floor below it, a lit edge on top, and a shadow on the floor under a wall.
+// then the checkered start and finish lines across the floor.
+function paintRaceTile(g, tx, ty) {
+  const t = RT[rti(tx, ty)], px = tx * TILE, py = ty * TILE;
+  g.drawImage(TEX[t][(hash2(tx, ty, 7362) * 4) | 0], px, py);
+  const below = rtAt(tx, ty + 1), above = rtAt(tx, ty - 1);
+  if (SOLID[t]) {
+    if (!SOLID[below]) { g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(px, py + 13, TILE, 3); }
+    if (!SOLID[above]) { g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(px, py, TILE, 1); }
+  } else {
+    if (SOLID[above]) { g.fillStyle = 'rgba(0,0,0,0.14)'; g.fillRect(px, py, TILE, 3); }
+    if (t === T.WATER && above !== t && !SOLID[above]) { g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(px, py, TILE, 1); }
   }
-  for (let x = 0; x < w; x++) {
-    let since = 99;
-    for (let y = h - 1; y >= 0; y--) {
-      const f = floor[y * w + x], o = (y * w + x) * 4, n = hash2(x, y, 7320);
-      let r, gg, b;
-      if (f) {
-        since = 0;
-        const loose = vnoise(x / 18, y / 18, 7321) > 0.56;
-        r = loose ? 104 : 92; gg = loose ? 86 : 76; b = loose ? 68 : 62;
-        if (f === 2) { r -= 18; gg -= 16; b -= 14; }
-        if (n < 0.08) { r -= 14; gg -= 12; b -= 10; } else if (n > 0.95) { r += 18; gg += 16; b += 14; }
-      } else {
-        since++;
-        if (since <= 14) {
-          // the rock face: lit at the top, darker down where it meets the floor
-          const v = 108 - (14 - since) * 3 + (vnoise(x / 6, y / 30, 7322) - 0.5) * 18;
-          r = v; gg = v - 6; b = v - 12;
-          if (since === 14) { r += 20; gg += 20; b += 18; }
-        } else {
-          const m = vnoise(x / 16, y / 16, 7323);
-          const v = 34 + m * 22;
-          r = v; gg = v - 3; b = v - 5;
-          if (n < 0.04) { r += 14; gg += 12; b += 10; }
-        }
-      }
-      px[o] = r; px[o + 1] = gg; px[o + 2] = b; px[o + 3] = 255;
-    }
-  }
-  g.putImageData(img, 0, 0);
-  const dot = (x, y, col, ww = 1, hh = 1) => { g.fillStyle = col; g.fillRect(Math.round(x), Math.round(y), ww, hh); };
-  // mud, water and holes, each lying along the track
-  obstacles.forEach(o => {
-    if (o.kind !== 'mud' && o.kind !== 'water' && o.kind !== 'hole') return;
-    const ca = Math.cos(o.a), sa = Math.sin(o.a);
-    for (let y = Math.floor(o.y - 34); y <= o.y + 34; y++) for (let x = Math.floor(o.x - 34); x <= o.x + 34; x++) {
-      const lx = (x - o.x) * ca + (y - o.y) * sa, ly = -(x - o.x) * sa + (y - o.y) * ca;
-      const e = (lx / (o.along + 2)) ** 2 + (ly / (o.r + 2)) ** 2;
-      if (e > 1) continue;
-      const rim = e > 0.6, n = hash2(x, y, 7330 + o.n);
-      let col;
-      if (o.kind === 'mud') col = rim ? '#4a3420' : n < 0.12 ? '#7a5a38' : n < 0.5 ? '#5a3e24' : '#523822';
-      else if (o.kind === 'water') col = rim ? '#2e5a7a' : n < 0.08 ? '#9fd3ff' : n < 0.5 ? '#3f7aa8' : '#386e98';
-      else col = e > 0.75 ? '#6b5038' : e > 0.55 ? '#2a2018' : '#060505';
-      dot(x, y, col);
-    }
-  });
-  // a checkered line across the track at the start and the finish
+}
+function paintRaceLines(g) {
   [S_START, S_FIN].forEach(s => {
-    for (let d = -HALF + 2; d <= HALF - 2; d += 1) for (let k = 0; k < 4; k++) {
+    for (let d = -HALF - 10; d <= HALF + 10; d++) for (let k = 0; k < 4; k++) {
       const p = trackPt(s + k - 2, d);
-      dot(p.x, p.y, (Math.floor((d + 40) / 4) + Math.floor(k / 2)) % 2 ? '#f2f0ea' : '#1c1c22');
+      if (raceSolid(p.x, p.y)) continue;
+      g.fillStyle = (Math.floor((d + 80) / 4) + Math.floor(k / 2)) % 2 ? '#f2f0ea' : '#1c1c22';
+      g.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
     }
   });
+}
+function paintRaceRoom() {
+  const c = mk(RACE_W, RACE_H), g = c.getContext('2d');
+  for (let ty = 0; ty < RACE_ROWS; ty++) for (let tx = 0; tx < RACE_COLS; tx++) paintRaceTile(g, tx, ty);
+  paintRaceLines(g);
   return c;
+}
+// after digging a block out: that tile and the ones round it (for the shading)
+function repaintRace(tx, ty) {
+  const g = raceRoom.canvas.getContext('2d');
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (tx + dx >= 0 && ty + dy >= 0 && tx + dx < RACE_COLS && ty + dy < RACE_ROWS) paintRaceTile(g, tx + dx, ty + dy);
+  }
 }
 
 // the vault behind the door, where the statue stands: dark stone tiles, walls
@@ -554,15 +645,15 @@ function syncShaft() {
 }
 syncShaft();
 
-const DOOR_X = Math.round(track.xs[track.n - 1]), DOOR_Y = Math.round(track.ys[track.n - 1] - HALF + 8);
 const raceRoom = {
-  id: 'race', w: RACE_W, h: RACE_H, dust: '#6e5a46', shade: 0.62, underground: true, fight: false,
+  id: 'race', w: RACE_W, h: RACE_H, dust: '#6e6a64', shade: 0.62, underground: true, fight: false,
   canvas: paintRaceRoom(),
   outside: { x: shaftThing.x, y: shaftThing.y }, exit: { x: shaftThing.x, y: shaftThing.y + 10 },
-  door: 8,
-  // the floor, short of the walls, minus the gems and rocks in the way, and
-  // nothing past the door until it's open
-  blocked: (x, y) => !onFloor(x, y, 5) || (!DQ.doorOpen && y < DOOR_Y + 10) || obstacles.some(o => o.thing && !o.thing.gone && Math.hypot(x - o.x, y - o.y) < o.r + 3),
+  door: Math.floor(track.xs[0] / TILE),
+  // the walls (checked at your feet, like any other room), the gems and rocks
+  // in the way, and nothing past the door until it's open
+  blocked: (x, y) => [[-4, -3], [3, -3], [-4, 0], [3, 0]].some(([dx, dy]) => raceSolid(x + dx, y + dy)) || (!DQ.doorOpen && y < DOOR_Y + 10)
+    || obstacles.some(o => o.solid && !o.thing.gone && Math.abs(x - o.x) < 20 && Math.hypot(x - o.x, y - o.y) < o.r + 3),
   things: [], glows: []
 };
 const vaultWalls = roomWalls(VAULT_COLS, VAULT_ROWS, VAULT_DOOR);
@@ -621,37 +712,45 @@ const vaultChest = addStation('chest', 192, 124, vaultRoom);
 vaultChest.slots = DQ.chest;
 vaultChest.where = 'in the vault';
 
-// what's along the track: the gems and rocks you can hit, torches on the
-// walls every so often, ore set into the walls (mineable once you've won),
+// what's along the track: the gems and rocks you can hit, the holes, torches
+// on the walls every so often, the skeletons of the people who lost to him,
 // and the big door
 obstacles.forEach(o => {
-  if (o.kind === 'gem') o.thing = { x: o.x, y: o.y + 6, frames: [GEM_ART[o.gem]] };
-  else if (o.kind === 'rock') o.thing = { x: o.x, y: o.y + 6, frames: [JAGGED] };
+  if (o.kind === 'gem') { o.thing = { x: o.x, y: o.y + 6, frames: [GEM_ART[o.gem]] }; o.solid = true; }
+  else if (o.kind === 'rock') { o.thing = { x: o.x, y: o.y + 6, frames: [JAGGED] }; o.solid = true; }
+  else if (o.kind === 'hole') o.thing = { flat: true, x: o.x, y: o.y + 12, frames: [HOLE] };
   if (o.thing) raceRoom.things.push(o.thing);
 });
 {
-  const r = mulberry32(7340);
-  let side = 1, n = 0;
-  for (let s = 120; s < track.len - 90; s += 70) {
-    side = -side;
-    const torch = n++ % 3 === 0;
-    const p = trackPt(s, side * (HALF + (torch ? 9 : 8)));
-    const t = trackAt(p.x, p.y);
-    // only on rock that belongs to this bit of the track (not the far side of
-    // a wall that another bend runs along)
-    if (!t || Math.abs(t.s - s) > 24 || onFloor(p.x, p.y, -4)) continue;
-    if (torch) {
-      const th = { x: p.x, y: p.y + 4, frames: TORCH, fps: 7, phase: s % 3 };
-      raceRoom.things.push(th);
-      raceRoom.glows.push({ x: th.x, y: th.y - 12, rgb: GLOW.torch, rad: 3.4, flicker: true, strength: 0.24 });
-    } else if (s > S_START + 40 && s < S_FIN - 40) {
-      const roll = r();
-      const ore = roll < 0.55 ? 'iron-ore' : roll < 0.82 ? 'gold-ore' : roll < 0.97 ? 'ruby' : 'emerald';
-      const idxOre = raceRoom.things.filter(o => o.trackOre).length;
-      raceRoom.things.push({ x: p.x, y: p.y + 6, frames: [WALL_ORE[ore]], trackOre: true, ore, idx: idxOre, gone: DQ.mined.includes(idxOre) });
-    }
+  // torches stand against the bottom of a wall that has floor in front of it,
+  // spread out so no two are within 120 px
+  const spots = [];
+  for (let ty = 1; ty < RACE_ROWS - 1; ty++) for (let tx = 1; tx < RACE_COLS - 1; tx++) {
+    if (SOLID[RT[rti(tx, ty)]] && RT[rti(tx, ty + 1)] === T.FLOOR) spots.push([tx, ty, hash2(tx, ty, 7364)]);
   }
+  spots.sort((a, b) => a[2] - b[2]);
+  const lit = [];
+  spots.forEach(([tx, ty]) => {
+    const x = tx * TILE + 8, y = ty * TILE + 15;
+    if (Math.abs(x - DOOR_X) < 48 && y < DOOR_Y + 30) return;
+    if (lit.some(([lx, ly]) => Math.hypot(lx - x, ly - y) < 120)) return;
+    lit.push([x, y]);
+    raceRoom.things.push({ x, y, frames: TORCH, fps: 7, phase: tx % 3 });
+    raceRoom.glows.push({ x, y: y - 12, rgb: GLOW.torch, rad: 3.4, flicker: true, strength: 0.24 });
+  });
 }
+// ten places along the walls for the skeletons, spread down the track on
+// alternating sides
+const remains = Array.from({ length: 10 }, (_, k) => {
+  const s = S_START + 300 + (k * (S_FIN - S_START - 600)) / 9, side = k % 2 ? 1 : -1;
+  let p = trackPt(s, side * (HALF - 14));
+  for (let d = HALF - 14; d > 10 && !onFloor(p.x, p.y, 8); d -= 4) p = trackPt(s, side * d);
+  const o = { flat: true, x: p.x, y: p.y + 8, frames: [REMAINS_ART[k % 4]], gone: true };
+  raceRoom.things.push(o);
+  return o;
+});
+const showRemains = () => remains.forEach((o, k) => { o.gone = k >= Math.min(10, DQ.losses); });
+showRemains();
 const door = { x: DOOR_X, y: DOOR_Y, frames: [DOOR_ART[DQ.doorOpen ? 4 : 0]], k: DQ.doorOpen ? 1 : 0 };
 raceRoom.things.push(door);
 raceRoom.glows.push({ x: DOOR_X, y: DOOR_Y + 8, rgb: GLOW.torch, rad: 3.2, flicker: true, strength: 0.26 });
@@ -675,10 +774,12 @@ raceRoom.things.push(darryl);
 // much it rolls on with nothing pressed, and grip, which is what makes it
 // handle like a real cart: you can only turn as hard as grip / speed, so the
 // faster you go the wider you turn, and the sharp bends need you to brake.
-// darryl's top speed is a bit lower and he drives the centre line carefully,
-// so a clean run beats him, but it doesn't take many slip ups to lose.
-const RACE = { vmax: 170, acc: 125, brake: 280, coast: 26, grip: 290, turn: 3.2, mud: 0.45, water: 0.6 };
-const DARRYL = { vmax: 150, grip: 250, acc: 110, brake: 240, lane: 70 };
+// pivot is how fast it turns when it's barely moving, so you can turn it round
+// after stopping against a wall. darryl's a bit slower and doesn't drive a
+// perfect line (he wanders about a bit and brakes early), so there's time to
+// be made on him, and a clean run beats him comfortably.
+const RACE = { vmax: 195, acc: 140, brake: 300, coast: 26, grip: 340, turn: 3.2, pivot: 1.8, mud: 0.45, water: 0.6 };
+const DARRYL = { vmax: 182, grip: 300, acc: 120, brake: 250, lane: 100 };
 const vprofFor = (grip, vmax, brake) => {
   const v = new Float32Array(track.n);
   for (let i = 0; i < track.n; i++) v[i] = Math.min(vmax, Math.sqrt(grip / Math.max(Math.abs(track.k[i]), 1e-5)));
@@ -694,14 +795,14 @@ function parkCart(c, s, d) {
   const p = trackPt(s, d);
   Object.assign(c, { x: p.x, y: p.y, a: p.a, v: 0, s, d, dT: d, spin: null, hole: null, spinA: 0, sink: 0, vmul: 1, crack: 0, cool: {}, rider: null, fin: false, stopped: true, slipped: {} });
 }
-const darrylHome = () => trackPt(S_START - 44, 14);
+const darrylHome = () => trackPt(S_START - 56, 30);
 function standDarryl(x, y, flip) { Object.assign(darryl, { x, y, flip, state: 'wait', t: 0, gone: false, alpha: 1, hop: 0, goal: null }); }
 // back to before the race: everyone at the start line, every rock back in place
 function resetRace() {
   Object.assign(race, { phase: 'pre', t: 0, riding: false, result: null, pFin: null, dFin: null, judge: null, thief: null, goT: 0 });
   obstacles.forEach(o => { if (o.thing) o.thing.gone = false; o.broken = false; });
-  parkCart(carts.you, S_START, -18);
-  parkCart(carts.darryl, S_START, 18);
+  parkCart(carts.you, S_START, -30);
+  parkCart(carts.darryl, S_START, 30);
   const h = darrylHome();
   standDarryl(h.x, h.y, true);
   darryl.talked = false;
@@ -711,9 +812,9 @@ function resetRace() {
 function resetFree() {
   Object.assign(race, { phase: 'free', t: 0, riding: false, result: null, pFin: null, dFin: null, judge: null, thief: null });
   obstacles.forEach(o => { if (o.thing) o.thing.gone = false; o.broken = false; });
-  parkCart(carts.you, S_START, -18);
-  parkCart(carts.darryl, S_STOP, 18);
-  const p = trackPt(S_STOP + 30, 4);
+  parkCart(carts.you, S_START, -30);
+  parkCart(carts.darryl, S_STOP, 30);
+  const p = trackPt(S_STOP + 40, 6);
   standDarryl(p.x, p.y, false);
   darryl.gone = DQ.fled;
   darryl.talked = false;
@@ -721,15 +822,18 @@ function resetFree() {
 if (DQ.won) resetFree(); else resetRace();
 
 // the moving bits of a cart that's yours to drive
-function cartFits(x, y) { return onFloor(x, y, 9); }
+function cartFits(x, y) { return onFloor(x, y, 8); }
 function surfaceAt(x, y) {
-  const p = obstacles.find(o => (o.kind === 'mud' || o.kind === 'water') && Math.abs(o.x - x) < 40 && Math.abs(o.y - y) < 40 && inPatch(o, x, y));
-  return p ? p.kind : null;
+  const t = rtAt(Math.floor(x / TILE), Math.floor(y / TILE));
+  return t === T_MUD ? 'mud' : t === T.WATER ? 'water' : null;
 }
 function mashPress() {
   const c = carts.you;
-  if (c.spin) { c.spin.meter = Math.min(1, c.spin.meter + 0.13); sfx.mash(); }
-  else if (c.hole) { c.hole.meter = Math.min(1, c.hole.meter + 0.085); sfx.mash(); c.hole.wob = 0.12; }
+  // only a few presses each (alex: it should be worth mashing to save a run,
+  // not slower than just sitting there): three to steady a spin, four to get
+  // out of a hole
+  if (c.spin) { c.spin.meter = Math.min(1, c.spin.meter + 0.34); sfx.mash(); }
+  else if (c.hole) { c.hole.meter = Math.min(1, c.hole.meter + 0.26); sfx.mash(); c.hole.wob = 0.12; }
 }
 function driveCart(c, dt) {
   const k = code => keys.has(code);
@@ -751,14 +855,14 @@ function driveCart(c, dt) {
     const h = c.hole;
     h.t += dt;
     // (checked before it drains, or a bar mashed full could slip back under)
-    if (h.meter < 1) h.meter = Math.max(0, h.meter - 0.12 * dt);
+    if (h.meter < 1) h.meter = Math.max(0, h.meter - 0.08 * dt);
     h.wob = Math.max(0, (h.wob || 0) - dt);
     c.v = 0;
     c.x += (h.o.x - c.x) * Math.min(1, dt * 10);
     c.y += (h.o.y - c.y) * Math.min(1, dt * 10);
     c.sink = Math.min(7, h.t * 40) - (h.wob > 0 ? 2 : 0);
     if (h.meter >= 1) {
-      const out = trackPt(h.o.s + h.o.r + 18, clamp(h.o.d, -24, 24));
+      const out = trackPt(h.o.s + h.o.r + 20, clamp(h.o.d, -40, 40));
       Object.assign(c, { x: out.x, y: out.y, a: out.a, v: 55, hole: null, sink: 0 });
       c.cool[h.o.n] = 1.5;
       burst(h.o.x, h.o.y - 2, '138,106,76', 14);
@@ -772,7 +876,7 @@ function driveCart(c, dt) {
   if (c.spin) {
     // spinning out: no steering, no power, sliding on and slowing down until
     // you mash it steady (or it grinds to a halt)
-    if (c.spin.meter < 1) c.spin.meter = Math.max(0, c.spin.meter - 0.3 * dt);
+    if (c.spin.meter < 1) c.spin.meter = Math.max(0, c.spin.meter - 0.2 * dt);
     c.spinA += dt * (9 + c.v / 14);
     c.v *= Math.exp(-1.1 * dt);
     if (c.spin.meter >= 1) { c.spin = null; floatText('Steady!', c.x, c.y - 30, '#9bf07a'); sfx.found(); }
@@ -785,9 +889,13 @@ function driveCart(c, dt) {
     if (!up && !down) c.v -= Math.sign(c.v) * Math.min(Math.abs(c.v), RACE.coast * dt);
     if (c.v > vmax) c.v -= (c.v - vmax) * 3 * dt;
     const sp = Math.abs(c.v);
-    const w = steer * Math.min(RACE.turn, RACE.grip / Math.max(sp, 40)) * Math.min(1, sp / 30) * (c.v < 0 ? -1 : 1);
+    const w = steer * (sp < 35 ? RACE.pivot : Math.min(RACE.turn, RACE.grip / sp)) * (c.v < -1 ? -1 : 1);
     c.a += w * dt;
     if (steer) c.v -= c.v * 0.1 * dt;
+    // a cracked cart sheds splinters as it rattles along
+    if (c.crack && sp > 60 && !reduceMotion && Math.random() < dt * 3 * c.crack) {
+      particles.push({ x: c.x + (Math.random() - 0.5) * 12, y: c.y - 4, vx: (Math.random() - 0.5) * 40, vy: -30 - Math.random() * 20, g: 120, life: 0.5, t: 0, col: Math.random() < 0.5 ? '#c48a4f' : '#f0d8a8', size: 1 });
+    }
     // sparks off the wheels in a hard turn at speed
     if (steer && sp > 120 && !reduceMotion && Math.random() < dt * 20) {
       particles.push({ x: c.x - Math.cos(c.a) * 8, y: c.y - Math.sin(c.a) * 8, vx: (Math.random() - 0.5) * 40, vy: -20 - Math.random() * 20, g: 80, life: 0.3, t: 0, col: Math.random() < 0.5 ? '#ffd23f' : '#ff9a3c', size: 1 });
@@ -797,33 +905,45 @@ function driveCart(c, dt) {
   hitObstacles(c, dt);
 }
 function moveCart(c, dt) {
-  const nx = c.x + Math.cos(c.a) * c.v * dt, ny = c.y + Math.sin(c.a) * c.v * dt;
-  if (cartFits(nx, ny)) { c.x = nx; c.y = ny; return; }
-  // into the wall: bounce off it, losing speed, and turn along it. which way
-  // the wall faces is found by feeling round the cart for it, since the walls
-  // wobble: going by the track's centre line missed the bumps, and a cart
-  // could get pinned against one, pushing at it forever.
-  const t = trackAt(c.x, c.y);
-  if (!t) { c.v = 0; return; }
-  let ox = 0, oy = 0;
-  for (let k = 0; k < 12; k++) {
-    const q = (k / 12) * Math.PI * 2;
-    if (!cartFits(c.x + Math.cos(q) * 5, c.y + Math.sin(q) * 5)) { ox += Math.cos(q); oy += Math.sin(q); }
+  const vx = Math.cos(c.a) * c.v * dt, vy = Math.sin(c.a) * c.v * dt;
+  if (cartFits(c.x + vx, c.y + vy)) { c.x += vx; c.y += vy; return; }
+  // into a wall. it never bounces you back the way you came (it used to, and
+  // alex found it confusing): grazing a wall slides you along it, scraping off
+  // some speed, more the more head on you hit it, and a proper slam stops you
+  // dead. from there a and d turn you round on the spot (see RACE.pivot). how
+  // head on it was is judged against the way the track runs, not the edge of
+  // the one tile you touched, since the walls are jagged and a single notch
+  // would otherwise count as a slam. the slide looks for the nearest clear
+  // direction either side of where you're pointing.
+  const t = trackAt(c.x, c.y), run = t ? track.ang[t.i] : c.a;
+  let into = Math.abs(Math.atan2(Math.sin(c.a - run), Math.cos(c.a - run)));
+  if (into > Math.PI / 2) into = Math.PI - into;
+  const sp = Math.abs(c.v);
+  let slid = false;
+  if (into < 0.95) {
+    for (const dd of [0.2, -0.2, 0.4, -0.4]) {
+      const mx = Math.cos(c.a + dd) * c.v * dt, my = Math.sin(c.a + dd) * c.v * dt;
+      if (cartFits(c.x + mx, c.y + my)) { c.x += mx; c.y += my; slid = true; break; }
+    }
+    // a diagonal wall is a staircase of tiles, which a cart can't slide along
+    // by turning a little: so it slides the way the track runs instead, eased
+    // a pixel off the wall towards the middle
+    if (!slid && t) {
+      const dir = Math.cos(c.a - run) >= 0 ? run : run + Math.PI, k = Math.abs(c.v) * dt * Math.cos(into);
+      const toC = Math.atan2(track.ys[t.i] - c.y, track.xs[t.i] - c.x);
+      for (const [mx, my] of [[Math.cos(dir) * k + Math.cos(toC) * 1.2, Math.sin(dir) * k + Math.sin(toC) * 1.2], [Math.cos(toC) * 1.5, Math.sin(toC) * 1.5]]) {
+        if (cartFits(c.x + mx, c.y + my)) { c.x += mx; c.y += my; slid = true; break; }
+      }
+    }
   }
-  if (Math.hypot(ox, oy) < 0.01) { ox = c.x - track.xs[t.i]; oy = c.y - track.ys[t.i]; }
-  const ol = Math.hypot(ox, oy) || 1;
-  ox /= ol; oy /= ol;
-  let vx = Math.cos(c.a) * c.v, vy = Math.sin(c.a) * c.v;
-  const vn = vx * ox + vy * oy;
-  if (vn > 0) { vx -= vn * ox * 1.6; vy -= vn * oy * 1.6; }
-  const sp = Math.hypot(vx, vy) * 0.75;
-  if (c.v >= 0) { c.a = Math.atan2(vy, vx); c.v = sp; } else { c.a = Math.atan2(-vy, -vx); c.v = -sp; }
-  if (vn > 50) { addShake(1.5); sfx.hit(); burst(c.x + ox * 10, c.y + oy * 10, '140,140,140', 5); }
-  const mx = c.x + Math.cos(c.a) * c.v * dt, my = c.y + Math.sin(c.a) * c.v * dt;
-  if (cartFits(mx, my)) { c.x = mx; c.y = my; }
-  else if (cartFits(c.x - ox, c.y - oy)) {
-    // still touching: ease it off the wall a pixel
-    c.x -= ox; c.y -= oy;
+  if (!slid) {
+    if (sp > 70) { addShake(2.5); sfx.hit(); burst(c.x + Math.cos(c.a) * 10, c.y + Math.sin(c.a) * 10, '160,160,160', 10); }
+    c.v = 0;
+    return;
+  }
+  c.v -= c.v * Math.min(1, (0.3 + into * 2.5) * dt);
+  if (sp > 60 && !reduceMotion && Math.random() < dt * 30) {
+    particles.push({ x: c.x + Math.cos(c.a) * 8, y: c.y + Math.sin(c.a) * 8, vx: (Math.random() - 0.5) * 50, vy: -20 - Math.random() * 25, g: 90, life: 0.25, t: 0, col: Math.random() < 0.5 ? '#ffd23f' : '#ffffff', size: 1 });
   }
 }
 // what your cart runs into: a gem spins you out, a jagged rock cracks the cart
@@ -879,18 +999,21 @@ function hitObstacles(c, dt) {
 // he spins out on and one patch of mud he ploughs straight through.
 function chooseLane(c) {
   const i = clamp(Math.round(c.s / DS), 0, track.n - 1);
-  const pref = clamp(track.k[i] * 1300, -18, 18);
+  const pref = clamp(track.k[i] * 1300, -14, 14);
   const ahead = obstacles.filter(o => o.s > c.s - 6 && o.s < c.s + 200 && !o.broken);
   const slip = ahead.find(o => (o.n === MISTAKE.gem || o.n === MISTAKE.mud) && !c.slipped[o.n]);
   if (slip && slip.s < c.s + 150) return slip.d;
   let best = c.d, bestCost = Infinity;
-  // (lanes stop at 24 either side: the walls bulge in to 34 in places, and a
-  // cart is 9 from its middle to its side)
-  for (let lane = -24; lane <= 24; lane += 2) {
+  // (lanes stop 44 either side: the jagged walls come in to about 56 in
+  // places, and a cart is 8 from its middle to its side)
+  for (let lane = -44; lane <= 44; lane += 4) {
     let cost = Math.abs(lane - pref) + Math.abs(lane - c.d) * 0.4;
     ahead.forEach(o => {
-      const gap = o.r + 11, off = Math.abs(lane - o.d);
-      if (off < gap) cost += (1000 + (gap - off) * 20) * Math.max(0.2, 1 - (o.s - c.s) / 220);
+      const gap = o.r + 13, off = Math.abs(lane - o.d), near = Math.max(0.2, 1 - (o.s - c.s) / 220);
+      if (off < gap) cost += (1000 + (gap - off) * 20) * near;
+      // and don't cut across in front of something close: going round it on
+      // the other side means driving straight through it
+      if (o.s - c.s < 150 && (lane - o.d) * (c.d - o.d) < 0) cost += 600 * near;
     });
     if (cost < bestCost) { bestCost = cost; best = lane; }
   }
@@ -905,15 +1028,20 @@ function driveDarryl(c, dt) {
     if (c.spin.t > 0.8) c.spin = null;
   } else {
     c.spinA = Math.atan2(Math.sin(c.spinA), Math.cos(c.spinA)) * Math.max(0, 1 - dt * 8);
-    let vT = Math.min(DARRYL.vmax * c.vmul, DARRYL_V[i]);
+    // he's not a perfect driver: his pace comes and goes a little
+    c.wobT = (c.wobT || 0) + dt;
+    let vT = Math.min(DARRYL.vmax * c.vmul, DARRYL_V[i]) * (0.95 + 0.05 * Math.sin(c.wobT * 0.6 + 2));
     if (c.fin) vT = Math.min(vT, Math.sqrt(2 * 300 * Math.max(0, S_STOP - c.s)));
     const surf = surfaceAt(c.x, c.y);
     if (surf) vT = Math.min(vT, DARRYL.vmax * (surf === 'mud' ? RACE.mud : RACE.water));
     c.v += clamp(vT - c.v, -DARRYL.brake * dt, DARRYL.acc * dt);
   }
   if (!c.fin) c.dT = chooseLane(c);
-  else c.dT = 18;
-  c.d += clamp(c.dT - c.d, -DARRYL.lane * dt, DARRYL.lane * dt);
+  else c.dT = 30;
+  // and he drifts about his line when there's nothing right in front of him
+  const calm = !c.fin && !obstacles.some(o => o.s > c.s - 10 && o.s < c.s + 150);
+  const wander = calm ? Math.sin((c.wobT || 0) * 0.9 + 1.3) * 12 + Math.sin((c.wobT || 0) * 2.1) * 4 : 0;
+  c.d += clamp(c.dT + wander - c.d, -DARRYL.lane * dt, DARRYL.lane * dt);
   c.s = Math.min(c.s + c.v * dt, S_STOP + 2);
   const p = trackPt(c.s, c.d);
   c.x = p.x; c.y = p.y; c.a = p.a;
@@ -1002,12 +1130,12 @@ const typing = () => talk && talk.steps[talk.i].d && talk.t * TALK_RATE < talk.s
 
 // what he says. the greeting grows the more times you've lost to him.
 function greeting() {
-  const L = DQ.losses, lines = [{ d: 'Hey there buddy, looking for the next landmark?' }];
+  // (your answer comes before his extra lines, so it plays out in order)
+  const L = DQ.losses, lines = [{ d: 'Hey there buddy, looking for the next landmark?' }, { you: 'Yeah, I am.' }];
   if (L >= 1) lines.push({ d: 'Haven\'t I seen you before?' });
   if (L >= 3 && L <= 8) lines.push({ d: 'You really don\'t give up huh?' });
   if (L >= 9) lines.push({ d: `I think you should probably give up man. ${L + 1} tries is honestly embarrassing.` });
   return lines.concat(
-    { you: 'Yeah, I am.' },
     { d: 'It\'s at the end of this corridor, we\'ll have to take the minecarts.' },
     { you: 'Could you take me there?' },
     { d: 'Sure, but last one there\'s a rotting skeleton!' }
@@ -1045,7 +1173,7 @@ function popArm() {
   darryl.pose = 'idle';
   burst(darryl.x + (darryl.flip ? -3 : 3), darryl.y - 16, '244,238,220', 16);
   sfx.snap();
-  dropStack(makeStack('bone-key'), (darryl.x + player.x) / 2, (darryl.y + player.y) / 2 + 6, raceRoom, 0.6, { x: darryl.x, y: darryl.y - 16 });
+  dropStack(makeStack('bone-key'), player.x + (darryl.x - player.x) * 0.2, player.y + 3, raceRoom, 0.6, { x: darryl.x, y: darryl.y - 16 });
   markDirty();
 }
 function giveBling() {
@@ -1102,14 +1230,14 @@ function pickLoot() {
   return { st: pick.st, slot: pick.v.slot };
 }
 function startJudge() {
-  race.judge = { t: 0, zapped: false, boned: false };
+  race.judge = { t: 0, zapped: false, boned: false, seed: Math.random() * 10 };
   darryl.pose = 'point';
   darryl.flip = player.x < darryl.x;
 }
 function tickJudge(dt) {
   const j = race.judge;
   j.t += dt;
-  if (j.t > 0.55 && !j.zapped) {
+  if (j.t > 0.75 && !j.zapped) {
     j.zapped = true;
     player.skeleton = 'stand';
     const flash = $('#hurt-flash');
@@ -1120,7 +1248,7 @@ function tickJudge(dt) {
     sfx.zap();
     addShake(2);
   }
-  if (j.t > 1.5 && !j.boned) {
+  if (j.t > 1.9 && !j.boned) {
     j.boned = true;
     race.judge = null;
     darryl.pose = null;
@@ -1128,8 +1256,8 @@ function tickJudge(dt) {
     const took = pickLoot();
     player.skeleton = 'pile';
     player.deathSoft = true;
-    player.deathLen = DEATH + (took ? 4.2 : 0.4);
-    race.thief = took ? { ...took, phase: 'wait', t: 0, x: player.x + 8, y: player.y + 4 } : null;
+    player.deathLen = DEATH + (took ? 4.6 : 0.4);
+    race.thief = took ? { ...took, phase: 'wait', t: 0, x: player.x + 8, y: player.y + 4, say: brag(took.st) } : null;
     die();
     sfx.crunch();
     markDirty();
@@ -1145,12 +1273,28 @@ function tickThief(dt) {
   if (th.phase === 'grab' && th.t > 0.45) { th.phase = 'lift'; th.t = 0; sfx.pickup(); }
   if (th.phase === 'lift' && th.t > 0.45) {
     th.phase = 'done';
+    th.t = 0;
     darryl.pose = null;
-    floatText(`+1 ${ITEMS[th.st.id].name}`, darryl.x, darryl.y - 34, '#ffd23f');
     sfx.found();
-    const p = trackPt(S_STOP + 30, 4);
+  }
+  // he admires it for a moment (see raceOverlay's speech bubble), then
+  // wanders back to the door
+  if (th.phase === 'done' && th.t > 1.8 && !th.left) {
+    th.left = true;
+    const p = trackPt(S_STOP + 40, 6);
     walkDarryl(p.x, p.y, 60);
   }
+}
+
+// what he says about it. gold gets the gold lines whatever it is.
+const BRAGS = {
+  gold: ['GOLD!', 'I just love how gold looks on my slim figure.', 'I just LOVE gold!'],
+  armor: ['Just the thing I was looking for!', 'It IS pretty cold down here.'],
+  tool: ['Oooh shiny!', 'Nice weapons!']
+};
+function brag(st) {
+  const it = ITEMS[st.id], list = (it.armor || it.mat) === 'gold' ? BRAGS.gold : it.armor ? BRAGS.armor : BRAGS.tool;
+  return list[(Math.random() * list.length) | 0];
 }
 
 // walking him somewhere on foot (straight there: he only ever walks along a
@@ -1235,7 +1379,7 @@ function raceTick(dt) {
     race.riding = true;
     Y.rider = 'you';
     Y.stopped = false;
-    Y.lane = -18;
+    Y.lane = -30;
     sfx.rev();
   }
   if (race.riding) {
@@ -1257,7 +1401,7 @@ function raceTick(dt) {
       race.riding = false;
       Y.rider = null;
       Y.stopped = true;
-      const p = trackPt(Y.s + 4, -34);
+      const p = trackPt(Y.s + 4, Y.lane - 22);
       player.x = p.x; player.y = p.y; player.face = 'up';
     }
   }
@@ -1266,7 +1410,7 @@ function raceTick(dt) {
     if (Dc.stopped && Dc.fin) {
       // out of the cart and over to the door
       Dc.rider = null;
-      const p = trackPt(Dc.s + 6, 34);
+      const p = trackPt(Dc.s + 6, 50);
       standDarryl(p.x, p.y, true);
       darryl.gone = false;
       darryl.state = 'wait';
@@ -1277,7 +1421,9 @@ function raceTick(dt) {
   const youThere = Y.fin || trackAt(player.x, player.y)?.s > S_FIN;
   if (done && youThere) {
     race.phase = 'over';
-    const side = player.x < darryl.x ? 20 : -20;
+    // close enough to chat when you've won, a few steps back when he's about
+    // to zap you
+    const side = (player.x < darryl.x ? 1 : -1) * (race.result === 'win' ? 22 : 54);
     walkDarryl(player.x + side, player.y, 70, () => {
       darryl.flip = player.x < darryl.x;
       // (counts as talking to him, so walking off after doesn't set him off again)
@@ -1329,6 +1475,7 @@ function vaultTick() {
 function raceEnter(r) {
   if (r === raceRoom) {
     if (DQ.won) resetFree(); else resetRace();
+    showRemains();
     player.y = r.h - 20;
     if (!DQ.seen) {
       DQ.seen = true;
@@ -1378,18 +1525,23 @@ function raceCam() {
   }
   return null;
 }
+// the walls along the track are mine blocks like any other: dug out (once
+// you've beaten him, see mineInfo) they turn to floor, stone gives stone and
+// ore gives its ore
 function raceTarget(m) {
   if (room !== raceRoom) return null;
-  const o = thingAt(m, q => q.trackOre);
-  return o ? { type: 'trackore', thing: o, key: `to:${o.idx}`, cx: o.x, cy: o.y - 6, cls: 'ore', ore: o.ore } : null;
+  const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE), t = rtAt(tx, ty);
+  if (!SOLID[t] || tx <= 0 || ty <= 0 || tx >= RACE_COLS - 1 || ty >= RACE_ROWS - 1) return null;
+  return { type: 'racetile', tx, ty, key: `rt:${rti(tx, ty)}`, cx: tx * TILE + 8, cy: ty * TILE + 8, cls: ORE_ITEM[t] ? 'ore' : 'stone', ore: ORE_ITEM[t] };
 }
-function raceMineOre(tgt, info) {
-  const o = tgt.thing;
-  o.gone = true;
-  DQ.mined.push(o.idx);
-  burst(o.x, o.y - 6, '140,140,140', 12);
-  if (info.drops) gain(o.ore, 1, o.x, o.y - 14);
-  else floatText('Nothing dropped', o.x, o.y - 14, '#bdbdbd');
+function raceMineTile(tgt, info) {
+  const i = rti(tgt.tx, tgt.ty);
+  RT[i] = T.FLOOR;
+  DQ.mined.push(i);
+  repaintRace(tgt.tx, tgt.ty);
+  burst(tgt.cx, tgt.cy, '140,140,140', 12);
+  if (info.drops) gain(tgt.ore || 'stone', 1, tgt.cx, tgt.cy - 8);
+  else floatText('Nothing dropped', tgt.cx, tgt.cy - 8, '#bdbdbd');
 }
 
 // drawing darryl, the carts and the riders
@@ -1418,7 +1570,7 @@ function drawDarryl(o, toX, toY, t) {
   // whatever tool he's taken off you, in his hand
   const tool = DQ.stash.hand && hide !== 'hand' ? ICON_CANVAS[DQ.stash.hand.id] : null;
   if (tool && pose !== 'scared') {
-    const hx = o.x + (o.flip ? -1 : 1) * (DQ.armless ? 2 : 3), hy = o.y - h + 2 - hop + 22;
+    const hx = o.x + (o.flip ? -1 : 1) * (DQ.armless ? 2 : 4), hy = o.y - h + 2 - hop + 22;
     ctx.translate(toX(hx), toY(hy));
     ctx.scale(o.flip ? -1 : 1, 1);
     ctx.rotate(-0.6);
@@ -1430,7 +1582,7 @@ function drawDarryl(o, toX, toY, t) {
 const angIndex = (a, steps) => ((Math.round((a / (Math.PI * 2)) * steps) % steps) + steps) % steps;
 function drawCart(c, toX, toY, t) {
   const sink = Math.round(c.sink || 0), a = c.a + (c.spinA || 0);
-  const img = CART_ROT[c.look][angIndex(a, CART_STEPS)];
+  const img = CART_ROT[c.look][Math.min(3, c.crack || 0)][angIndex(a, CART_STEPS)];
   ctx.save();
   if (sink > 0) { ctx.beginPath(); ctx.rect(0, 0, canvas.width, toY(c.y + 2)); ctx.clip(); }
   else {
@@ -1439,20 +1591,14 @@ function drawCart(c, toX, toY, t) {
   }
   const rattle = c.v > 60 && !reduceMotion ? Math.round(Math.sin(t / 30) * 0.6) : 0;
   ctx.drawImage(img, toX(c.x - CART_D / 2), toY(c.y - CART_D / 2 - 3 + sink + rattle), CART_D * S, CART_D * S);
-  // cracks in a cart that's hit a rock
-  if (c.crack) {
-    ctx.fillStyle = 'rgba(20,14,10,0.9)';
-    const r = mulberry32(31 + c.crack);
-    for (let k = 0; k < c.crack * 4; k++) ctx.fillRect(toX(c.x - 6 + r() * 12), toY(c.y - 7 + r() * 8 + sink), S, S);
-  }
   if (c.rider === 'you') drawRider(c, toX, toY, sink + rattle);
   else if (c.rider === 'darryl') {
     const pose = c.spin ? 'scared' : 'idle';
     const im = skeletonFrame(pose, 0, { gear: Object.fromEntries(['head', 'chest'].filter(k => DQ.stash[k]).map(k => [k, ITEMS[DQ.stash[k].id].armor])), armless: DQ.armless });
     const flip = Math.cos(a) < -0.2;
-    const x = toX(c.x - 13), y = toY(c.y - 3 - 22 + sink + rattle);
-    if (flip) { ctx.translate(x + DARRYL_W * S, y); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, DARRYL_W, 23, 0, 0, DARRYL_W * S, 23 * S); ctx.setTransform(1, 0, 0, 1, 0, 0); }
-    else ctx.drawImage(im, 0, 0, DARRYL_W, 23, x, y, DARRYL_W * S, 23 * S);
+    const x = toX(c.x - 14), y = toY(c.y - 3 - 21 + sink + rattle);
+    if (flip) { ctx.translate(x + DARRYL_W * S, y); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, DARRYL_W, 22, 0, 0, DARRYL_W * S, 22 * S); ctx.setTransform(1, 0, 0, 1, 0, 0); }
+    else ctx.drawImage(im, 0, 0, DARRYL_W, 22, x, y, DARRYL_W * S, 22 * S);
   }
   ctx.restore();
 }
@@ -1536,20 +1682,77 @@ function raceOverlay(toX, toY, t) {
     ctx.fillStyle = '#9bf07a';
     ctx.fillRect(bx, by, Math.round(28 * S * k), 3 * S);
   }
-  // his bony finger, crackling at you
-  if (race.judge && race.judge.t > 0.15 && race.judge.t < 0.9) {
-    const fx = darryl.x + (darryl.flip ? -11 : 11), fy = darryl.y - 16;
+  // his bony finger: a glow builds on the tip, then a beam that has no business
+  // bending the way it does whips out in a loop and lands on you, thick and
+  // bright with two strands corkscrewing round it and sparks flying off
+  const J = race.judge;
+  if (J && J.t < 1.3) {
+    const fx = darryl.x + (darryl.flip ? -12 : 12), fy = darryl.y - 19, tx = player.x, ty = player.y - 14;
     ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = 'rgba(200,255,170,0.85)';
-    const n = 14;
-    for (let i = 0; i <= n; i++) {
-      const u = i / n, jx = (Math.random() - 0.5) * 4, jy = (Math.random() - 0.5) * 4;
-      ctx.fillRect(toX(fx + (player.x - fx) * u + jx), toY(fy + (player.y - 14 - fy) * u + jy), S * 2, S * 2);
+    const orb = Math.min(1, J.t / 0.3) * (J.t > 1 ? Math.max(0, (1.3 - J.t) / 0.3) : 1);
+    const og = ctx.createRadialGradient(toX(fx), toY(fy), 0, toX(fx), toY(fy), (6 + orb * 6) * S);
+    og.addColorStop(0, `rgba(240,255,230,${0.9 * orb})`);
+    og.addColorStop(0.5, `rgba(120,255,150,${0.5 * orb})`);
+    og.addColorStop(1, 'rgba(80,255,140,0)');
+    ctx.fillStyle = og;
+    ctx.fillRect(toX(fx) - 12 * S, toY(fy) - 12 * S, 24 * S, 24 * S);
+    if (J.t > 0.3) {
+      const k = Math.min(1, (J.t - 0.3) / 0.35), fade = J.t > 1 ? Math.max(0, (1.3 - J.t) / 0.3) : 1;
+      const dx = tx - fx, dy = ty - fy, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len;
+      // up and over in a big arc, with a wobble running down it
+      const lift = 34 + Math.sin(J.t * 7 + J.seed) * 10;
+      const pt = u => {
+        const bx = fx + dx * u + nx * Math.sin(u * Math.PI) * lift * (darryl.flip ? -1 : 1) + Math.sin(u * 3 * Math.PI + J.t * 2) * 0;
+        const by = fy + dy * u + ny * Math.sin(u * Math.PI) * lift * (darryl.flip ? -1 : 1) - Math.sin(u * Math.PI) * 18;
+        return [bx, by];
+      };
+      const n = 46;
+      for (let i = 0; i <= n * k; i++) {
+        const u = i / n, [bx, by] = pt(u), w = 1 + Math.sin(u * 30 - J.t * 40) * 0.5;
+        ctx.fillStyle = `rgba(90,255,140,${0.22 * fade})`;
+        ctx.fillRect(toX(bx) - 4 * S, toY(by) - 4 * S, 8 * S, 8 * S);
+        ctx.fillStyle = `rgba(170,255,190,${0.55 * fade})`;
+        ctx.fillRect(toX(bx) - Math.round(2 * w) * S, toY(by) - Math.round(2 * w) * S, Math.round(4 * w) * S, Math.round(4 * w) * S);
+        ctx.fillStyle = `rgba(255,255,255,${0.95 * fade})`;
+        ctx.fillRect(toX(bx) - S, toY(by) - S, 2 * S, 2 * S);
+        // the corkscrew strands
+        const twist = u * 26 - J.t * 30;
+        [0, Math.PI].forEach((ph, si) => {
+          const off = Math.sin(twist + ph) * 5;
+          ctx.fillStyle = si ? `rgba(200,140,255,${0.8 * fade})` : `rgba(120,240,255,${0.8 * fade})`;
+          ctx.fillRect(toX(bx + nx * off), toY(by + ny * off), S, S);
+        });
+        if (!reduceMotion && Math.random() < 0.05) particles.push({ x: bx, y: by, vx: (Math.random() - 0.5) * 60, vy: (Math.random() - 0.5) * 60, g: 0, life: 0.3, t: 0, col: Math.random() < 0.5 ? '#c8ffd0' : '#ffffff', size: 1 });
+      }
+      if (k >= 1) {
+        const rg = ctx.createRadialGradient(toX(tx), toY(ty), 0, toX(tx), toY(ty), 16 * S);
+        rg.addColorStop(0, `rgba(240,255,230,${0.8 * fade})`);
+        rg.addColorStop(1, 'rgba(80,255,140,0)');
+        ctx.fillStyle = rg;
+        ctx.fillRect(toX(tx) - 16 * S, toY(ty) - 16 * S, 32 * S, 32 * S);
+      }
     }
     ctx.globalCompositeOperation = 'source-over';
   }
   // the loot he's after, lying on your bones, then floating up into his hand
   const th = race.thief;
+  // what he says about it, in a bubble over his head
+  if (th && th.phase === 'done' && th.say) {
+    const bfs = Math.max(8, 8 * Math.round((S * 4) / 8));
+    ctx.font = `${bfs}px Silkscreen, monospace`;
+    const tw = ctx.measureText(th.say).width, pad = bfs * 0.7;
+    const bx = toX(darryl.x), by = toY(darryl.y - 44);
+    const alpha = Math.min(1, th.t * 5) * Math.min(1, Math.max(0, (deathLen() - 0.7 - player.deadT) * 3));
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#f2ede0';
+    ctx.fillRect(bx - tw / 2 - pad, by - bfs * 1.1, tw + pad * 2, bfs * 2.2);
+    ctx.fillRect(bx - 2 * S, by + bfs * 1.1, 4 * S, 2 * S);
+    ctx.fillRect(bx - S, by + bfs * 1.1 + 2 * S, 2 * S, 2 * S);
+    ctx.fillStyle = '#1c1a16';
+    ctx.fillText(th.say, bx, by + 1);
+    ctx.globalAlpha = 1;
+    ctx.font = `${fs}px Silkscreen, monospace`;
+  }
   if (th && th.phase !== 'done') {
     let x = th.x, y = th.y - 8 - (reduceMotion ? 0 : Math.round(Math.sin(t / 300)));
     if (th.phase === 'lift') { const u = Math.min(1, th.t / 0.45); x += (darryl.x - x) * u; y += (darryl.y - 20 - y) * u - Math.sin(u * Math.PI) * 10; }
@@ -1598,7 +1801,7 @@ function tickHelpDemo(dt) {
   else if ((u -= L) < Math.PI * R) { const th = Math.PI / 2 + u / R; x = cx - L / 2 + Math.cos(th) * R; y = cy + Math.sin(th) * R; a = th + Math.PI / 2; turning = true; }
   else if ((u -= Math.PI * R) < L) { x = cx - L / 2 + u; y = cy - R; a = 0; turning = false; }
   else { u -= L; const th = -Math.PI / 2 + u / R; x = cx + L / 2 + Math.cos(th) * R; y = cy + Math.sin(th) * R; a = th + Math.PI / 2; turning = true; }
-  const img = CART_ROT.you[angIndex(a, CART_STEPS)];
+  const img = CART_ROT.you[0][angIndex(a, CART_STEPS)];
   g.drawImage(img, Math.round(x - CART_D / 2), Math.round(y - CART_D / 2), CART_D, CART_D);
   helpEl.querySelectorAll('[data-key]').forEach(el => {
     const k = el.dataset.key;

@@ -4006,8 +4006,8 @@ function mineInfo(tgt) {
   }
   const where = room ? null : regionAt(tgt.cx / TILE, tgt.cy / TILE);
   if (where && !biomeOpen(where)) return { time: Infinity, locked: where };
-  // the ores along darryl's track won't budge until you've beaten him
-  if (tgt.type === 'trackore' && !raceWon()) return { time: Infinity, hint: ['Not now', ITEMS[tgt.ore].name, 'Darryl won\'t let you touch the track. Beat him first.'] };
+  // the walls along darryl's track won't budge until you've beaten him
+  if (tgt.type === 'racetile' && !raceWon()) return { time: Infinity, hint: ['Not now', tgt.ore ? ITEMS[tgt.ore].name : 'Stone', 'Darryl won\'t let you touch the track. Beat him first.'] };
   if (tgt.type === 'tree') {
     if (!tgt.great && !quest.greatTree) return { time: Infinity };
     const base = MINE_TIME.wood * (tgt.great ? 1.4 : 1);
@@ -4100,8 +4100,8 @@ function breakTarget(tgt, info) {
       gain('stick', dead ? rand(2, 4) : rand(1, 2), o.x, o.y - 20);
       burst(o.x, o.y - 16, o.tree === 'pine' ? '47,109,81' : dead ? '154,77,49' : '98,178,64', 16);
     }
-  } else if (tgt.type === 'trackore') {
-    raceMineOre(tgt, info);
+  } else if (tgt.type === 'racetile') {
+    raceMineTile(tgt, info);
   } else {
     const i = idx(tgt.tx, tgt.ty);
     tiles[i] = baseOf(i);
@@ -5492,7 +5492,7 @@ function playRenderOverlay(toX, toY, t) {
     if (tgt) {
       const ok = inReach(tgt) && (CLICK_ONLY.has(tgt.type) || mineInfo(tgt).time !== Infinity);
       let x0, y0, w, h;
-      if (tgt.type === 'tile') { x0 = tgt.tx * TILE; y0 = tgt.ty * TILE; w = h = TILE; }
+      if (tgt.type === 'tile' || tgt.type === 'racetile') { x0 = tgt.tx * TILE; y0 = tgt.ty * TILE; w = h = TILE; }
       else {
         const o = tgt.st || tgt.thing, f = o.frames[0];
         x0 = o.x - f.width / 2; y0 = o.y - f.height; w = f.width; h = f.height;
@@ -5509,13 +5509,14 @@ function playRenderOverlay(toX, toY, t) {
   }
   if (mining) {
     const tg = mining.tgt;
-    const bx = toX(tg.cx - 10), by = toY(tg.barY !== undefined ? tg.barY : tg.cy - (tg.type === 'tile' ? 14 : 44));
+    const blockish = tg.type === 'tile' || tg.type === 'racetile';
+    const bx = toX(tg.cx - 10), by = toY(tg.barY !== undefined ? tg.barY : tg.cy - (blockish ? 14 : 44));
     ctx.fillStyle = 'rgba(10,10,14,0.85)';
     ctx.fillRect(bx, by, 20 * S, 3 * S);
     // red bar when this one isn't going to drop anything
     ctx.fillStyle = mineInfo(tg).drops === false ? '#ff7b6b' : '#ffd23f';
     ctx.fillRect(bx + S, by + S, Math.round(18 * S * Math.min(1, mining.t / mining.need)), S);
-    if (tg.type === 'tile') {
+    if (blockish) {
       // cracks spreading across the block
       const stage = Math.floor((mining.t / mining.need) * 4);
       ctx.fillStyle = 'rgba(20,20,20,0.7)';

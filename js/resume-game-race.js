@@ -12,13 +12,14 @@
 // slot, and he wears it.
 quest.darryl = Object.assign({
   met: false, losses: 0, won: false, keyGiven: false, doorOpen: false, statue: false,
-  armless: false, fled: false, tutorial: false, seen: false, stash: {}, mined: [], chest: null
+  armless: false, fled: false, tutorial: false, seen: false, stash: {}, mined: [], chest: null, bones: []
 }, quest.darryl && typeof quest.darryl === 'object' ? quest.darryl : {});
 const DQ = quest.darryl;
 const STASH_SLOTS = ['head', 'chest', 'legs', 'feet', 'hand'];
 DQ.stash = Object.fromEntries(STASH_SLOTS.map(k => [k, validStack(DQ.stash && DQ.stash[k])]));
 DQ.mined = Array.isArray(DQ.mined) ? DQ.mined.filter(n => Number.isInteger(n)) : [];
 DQ.losses = Math.max(0, DQ.losses | 0);
+DQ.bones = Array.isArray(DQ.bones) ? DQ.bones.filter(b => Array.isArray(b) && b.length === 2).slice(0, 10) : [];
 
 // the track. it's a long winding tunnel drawn as a centre line through these
 // points (in tiles, scaled up by TRACK_SCALE), smoothed into a curve. the room
@@ -300,8 +301,8 @@ const CART_ROT = Object.fromEntries(Object.entries(CART_LOOK).map(([k, look]) =>
 
 // darryl: a lanky skeleton about your size, facing right like every other
 // creature. alex wanted him rowdy and carefree, not kingly (the old goggles
-// read as a crown): a red bandana knotted round his skull with the tails
-// hanging off the back, a faded denim vest hanging open over his ribs, a slouch
+// read as a crown): a cracked miner's helmet with its lamp lit, a faded denim
+// vest hanging open over his ribs, a slouch
 // with his head pushed forward, a big crooked grin with a tooth missing, a
 // crack in his skull, and a pinprick of light in his eye socket. he wears
 // whatever he's taken off you. plain is the bare skeleton, which is what you
@@ -392,16 +393,20 @@ function makeSkeleton(pose, frame, o = {}) {
       put(x, y + Y, y === 4 ? P[2] : x < hx - 2 ? P[0] : P[1]);
     }
   } else if (!plain) {
-    // the bandana over the top of his skull, white spots, knotted at the back
-    // with the two tails hanging off (they flap when he moves)
-    for (let y = 1; y <= 3; y++) for (let x = Math.round(hx) - 6; x <= Math.round(hx) + 5; x++) {
-      if (((x - hx) / 6.4) ** 2 + ((y - 5.5) / 5.4) ** 2 > 1) continue;
-      put(x, y + Y, (x + y * 3) % 5 === 0 ? '#f6e9e0' : y === 3 ? '#a82a20' : '#d8392c');
+    // his miner's helmet (alex: a bandana didn't fit a miner): a battered
+    // yellow hard hat with the brim sticking out further at the front, a crack
+    // across the top, a dent, and the lamp on the front, which is a real light
+    // (darryl.lamp). if he's taken your helmet he wears that instead, lamp and
+    // all gone.
+    const cx = Math.round(hx);
+    for (let y = 0; y <= 4; y++) for (let x = cx - 7; x <= cx + 6; x++) {
+      if (((x - hx) / 6.8) ** 2 + ((y - 5.2) / 5.4) ** 2 > 1) continue;
+      put(x, y + Y, x < cx - 2 ? '#f0c84a' : '#d9a92b');
     }
-    const kx = Math.round(hx) - 6, flap = walk ? frame % 2 : 0;
-    put(kx, 3 + Y, '#a82a20'); put(kx - 1, 3 + Y, '#d8392c');
-    line(kx - 1, 4 + Y, kx - 4, 6 + Y + flap, '#d8392c');
-    line(kx - 1, 4 + Y, kx - 3, 8 + Y - flap, '#a82a20');
+    for (let x = cx - 8; x <= cx + 8; x++) put(x, 4 + Y, x > cx + 4 ? '#b8891c' : '#8a6414');
+    [[cx - 3, 0], [cx - 2, 1], [cx - 3, 2], [cx - 2, 3]].forEach(([x, y]) => put(x, y + Y, '#3a2a10'));
+    put(cx + 1, 1 + Y, '#b8891c'); put(cx + 2, 1 + Y, '#b8891c');
+    put(cx + 5, 1 + Y, '#55555f'); put(cx + 5, 2 + Y, '#55555f'); put(cx + 6, 1 + Y, '#fff3c4'); put(cx + 6, 2 + Y, '#ffd23f');
   }
   // the near arm, in front of everything: hanging, swinging, pointing at you,
   // reaching down for something, or thrown up in fright. once it's been
@@ -739,17 +744,30 @@ obstacles.forEach(o => {
     raceRoom.glows.push({ x, y: y - 12, rgb: GLOW.torch, rad: 3.4, flicker: true, strength: 0.24 });
   });
 }
-// ten places along the walls for the skeletons, spread down the track on
-// alternating sides
-const remains = Array.from({ length: 10 }, (_, k) => {
-  const s = S_START + 300 + (k * (S_FIN - S_START - 600)) / 9, side = k % 2 ? 1 : -1;
-  let p = trackPt(s, side * (HALF - 14));
-  for (let d = HALF - 14; d > 10 && !onFloor(p.x, p.y, 8); d -= 4) p = trackPt(s, side * d);
-  const o = { flat: true, x: p.x, y: p.y + 8, frames: [REMAINS_ART[k % 4]], gone: true };
-  raceRoom.things.push(o);
-  return o;
-});
-const showRemains = () => remains.forEach((o, k) => { o.gone = k >= Math.min(10, DQ.losses); });
+// a skeleton for every race you've lost, left where you fell (which is always
+// at the finish), up to ten, nudged apart so they don't land on top of each
+// other. they're flat, part of the floor.
+const remains = [];
+function showRemains() {
+  remains.forEach(o => { const i = raceRoom.things.indexOf(o); if (i >= 0) raceRoom.things.splice(i, 1); });
+  remains.length = 0;
+  DQ.bones.forEach(([x, y], k) => {
+    const o = { flat: true, x, y: y + 6, frames: [REMAINS_ART[k % 4]] };
+    remains.push(o);
+    raceRoom.things.push(o);
+  });
+}
+function addBones(x, y) {
+  if (DQ.bones.length >= 10) return;
+  let px = x, py = y;
+  for (let k = 0; k < 30 && DQ.bones.some(([bx, by]) => Math.hypot(bx - px, by - py) < 26); k++) {
+    const a = k * 2.4, r = 14 + k * 2.5;
+    px = x + Math.cos(a) * r;
+    py = y + Math.sin(a) * r * 0.7;
+    if (!onFloor(px, py, 6)) { px = x; py = y; }
+  }
+  DQ.bones.push([Math.round(px), Math.round(py)]);
+}
 showRemains();
 const door = { x: DOOR_X, y: DOOR_Y, frames: [DOOR_ART[DQ.doorOpen ? 4 : 0]], k: DQ.doorOpen ? 1 : 0 };
 raceRoom.things.push(door);
@@ -768,7 +786,9 @@ Object.values(carts).forEach(c => {
   raceRoom.things.push(c);
 });
 const darryl = { darryl: true, x: 0, y: 0, flip: true, state: 'wait', t: 0, anim: 0, frames: [mk(DARRYL_W, DARRYL_H)], draw: drawDarryl };
+darryl.lamp = { x: 0, y: 0, rgb: '255,236,170', rad: 2.2, flicker: true, strength: 0.3 };
 raceRoom.things.push(darryl);
+raceRoom.glows.push(darryl.lamp);
 
 // the numbers. your cart: top speed, how hard it pulls away and brakes, how
 // much it rolls on with nothing pressed, and grip, which is what makes it
@@ -793,13 +813,14 @@ let helpOpen = false;
 
 function parkCart(c, s, d) {
   const p = trackPt(s, d);
-  Object.assign(c, { x: p.x, y: p.y, a: p.a, v: 0, s, d, dT: d, spin: null, hole: null, spinA: 0, sink: 0, vmul: 1, crack: 0, cool: {}, rider: null, fin: false, stopped: true, slipped: {} });
+  Object.assign(c, { x: p.x, y: p.y, a: p.a, v: 0, s, d, dT: d, spin: null, hole: null, spinA: 0, sink: 0, vmul: 1, crack: 0, cool: {}, rider: null, fin: false, stopped: true, slipped: {}, gone: false });
+  c.lamp.off = false;
 }
 const darrylHome = () => trackPt(S_START - 56, 30);
 function standDarryl(x, y, flip) { Object.assign(darryl, { x, y, flip, state: 'wait', t: 0, gone: false, alpha: 1, hop: 0, goal: null }); }
 // back to before the race: everyone at the start line, every rock back in place
 function resetRace() {
-  Object.assign(race, { phase: 'pre', t: 0, riding: false, result: null, pFin: null, dFin: null, judge: null, thief: null, goT: 0 });
+  Object.assign(race, { phase: 'pre', t: 0, riding: false, result: null, pFin: null, dFin: null, judge: null, thief: null, poof: null, goT: 0 });
   obstacles.forEach(o => { if (o.thing) o.thing.gone = false; o.broken = false; });
   parkCart(carts.you, S_START, -30);
   parkCart(carts.darryl, S_START, 30);
@@ -810,10 +831,12 @@ function resetRace() {
 // once you've won: darryl and his cart wait at the door (unless he's run off),
 // and your cart is back at the start so you can ride down to the door again
 function resetFree() {
-  Object.assign(race, { phase: 'free', t: 0, riding: false, result: null, pFin: null, dFin: null, judge: null, thief: null });
+  Object.assign(race, { phase: 'free', t: 0, riding: false, result: null, pFin: null, dFin: null, judge: null, thief: null, poof: null });
   obstacles.forEach(o => { if (o.thing) o.thing.gone = false; o.broken = false; });
   parkCart(carts.you, S_START, -30);
   parkCart(carts.darryl, S_STOP, 30);
+  carts.darryl.gone = true;
+  carts.darryl.lamp.off = true;
   const p = trackPt(S_STOP + 40, 6);
   standDarryl(p.x, p.y, false);
   darryl.gone = DQ.fled;
@@ -1077,7 +1100,14 @@ function driveDarryl(c, dt) {
 // time. click, space, enter or e skips to the end of a line, then goes on.
 const talkEl = $('#talk'), talkName = $('#talk-name'), talkText = $('#talk-text');
 let talk = null;
+// you turn to face him whenever a conversation starts
+function faceToward(x, y) {
+  const dx = x - player.x, dy = y - player.y;
+  if (Math.abs(dx) >= Math.abs(dy) * 0.8) { player.face = 'side'; player.flip = dx < 0; }
+  else player.face = dy < 0 ? 'up' : 'down';
+}
 function startTalk(steps, done) {
+  if (!darryl.gone) faceToward(darryl.x, darryl.y);
   talk = { steps, i: -1, t: 0, done };
   document.body.classList.add('is-talking');
   nextLine();
@@ -1229,6 +1259,22 @@ function pickLoot() {
   afterInventoryChange();
   return { st: pick.st, slot: pick.v.slot };
 }
+// and something off the floor: the best of whatever good stuff was already
+// lying around the finish from before (things you dropped or lost the last
+// time), as long as it beats what he's wearing in that spot. what it replaces
+// is left where it was lying.
+function pickGroundLoot(before) {
+  const all = before.filter(g => ground.includes(g) && !g.fly).map(g => ({ g, v: lootValue(g.st) })).filter(q => q.v);
+  all.sort((p2, q2) => (lootBetter(p2.v, q2.v) ? -1 : lootBetter(q2.v, p2.v) ? 1 : 0));
+  const pick = all.find(q => { const cur = lootValue(DQ.stash[q.v.slot]); return !cur || lootBetter(q.v, cur); });
+  if (!pick) return null;
+  const { g, v } = pick;
+  removeGround(g);
+  const old = DQ.stash[v.slot];
+  DQ.stash[v.slot] = { ...g.st };
+  if (old) dropStack(old, g.x + 8, g.y + 4, raceRoom, 2);
+  return { st: g.st, slot: v.slot, x: g.x, y: g.y };
+}
 function startJudge() {
   race.judge = { t: 0, zapped: false, boned: false, seed: Math.random() * 10 };
   darryl.pose = 'point';
@@ -1244,7 +1290,7 @@ function tickJudge(dt) {
     flash.classList.remove('is-on');
     void flash.offsetWidth;
     flash.classList.add('is-on');
-    burst(player.x, player.y - 14, '230,255,200', 26);
+    burst(player.x, player.y - 14, '240,236,220', 26);
     sfx.zap();
     addShake(2);
   }
@@ -1253,38 +1299,44 @@ function tickJudge(dt) {
     race.judge = null;
     darryl.pose = null;
     DQ.losses++;
+    addBones(player.x, player.y);
+    const before = ground.filter(g => g.room === 'race');
     const took = pickLoot();
     player.skeleton = 'pile';
     player.deathSoft = true;
-    player.deathLen = DEATH + (took ? 4.6 : 0.4);
-    race.thief = took ? { ...took, phase: 'wait', t: 0, x: player.x + 8, y: player.y + 4, say: brag(took.st) } : null;
+    const x0 = player.x, y0 = player.y;
     die();
+    const off = pickGroundLoot(before);
+    const queue = [took && { ...took, x: x0 + 8, y: y0 + 4 }, off].filter(Boolean).map(q => ({ ...q, say: brag(q.st) }));
+    // the death waits for him to finish helping himself (see tickThief)
+    player.deathLen = queue.length ? Infinity : DEATH + 0.4;
+    race.thief = queue.length ? { queue, i: 0, phase: 'wait', t: 0 } : null;
     sfx.crunch();
     markDirty();
   }
 }
-// him strolling over to your bones, bending down for the loot, putting it on,
-// and wandering back to the door
+// him strolling over to your bones, bending down for the loot, putting it on
+// and saying something about it, then the same for anything he fancies off
+// the floor, then wandering back to the door
 function tickThief(dt) {
-  const th = race.thief;
+  const th = race.thief, it = th.queue[th.i];
   th.t += dt;
-  if (th.phase === 'wait' && player.deadT > 0.7) { th.phase = 'walk'; walkDarryl(th.x + (darryl.x < th.x ? -12 : 12), th.y, 70); }
-  if (th.phase === 'walk' && darryl.state === 'wait') { th.phase = 'grab'; th.t = 0; darryl.pose = 'grab'; darryl.flip = th.x < darryl.x; }
+  const goTo = q => walkDarryl(q.x + (darryl.x < q.x ? -12 : 12), q.y, 70);
+  if (th.phase === 'wait' && player.deadT > 0.7) { th.phase = 'walk'; goTo(it); }
+  if (th.phase === 'walk' && darryl.state === 'wait') { th.phase = 'grab'; th.t = 0; darryl.pose = 'grab'; darryl.flip = it.x < darryl.x; }
   if (th.phase === 'grab' && th.t > 0.45) { th.phase = 'lift'; th.t = 0; sfx.pickup(); }
-  if (th.phase === 'lift' && th.t > 0.45) {
-    th.phase = 'done';
-    th.t = 0;
-    darryl.pose = null;
-    sfx.found();
-  }
-  // he admires it for a moment (see raceOverlay's speech bubble), then
-  // wanders back to the door
-  if (th.phase === 'done' && th.t > 1.8 && !th.left) {
-    th.left = true;
-    const p = trackPt(S_STOP + 40, 6);
-    walkDarryl(p.x, p.y, 60);
+  if (th.phase === 'lift' && th.t > 0.45) { th.phase = 'done'; th.t = 0; it.got = true; darryl.pose = null; sfx.found(); }
+  if (th.phase === 'done' && th.t > 1.7) {
+    if (th.i + 1 < th.queue.length) { th.i++; th.phase = 'walk'; th.t = 0; goTo(th.queue[th.i]); }
+    else {
+      th.phase = 'home';
+      const p = trackPt(S_STOP + 40, 6);
+      walkDarryl(p.x, p.y, 60);
+      player.deathLen = player.deadT + 1.6;
+    }
   }
 }
+const thiefHidden = () => new Set(race.thief ? race.thief.queue.filter(q => !q.got).map(q => q.slot) : []);
 
 // what he says about it. gold gets the gold lines whatever it is.
 const BRAGS = {
@@ -1375,7 +1427,7 @@ function raceTick(dt) {
   if (race.phase === 'go' || race.phase === 'race') race.t += dt;
   race.goT = Math.max(0, race.goT - dt);
   // hopping in your own cart: just walk into it
-  if (!race.riding && !player.dead && ['go', 'race', 'free'].includes(race.phase) && !Y.fin && Math.hypot(Y.x - player.x, Y.y - player.y) < 14) {
+  if (!race.riding && !player.dead && ['go', 'race', 'free'].includes(race.phase) && !Y.fin && !Y.gone && Math.hypot(Y.x - player.x, Y.y - player.y) < 14) {
     race.riding = true;
     Y.rider = 'you';
     Y.stopped = false;
@@ -1421,21 +1473,46 @@ function raceTick(dt) {
   const youThere = Y.fin || trackAt(player.x, player.y)?.s > S_FIN;
   if (done && youThere) {
     race.phase = 'over';
-    // close enough to chat when you've won, a few steps back when he's about
-    // to zap you
-    const side = (player.x < darryl.x ? 1 : -1) * (race.result === 'win' ? 22 : 54);
-    walkDarryl(player.x + side, player.y, 70, () => {
-      darryl.flip = player.x < darryl.x;
-      // (counts as talking to him, so walking off after doesn't set him off again)
-      darryl.talked = true;
-      if (race.result === 'win') {
-        DQ.won = true;
-        markDirty();
-        startTalk(winTalk(), () => { race.phase = 'free'; Y.rider = null; });
-      } else {
-        startTalk([{ d: 'Sorry bro, but I guess I\'m still the best racer.', mood: 'frown' }], startJudge);
-      }
-    });
+    race.poof = { t: 0 };
+    const live = Object.values(carts).filter(c => !c.gone);
+    if (live.length) darryl.flip = live.reduce((n, c) => n + c.x, 0) / live.length < darryl.x;
+    darryl.pose = 'point';
+  }
+  // he points at the carts and they're gone in a puff of dust, and then he
+  // comes over: close enough to chat when you've won, a few steps back when
+  // he's about to zap you
+  if (race.poof) {
+    const P = race.poof;
+    P.t += dt;
+    if (!P.done && P.t > 0.45) {
+      P.done = true;
+      Object.values(carts).forEach(c => {
+        if (c.gone) return;
+        burst(c.x, c.y - 6, '200,190,170', 22);
+        burst(c.x, c.y - 10, '255,240,200', 8);
+        c.gone = true;
+        c.lamp.off = true;
+      });
+      sfx.snap();
+      whoosh();
+    }
+    if (P.t > 1) {
+      race.poof = null;
+      darryl.pose = null;
+      const side = (player.x < darryl.x ? 1 : -1) * (race.result === 'win' ? 22 : 54);
+      walkDarryl(player.x + side, player.y, 70, () => {
+        darryl.flip = player.x < darryl.x;
+        // (counts as talking to him, so walking off after doesn't set him off again)
+        darryl.talked = true;
+        if (race.result === 'win') {
+          DQ.won = true;
+          markDirty();
+          startTalk(winTalk(), () => { race.phase = 'free'; Y.rider = null; });
+        } else {
+          startTalk([{ d: 'Sorry bro, but I guess I\'m still the best racer.', mood: 'frown' }], startJudge);
+        }
+      });
+    }
   }
 
   // the big door: the bone key opens it, then walk through
@@ -1459,8 +1536,13 @@ function raceTick(dt) {
   door.frames = [DOOR_ART[Math.round(door.k * 4)]];
   if (DQ.doorOpen && door.k > 0.7 && !player.dead && player.y < DOOR_Y + 8 && Math.abs(player.x - DOOR_X) < 14) enterRoom(vaultRoom);
 
-  // the carts' lamps go where the carts go
+  // the carts' lamps go where the carts go, and his helmet lamp where he goes
+  // (in his cart or out of it, and not at all once he's wearing your helmet)
   Object.values(carts).forEach(c => { c.lamp.x = c.x + Math.cos(c.a) * 10; c.lamp.y = c.y + Math.sin(c.a) * 10 - 4; });
+  const inCart = Dc.rider === 'darryl', face = inCart ? (Math.cos(Dc.a) < -0.2 ? -1 : 1) : darryl.flip ? -1 : 1;
+  darryl.lamp.off = !!DQ.stash.head || (!inCart && darryl.gone);
+  darryl.lamp.x = (inCart ? Dc.x : darryl.x) + face * 8;
+  darryl.lamp.y = (inCart ? Dc.y - 24 : darryl.y - 30);
 }
 // in the vault: the ladder up the back wall takes you outside
 function vaultTick() {
@@ -1498,7 +1580,7 @@ function raceLeave(r) {
   race.riding = false;
   if (DQ.won) resetFree(); else resetRace();
 }
-function raceHolds() { return !!talk || race.riding || !!race.judge || helpOpen || (room === raceRoom && darryl.state === 'walk' && race.phase === 'over'); }
+function raceHolds() { return !!talk || race.riding || !!race.judge || !!race.poof || helpOpen || (room === raceRoom && darryl.state === 'walk' && race.phase === 'over'); }
 function raceKey(e) {
   if (helpOpen) {
     if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') { e.preventDefault(); closeHelp(); }
@@ -1555,9 +1637,9 @@ function drawDarryl(o, toX, toY, t) {
     else if (typing()) { pose = 'talk'; frame = Math.floor(o.anim * 8) % 2; }
     else pose = 'idle';
   }
-  const th = race.thief, hide = th && th.phase !== 'done' ? th.slot : null;
+  const hide = thiefHidden();
   const gear = {};
-  ['head', 'chest', 'legs', 'feet'].forEach(k => { if (DQ.stash[k] && k !== hide) gear[k] = ITEMS[DQ.stash[k].id].armor; });
+  ['head', 'chest', 'legs', 'feet'].forEach(k => { if (DQ.stash[k] && !hide.has(k)) gear[k] = ITEMS[DQ.stash[k].id].armor; });
   const img = skeletonFrame(pose, frame, { gear, armless: DQ.armless });
   const w = img.width, h = img.height, hop = Math.round(o.hop || 0);
   ctx.save();
@@ -1568,7 +1650,7 @@ function drawDarryl(o, toX, toY, t) {
   if (o.flip) { ctx.translate(x + w * S, y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w * S, h * S); ctx.setTransform(1, 0, 0, 1, 0, 0); }
   else ctx.drawImage(img, x, y, w * S, h * S);
   // whatever tool he's taken off you, in his hand
-  const tool = DQ.stash.hand && hide !== 'hand' ? ICON_CANVAS[DQ.stash.hand.id] : null;
+  const tool = DQ.stash.hand && !hide.has('hand') ? ICON_CANVAS[DQ.stash.hand.id] : null;
   if (tool && pose !== 'scared') {
     const hx = o.x + (o.flip ? -1 : 1) * (DQ.armless ? 2 : 4), hy = o.y - h + 2 - hop + 22;
     ctx.translate(toX(hx), toY(hy));
@@ -1682,82 +1764,79 @@ function raceOverlay(toX, toY, t) {
     ctx.fillStyle = '#9bf07a';
     ctx.fillRect(bx, by, Math.round(28 * S * k), 3 * S);
   }
-  // his bony finger: a glow builds on the tip, then a beam that has no business
-  // bending the way it does whips out in a loop and lands on you, thick and
-  // bright with two strands corkscrewing round it and sparks flying off
+  // the light in his eye socket flares up and then cracks out at you in a
+  // straight beam (alex: the looping one looked like a wizard casting a spell):
+  // bone white in the middle, a sickly green glow round it, jittering like it
+  // can barely hold together, with bone dust flaking off it. he holds his
+  // finger out like a gun while he does it.
   const J = race.judge;
   if (J && J.t < 1.3) {
-    const fx = darryl.x + (darryl.flip ? -12 : 12), fy = darryl.y - 19, tx = player.x, ty = player.y - 14;
+    const ex = darryl.x + (darryl.flip ? -5 : 5), ey = darryl.y - 25, tx = player.x, ty = player.y - 16;
+    const fade = J.t > 1 ? Math.max(0, (1.3 - J.t) / 0.3) : 1, flare = Math.min(1, J.t / 0.3) * fade;
     ctx.globalCompositeOperation = 'lighter';
-    const orb = Math.min(1, J.t / 0.3) * (J.t > 1 ? Math.max(0, (1.3 - J.t) / 0.3) : 1);
-    const og = ctx.createRadialGradient(toX(fx), toY(fy), 0, toX(fx), toY(fy), (6 + orb * 6) * S);
-    og.addColorStop(0, `rgba(240,255,230,${0.9 * orb})`);
-    og.addColorStop(0.5, `rgba(120,255,150,${0.5 * orb})`);
-    og.addColorStop(1, 'rgba(80,255,140,0)');
-    ctx.fillStyle = og;
-    ctx.fillRect(toX(fx) - 12 * S, toY(fy) - 12 * S, 24 * S, 24 * S);
+    const eg = ctx.createRadialGradient(toX(ex), toY(ey), 0, toX(ex), toY(ey), (3 + flare * 6) * S);
+    eg.addColorStop(0, `rgba(255,252,230,${0.95 * flare})`);
+    eg.addColorStop(0.4, `rgba(170,255,140,${0.6 * flare})`);
+    eg.addColorStop(1, 'rgba(120,255,120,0)');
+    ctx.fillStyle = eg;
+    ctx.fillRect(toX(ex) - 10 * S, toY(ey) - 10 * S, 20 * S, 20 * S);
     if (J.t > 0.3) {
-      const k = Math.min(1, (J.t - 0.3) / 0.35), fade = J.t > 1 ? Math.max(0, (1.3 - J.t) / 0.3) : 1;
-      const dx = tx - fx, dy = ty - fy, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len;
-      // up and over in a big arc, with a wobble running down it
-      const lift = 34 + Math.sin(J.t * 7 + J.seed) * 10;
-      const pt = u => {
-        const bx = fx + dx * u + nx * Math.sin(u * Math.PI) * lift * (darryl.flip ? -1 : 1) + Math.sin(u * 3 * Math.PI + J.t * 2) * 0;
-        const by = fy + dy * u + ny * Math.sin(u * Math.PI) * lift * (darryl.flip ? -1 : 1) - Math.sin(u * Math.PI) * 18;
-        return [bx, by];
-      };
-      const n = 46;
+      const k = Math.min(1, (J.t - 0.3) / 0.12), dx = tx - ex, dy = ty - ey, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len, n = Math.ceil(len / 2);
       for (let i = 0; i <= n * k; i++) {
-        const u = i / n, [bx, by] = pt(u), w = 1 + Math.sin(u * 30 - J.t * 40) * 0.5;
-        ctx.fillStyle = `rgba(90,255,140,${0.22 * fade})`;
-        ctx.fillRect(toX(bx) - 4 * S, toY(by) - 4 * S, 8 * S, 8 * S);
-        ctx.fillStyle = `rgba(170,255,190,${0.55 * fade})`;
-        ctx.fillRect(toX(bx) - Math.round(2 * w) * S, toY(by) - Math.round(2 * w) * S, Math.round(4 * w) * S, Math.round(4 * w) * S);
-        ctx.fillStyle = `rgba(255,255,255,${0.95 * fade})`;
-        ctx.fillRect(toX(bx) - S, toY(by) - S, 2 * S, 2 * S);
-        // the corkscrew strands
-        const twist = u * 26 - J.t * 30;
-        [0, Math.PI].forEach((ph, si) => {
-          const off = Math.sin(twist + ph) * 5;
-          ctx.fillStyle = si ? `rgba(200,140,255,${0.8 * fade})` : `rgba(120,240,255,${0.8 * fade})`;
-          ctx.fillRect(toX(bx + nx * off), toY(by + ny * off), S, S);
-        });
-        if (!reduceMotion && Math.random() < 0.05) particles.push({ x: bx, y: by, vx: (Math.random() - 0.5) * 60, vy: (Math.random() - 0.5) * 60, g: 0, life: 0.3, t: 0, col: Math.random() < 0.5 ? '#c8ffd0' : '#ffffff', size: 1 });
+        const u = i / n, j = reduceMotion ? 0 : (Math.random() - 0.5) * 2.4 * Math.sin(u * Math.PI);
+        const bx = ex + dx * u + nx * j, by = ey + dy * u + ny * j;
+        const w = 1 + (Math.random() < 0.3 ? 1 : 0);
+        ctx.fillStyle = `rgba(140,255,120,${0.18 * fade})`;
+        ctx.fillRect(toX(bx) - 3 * S, toY(by) - 3 * S, 6 * S, 6 * S);
+        ctx.fillStyle = `rgba(255,250,225,${0.9 * fade})`;
+        ctx.fillRect(toX(bx) - (w * S) / 2, toY(by) - (w * S) / 2, w * S, w * S);
+        if (!reduceMotion && Math.random() < 0.03) particles.push({ x: bx, y: by, vx: (Math.random() - 0.5) * 30, vy: 10 + Math.random() * 20, g: 60, life: 0.5, t: 0, col: Math.random() < 0.6 ? '#e8e1cc' : '#b8ffa8', size: 1 });
       }
       if (k >= 1) {
-        const rg = ctx.createRadialGradient(toX(tx), toY(ty), 0, toX(tx), toY(ty), 16 * S);
-        rg.addColorStop(0, `rgba(240,255,230,${0.8 * fade})`);
-        rg.addColorStop(1, 'rgba(80,255,140,0)');
+        const rg = ctx.createRadialGradient(toX(tx), toY(ty), 0, toX(tx), toY(ty), 12 * S);
+        rg.addColorStop(0, `rgba(255,250,225,${0.7 * fade})`);
+        rg.addColorStop(1, 'rgba(140,255,120,0)');
         ctx.fillStyle = rg;
-        ctx.fillRect(toX(tx) - 16 * S, toY(ty) - 16 * S, 32 * S, 32 * S);
+        ctx.fillRect(toX(tx) - 12 * S, toY(ty) - 12 * S, 24 * S, 24 * S);
       }
     }
     ctx.globalCompositeOperation = 'source-over';
   }
-  // the loot he's after, lying on your bones, then floating up into his hand
+  // the loot he's after, lying on your bones (or on the floor), then floating
+  // up into his hand
   const th = race.thief;
-  // what he says about it, in a bubble over his head
-  if (th && th.phase === 'done' && th.say) {
-    const bfs = Math.max(8, 8 * Math.round((S * 4) / 8));
+  // and what he says about it, in a speech bubble done like the rest of the
+  // game's popups: a dark panel with notched corners and an orange edge, his
+  // name on top in small orange letters, and a little tail down to him
+  const cur = th && th.queue[th.i];
+  if (th && th.phase === 'done' && cur && cur.say) {
+    const bfs = Math.max(8, 8 * Math.round((S * 4) / 8)), nfs = Math.max(8, Math.round(bfs * 0.7));
     ctx.font = `${bfs}px Silkscreen, monospace`;
-    const tw = ctx.measureText(th.say).width, pad = bfs * 0.7;
-    const bx = toX(darryl.x), by = toY(darryl.y - 44);
-    const alpha = Math.min(1, th.t * 5) * Math.min(1, Math.max(0, (deathLen() - 0.7 - player.deadT) * 3));
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = '#f2ede0';
-    ctx.fillRect(bx - tw / 2 - pad, by - bfs * 1.1, tw + pad * 2, bfs * 2.2);
-    ctx.fillRect(bx - 2 * S, by + bfs * 1.1, 4 * S, 2 * S);
-    ctx.fillRect(bx - S, by + bfs * 1.1 + 2 * S, 2 * S, 2 * S);
-    ctx.fillStyle = '#1c1a16';
-    ctx.fillText(th.say, bx, by + 1);
+    const tw = ctx.measureText(cur.say.toUpperCase()).width, pad = bfs * 0.8, n = S;
+    const w = tw + pad * 2, h = bfs * 1.4 + nfs * 1.6 + pad * 0.6;
+    const cx = toX(darryl.x), x0 = Math.round(cx - w / 2), y0 = Math.round(toY(darryl.y - 46) - h);
+    ctx.globalAlpha = Math.min(1, th.t * 5) * Math.min(1, Math.max(0, (1.7 - th.t) * 5));
+    const box = (x, y, ww, hh, col) => { ctx.fillStyle = col; ctx.fillRect(x + n, y, ww - 2 * n, hh); ctx.fillRect(x, y + n, ww, hh - 2 * n); };
+    box(x0, y0, w, h, '#ff9a3c');
+    box(x0 + n, y0 + n, w - 2 * n, h - 2 * n, 'rgba(15,16,20,0.96)');
+    ctx.fillStyle = '#ff9a3c';
+    for (let k = 0; k < 3; k++) ctx.fillRect(Math.round(cx) - (3 - k) * n, y0 + h + k * n, (6 - 2 * k) * n, n);
+    ctx.font = `${nfs}px Silkscreen, monospace`;
+    ctx.fillStyle = '#ff9a3c';
+    ctx.fillText('DARRYL', cx, y0 + pad * 0.5 + nfs * 0.7);
+    ctx.font = `${bfs}px Silkscreen, monospace`;
+    ctx.fillStyle = '#f2f0ea';
+    ctx.fillText(cur.say.toUpperCase(), cx, y0 + pad * 0.5 + nfs * 1.6 + bfs * 0.7);
     ctx.globalAlpha = 1;
     ctx.font = `${fs}px Silkscreen, monospace`;
   }
-  if (th && th.phase !== 'done') {
-    let x = th.x, y = th.y - 8 - (reduceMotion ? 0 : Math.round(Math.sin(t / 300)));
-    if (th.phase === 'lift') { const u = Math.min(1, th.t / 0.45); x += (darryl.x - x) * u; y += (darryl.y - 20 - y) * u - Math.sin(u * Math.PI) * 10; }
-    ctx.drawImage(ICON_CANVAS[th.st.id], toX(x - 6), toY(y - 6), 12 * S, 12 * S);
-  }
+  if (th) th.queue.forEach((q, qi) => {
+    if (q.got) return;
+    let x = q.x, y = q.y - 8 - (reduceMotion ? 0 : Math.round(Math.sin(t / 300)));
+    if (qi === th.i && th.phase === 'lift') { const u = Math.min(1, th.t / 0.45); x += (darryl.x - x) * u; y += (darryl.y - 20 - y) * u - Math.sin(u * Math.PI) * 10; }
+    ctx.drawImage(ICON_CANVAS[q.st.id], toX(x - 6), toY(y - 6), 12 * S, 12 * S);
+  });
 }
 
 // the controls card the first time you race. the race (and darryl) wait

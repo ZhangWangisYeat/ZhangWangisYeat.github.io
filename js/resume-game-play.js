@@ -22,7 +22,11 @@ const TIERS = {
   marble:  { name: 'Marble',  dur: 48,  speed: 4,  sword: 2.25, axe: 2.75, pick: 1.75, harvest: 1 },
   iron:    { name: 'Iron',    dur: 96,  speed: 6,  sword: 3,   axe: 3.5, pick: 2,   harvest: 2 },
   emerald: { name: 'Emerald', dur: 160, speed: 8,  sword: 3.5, axe: 4,   pick: 2.5, harvest: 3 },
-  diamond: { name: 'Diamond', dur: 250, speed: 10, sword: 4,   axe: 4.5, pick: 3,   harvest: 4 }
+  diamond: { name: 'Diamond', dur: 250, speed: 10, sword: 4,   axe: 4.5, pick: 3,   harvest: 4 },
+  // off the ore wolf (js/resume-game-wolf.js), a tier above diamond. it isn't
+  // in TIER_ORDER because you don't craft it from scratch: its gear is diamond
+  // gear with two pieces of prismasteel either side of it on the table.
+  prismasteel: { name: 'Prismasteel', dur: 400, speed: 12, sword: 5, axe: 5.5, pick: 3.5, harvest: 4 }
 };
 const TIER_ORDER = ['wood', 'gold', 'stone', 'marble', 'iron', 'emerald', 'diamond'];
 
@@ -37,7 +41,10 @@ const ARMORS = {
   hide:    { name: 'Hide',    block: 0.6,  dur: 48 },
   iron:    { name: 'Iron',    block: 0.7,  dur: TIERS.iron.dur, slow: 0.85 },
   emerald: { name: 'Emerald', block: 0.8,  dur: TIERS.emerald.dur },
-  diamond: { name: 'Diamond', block: 0.85, dur: TIERS.diamond.dur }
+  diamond: { name: 'Diamond', block: 0.85, dur: TIERS.diamond.dur },
+  // prism: drawn over you as the diamond pieces recoloured into a moving
+  // rainbow (playTintLayer), and it throws off rainbow sparkles like gold shines
+  prismasteel: { name: 'Prismasteel', block: 0.9, dur: TIERS.prismasteel.dur, prism: true }
 };
 
 // dmg is in hearts, cd is seconds between swings, reach is in tiles, dur is how
@@ -93,9 +100,17 @@ const SLOT_OF = Object.fromEntries(ARMOR_SLOTS.map(a => [a.key, a]));
 // the marble sword is polished stone and shows it: a glossy icon, a glint in
 // the hotbar and inventory, and a sparkle running up the blade in your hand
 ITEMS['marble-sword'].shiny = true;
+// prismasteel: the ingot, and its sword, pickaxe and axe. everything made of it
+// is shiny, and its name is a rainbow wherever it's shown (prism)
+ITEMS.prismasteel = { name: 'Prismasteel' };
+['sword', 'pickaxe', 'axe'].forEach(k => {
+  const d = ITEMS[`diamond-${k}`], t = TIERS.prismasteel;
+  ITEMS[`prismasteel-${k}`] = { ...d, name: `Prismasteel ${{ sword: 'Sword', pickaxe: 'Pickaxe', axe: 'Axe' }[k]}`, mat: 'prismasteel', dmg: t[k === 'pickaxe' ? 'pick' : k], dur: t.dur, speed: t.speed, harvest: t.harvest };
+});
 Object.keys(ARMORS).forEach(m => ARMOR_SLOTS.forEach(a => {
   ITEMS[`${m}-${a.piece}`] = { name: `${ARMORS[m].name} ${a.name}`, armor: m, slot: a.key, mat: m, dur: ARMORS[m].dur };
 }));
+Object.keys(ITEMS).forEach(id => { if (id.startsWith('prismasteel')) Object.assign(ITEMS[id], { prism: true, shiny: true }); });
 // arrows, weakest to strongest. this is what one does fired from a full draw,
 // point blank (a part drawn bow does less, see BOW). it grows very slightly the
 // farther the arrow flies, up to 15% more at ARROW_FULL tiles.
@@ -164,8 +179,12 @@ TIER_ORDER.forEach(m => {
 });
 const ARMOR_SHAPES = { helmet: ['MMM', 'M.M'], chestplate: ['M.M', 'MMM', 'MMM'], leggings: ['MMM', 'M.M', 'M.M'], boots: ['M.M', 'M.M'] };
 Object.keys(ARMORS).forEach(m => Object.entries(ARMOR_SHAPES).forEach(([piece, shape]) => {
-  RECIPES.push({ out: `${m}-${piece}`, shape, key: { M: m } });
+  if (m !== 'prismasteel') RECIPES.push({ out: `${m}-${piece}`, shape, key: { M: m } });
 }));
+// the prismasteel upgrade: the diamond piece in the middle, a prismasteel
+// either side of it
+['sword', 'pickaxe', 'axe', ...ARMOR_SLOTS.map(a => a.piece)].forEach(k =>
+  RECIPES.push({ out: `prismasteel-${k}`, shape: ['PXP'], key: { P: 'prismasteel', X: `diamond-${k}` } }));
 RECIPES.push({ out: 'bed', shape: ['WWW', 'PPP'], key: { W: 'wool', P: 'wood' } });
 RECIPES.push({ out: 'stick', n: 4, shape: ['W'], key: { W: 'wood' } });
 // two arrows a craft: the material on the tip, a stick, a feather
@@ -285,7 +304,10 @@ const MAT_PAL = {
   emerald: ['#b8f7cd', '#3fc46c', '#1a6e3a'],
   diamond: ['#e8fffc', '#5fe0d0', '#1d8b82'],
   hide:    ['#c08c5a', '#8a5a33', '#5e3a1e'],
-  wool:    ['#ffffff', '#e6e3dc', '#b9b4aa']
+  wool:    ['#ffffff', '#e6e3dc', '#b9b4aa'],
+  // pearly violet, for anything that can't be a rainbow (darryl wearing it).
+  // its icons start out in these and get recoloured by prismify.
+  prismasteel: ['#f6e8ff', '#c49bff', '#6e55c8']
 };
 const HANDLE = ['#9a6233', '#6b4020'];
 
@@ -426,9 +448,35 @@ function makeCoreSprite() {
   return G.outline(() => '#0d0f14').canvas();
 }
 
+// prismasteel's icons: drawn in its pearly violet, then every pixel of it is
+// recoloured along a diagonal rainbow, keeping how light or dark it was, so
+// the shading survives and the colours run across it like light through a prism
+const hsl = (h, s2, l) => {
+  const f = n => { const k = (n + h / 30) % 12, a = s2 * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))).toString(16).padStart(2, '0'); };
+  return `#${f(0)}${f(8)}${f(4)}`;
+};
+function prismify(G) {
+  const L = { [MAT_PAL.prismasteel[0]]: 0.9, [MAT_PAL.prismasteel[1]]: 0.7, [MAT_PAL.prismasteel[2]]: 0.48 };
+  for (let y = 0; y < G.h; y++) for (let x = 0; x < G.w; x++) {
+    const c = G.get(x, y);
+    if (c in L) G.set(x, y, hsl(((x + y) * 21 + 190) % 360, 0.85, L[c]));
+  }
+}
 function makeIcon(id) {
   const G = pixelGrid(16, 16);
   const it = ITEMS[id];
+  if (id === 'prismasteel') {
+    // an ingot like the iron and gold ones, with a facet cut in its top
+    const P = MAT_PAL.prismasteel;
+    for (let y = 6; y <= 11; y++) for (let x = 2; x <= 13; x++) {
+      if (y === 6 && (x < 4 || x > 11)) continue;
+      G.set(x, y, y <= 7 ? P[0] : x >= 12 || y === 11 ? P[2] : P[1]);
+    }
+    [[5, 8], [6, 9], [9, 8], [10, 9]].forEach(([x, y]) => G.set(x, y, P[0]));
+    prismify(G);
+    G.set(4, 6, '#ffffff'); G.set(5, 6, '#ffffff');
+    return G.outline(() => '#141414').canvas();
+  }
   if (id === 'marble-sword') marbleSwordIcon(G);
   else if (it.tool && it.mat) ({ sword: swordIcon, pickaxe: pickIcon, axe: axeIcon })[it.tool](G, MAT_PAL[it.mat]);
   else if (it.armor) ({ head: helmetIcon, chest: armorIcon, legs: leggingsIcon, feet: bootsIcon })[it.slot](G, MAT_PAL[it.armor]);
@@ -578,6 +626,7 @@ function makeIcon(id) {
     default:
       gemIcon(G, CRYSTAL_PAL[id] || CRYSTAL_PAL.crystal);
   }
+  if (it.prism) prismify(G);
   return G.outline(() => '#141414').canvas();
 }
 // moe's drill in miniature, pointing up to the top right like the other tools:
@@ -1408,7 +1457,7 @@ const rand = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 // a recipe shows up in the book once you've held every kind of material it
 // needs (any amount) or crafted it, and then it stays for good
 function checkRecipeUnlocks() {
-  const have = new Set(inv.slots.filter(Boolean).map(s => s.id));
+  const have = new Set([...inv.slots, ...Object.values(inv.armor)].filter(Boolean).map(s => s.id));
   const fresh = RECIPES.filter(r => !quest.recipes.includes(r.out) && r.mats.every(m => have.has(m)));
   if (!fresh.length) return;
   fresh.forEach(r => quest.recipes.push(r.out));
@@ -2376,9 +2425,11 @@ function playShake() { return shakeAmp; }
 // during the intro the camera goes to moe, not you
 function playCamFocus() {
   if (typeof raceCam === 'function') { const f = raceCam(); if (f) return f; }
+  if (typeof wolfCam === 'function') { const f = wolfCam(); if (f) return f; }
   return cine && cine.t < 2.3 * cine.k ? { x: moe.hx, y: moe.hy - 24 } : null;
 }
-function playTravelBlocked() { return room === denRoom && (denRoom.sealed || !!cine); }
+// (any room that's sealed shut for a fight)
+function playTravelBlocked() { return !!room && (!!room.sealed || (room === denRoom && !!cine) || (typeof wolfHolds === 'function' && wolfHolds())); }
 
 // where his hand (and so the drill's grip) and his lamp are in the world,
 // for whichever frame he's on, sunk however far he is into the floor
@@ -2975,18 +3026,19 @@ function resetMoe() {
 // the health bar across the top of the screen while you fight him. the
 // pale bar behind the red one is the damage you just did, catching up.
 const bossBarEl = $('#boss-bar'), bossFill = $('#boss-fill'), bossLag = $('#boss-lag');
-let bossLagHp = 0;
-function bossBar(on) {
+let bossLagHp = 0, bossFoe = null;
+function bossBar(on, c = moe) {
   bossBarEl.classList.toggle('is-on', on);
-  if (on) { $('#boss-name').textContent = moe.def.name; bossLagHp = moe.hp; }
+  if (on) { bossFoe = c; $('#boss-name').textContent = c.def.name; bossLagHp = c.hp; }
+  else $('#boss-note').textContent = '';
 }
 function tickBossBar(dt) {
   if (!bossBarEl.classList.contains('is-on')) return;
-  const f = clamp(moe.hp / moe.def.hp, 0, 1);
-  bossLagHp = Math.max(moe.hp, bossLagHp - moe.def.hp * dt * 0.35);
+  const c = bossFoe || moe, f = clamp(c.hp / c.def.hp, 0, 1);
+  bossLagHp = Math.max(c.hp, bossLagHp - c.def.hp * dt * 0.35);
   bossFill.style.width = `calc((100% - 6px) * ${f.toFixed(4)})`;
-  bossLag.style.width = `calc((100% - 6px) * ${clamp(bossLagHp / moe.def.hp, 0, 1).toFixed(4)})`;
-  bossBarEl.classList.toggle('is-mad', moeMad(moe));
+  bossLag.style.width = `calc((100% - 6px) * ${clamp(bossLagHp / c.def.hp, 0, 1).toFixed(4)})`;
+  bossBarEl.classList.toggle('is-mad', c.def.mad ? c.def.mad(c) : moeMad(c));
 }
 
 function drawMoe(c, toX, toY, t) {
@@ -3251,7 +3303,7 @@ function attack() {
 function hurtCreature(c, dmg, a, how = 'melee') {
   let col = '#ffd1d1';
   if (c.def.boss) {
-    const hit = bossHit(c, dmg, how);
+    const hit = (c.def.hit || bossHit)(c, dmg, how);
     if (!hit.dmg) return;
     dmg = Math.round(hit.dmg * 100) / 100;
     col = hit.col || col;
@@ -3272,7 +3324,7 @@ function hurtCreature(c, dmg, a, how = 'melee') {
   // livestock just bolts; hunters turn on you
   if (c.def.passive) { c.state = 'flee'; c.t = 0; c.path = null; c.pathT = 0; }
   else if (!c.def.boss && !['windup', 'lunge', 'recover'].includes(c.state)) aggro(c);
-  if (c.hp <= 0) { if (c.def.boss) bossDown(c); else killCreature(c); }
+  if (c.hp <= 0) { if (c.def.boss) (c.def.down || bossDown)(c); else killCreature(c); }
 }
 
 function aggro(c) {
@@ -3462,7 +3514,7 @@ function moveBody(o, mx, my) {
 
 function updateCreature(c, dt) {
   if (c.dead || c.dormant) return;
-  if (c.def.boss) { updateMoe(c, dt); return; }
+  if (c.def.boss) { (c.def.update || updateMoe)(c, dt); return; }
   const def = c.def;
   if (def.burns) burnInDaylight(c, dt);
   if (c.dead) return;
@@ -3682,6 +3734,8 @@ function updateProjectiles(dt) {
       }
       continue;
     }
+    // the ore wolf's lattices are only broken by something flying into them
+    if (typeof wolfCatch === 'function' && wolfCatch(p)) { projectiles.splice(i, 1); continue; }
     const c = creatures.find(k => hittable(k) && pointIn(p, creatureBox(k), 3));
     if (!c) continue;
     if (p.kind === 'snow') snowHit(c, p.a);
@@ -4493,7 +4547,8 @@ function slotSet(ref, stack) {
 function slotRefuses(ref, id) {
   const [box, i] = ref.split(':'), it = ITEMS[id];
   if (box === 'craft' && it.food) return 'Meat doesn\'t go on the crafting table';
-  if (box === 'craft' && (it.tool || it.armor)) return 'Finished gear can\'t go back on the table';
+  // (diamond gear can, to be made into prismasteel)
+  if (box === 'craft' && (it.tool || it.armor) && it.mat !== 'diamond') return 'Finished gear can\'t go back on the table';
   if (box === 'craft' && it.part) return 'That doesn\'t go on the table';
   if (box === 'input' && !it.cooksTo) return it.fuel ? 'That\'s fuel. It goes in the bottom slot.' : 'The furnace only cooks raw food and smelts raw ore';
   if (box === 'fuel' && !it.fuel) return 'Only wood and sticks burn';
@@ -4630,7 +4685,7 @@ function durBar(stack) {
 function slotHTML(ref, stack, extra = '', ghost = '') {
   const it = stack && ITEMS[stack.id];
   const label = it ? `${it.name}${stack.n > 1 ? ` ×${stack.n}` : ''}` : '';
-  return `<button type="button" class="slot ${extra}" data-ref="${ref}"${label ? ` data-tip="${label}"` : ''} aria-label="${label || 'Empty'}">
+  return `<button type="button" class="slot ${extra}" data-ref="${ref}"${label ? ` data-tip="${label}"` : ''}${it && it.prism ? ' data-rainbow' : ''} aria-label="${label || 'Empty'}">
     ${it ? `<i${it.shiny ? ' class="shine"' : ''} style="background-image:url(${ICON[stack.id]})"></i>${stack.n > 1 ? `<b>${stack.n}</b>` : ''}${durBar(stack)}` : ghost ? `<i class="ghost" style="background-image:url(${ghost})"></i>` : ''}
   </button>`;
 }
@@ -4690,7 +4745,7 @@ function bookHTML() {
     const it = ITEMS[r.out];
     return `<li><button type="button" class="rb-item${ready ? ' is-ready' : ''}" data-fill="${RECIPES.indexOf(r)}">
       <span class="rb-out"><i style="background-image:url(${ICON[r.out]})"></i></span>
-      <span class="rb-name">${it.name}${r.n > 1 ? ` ×${r.n}` : ''}</span>
+      <span class="rb-name">${it.prism ? `<span class="rainbow">${it.name}</span>` : it.name}${r.n > 1 ? ` ×${r.n}` : ''}</span>
       <span class="rb-shape" style="grid-template-columns:repeat(${w},10px)">${cells.join('')}</span>
     </button></li>`;
   }).join('')}</ul>`;
@@ -4816,14 +4871,15 @@ function renderHUD() {
   vitalsKey = '';
   renderVitals();
   $('#hotbar').innerHTML = inv.slots.slice(0, 6).map((s, i) => `
-    <button type="button" class="hb-slot${i === inv.sel ? ' is-sel' : ''}" data-hotbar="${i}"${s ? ` data-tip="${ITEMS[s.id].name}${s.n > 1 ? ` ×${s.n}` : ''}"` : ''} aria-label="${s ? ITEMS[s.id].name : 'Empty'}">
+    <button type="button" class="hb-slot${i === inv.sel ? ' is-sel' : ''}" data-hotbar="${i}"${s ? ` data-tip="${ITEMS[s.id].name}${s.n > 1 ? ` ×${s.n}` : ''}"` : ''}${s && ITEMS[s.id].prism ? ' data-rainbow' : ''} aria-label="${s ? ITEMS[s.id].name : 'Empty'}">
       <span class="hb-key">${i + 1}</span>
       ${s ? `<i${ITEMS[s.id].shiny ? ' class="shine"' : ''} style="background-image:url(${ICON[s.id]})"></i>${s.n > 1 ? `<b>${s.n}</b>` : ''}${durBar(s)}` : ''}
     </button>`).join('');
   const s = heldItem();
-  $('#held-name').textContent = s
-    ? `${ITEMS[s.id].name}${ITEMS[s.id].food ? ' | right-click to eat' : ''}${ITEMS[s.id].throw ? ' | click to throw' : ''}${ITEMS[s.id].ranged ? ` | hold right-click to draw | ${countArrows()} arrows` : ''}${ITEMS[s.id].tool === 'drill' ? ' | hold right-click to drill' : ''}${ITEMS[s.id].dur ? ` | ${s.dur}/${ITEMS[s.id].dur}` : ''}`
-    : 'Bare hands';
+  $('#held-name').innerHTML = s && ITEMS[s.id].prism ? `<span class="rainbow">${esc(ITEMS[s.id].name)}</span>` : '';
+  $('#held-name').append(s
+    ? `${ITEMS[s.id].prism ? '' : ITEMS[s.id].name}${ITEMS[s.id].food ? ' | right-click to eat' : ''}${ITEMS[s.id].throw ? ' | click to throw' : ''}${ITEMS[s.id].ranged ? ` | hold right-click to draw | ${countArrows()} arrows` : ''}${ITEMS[s.id].tool === 'drill' ? ' | hold right-click to drill' : ''}${ITEMS[s.id].dur ? ` | ${s.dur}/${ITEMS[s.id].dur}` : ''}`
+    : 'Bare hands');
 }
 
 const countArrows = () => inv.slots.reduce((n, st) => n + (st && ITEMS[st.id].arrow ? st.n : 0), 0);
@@ -5175,6 +5231,7 @@ function enterRoom(r, quiet, at) {
   if (r === denRoom || r.burrow !== undefined) player.y = r.h - HOLE_IN;
   if (r === denRoom && !moe.dead) startMoeIntro();
   if (typeof raceEnter === 'function') raceEnter(r);
+  if (typeof wolfEnter === 'function') wolfEnter(r);
   if (at) {
     player.x = at.x; player.y = at.y; player.face = 'down';
     // you came down a ladder walking up into it: let go of up, or you'd walk
@@ -5205,6 +5262,7 @@ function playLeaveRoom(quiet) {
   const r = room;
   if (r === denRoom) resetMoe();
   if (typeof raceLeave === 'function') raceLeave(r);
+  if (typeof wolfLeave === 'function') wolfLeave(r);
   // anything down there goes back to where it started (moles back under their
   // mounds), so walking back in doesn't drop you straight into their teeth
   creatures.forEach(c => {
@@ -5352,7 +5410,8 @@ function coreMotes(dt) {
 
 // raceBusy: talking to darryl, riding a minecart, or his little show after a
 // race (all in js/resume-game-race.js). the engine leaves you alone then.
-const raceBusy = () => typeof raceHolds === 'function' && raceHolds();
+// (and the ore wolf's talking and title card, js/resume-game-wolf.js)
+const raceBusy = () => (typeof raceHolds === 'function' && raceHolds()) || (typeof wolfHolds === 'function' && wolfHolds());
 function playFrozen() { return ui !== null || player.dead || !!sleeping || !!cine || raceBusy(); }
 // which layer of img/player-armor.png to paint over you, or -1 for none
 const ARMOR_LAYERS = ['hide', 'wool', 'gold', 'marble', 'iron', 'emerald', 'diamond'];
@@ -5367,13 +5426,41 @@ function playArmorLayers() {
   ['feet', 'legs', 'chest', 'head'].forEach(k => {
     const st = inv.armor[k];
     if (!st) return;
-    const m = ARMOR_LAYERS.indexOf(ITEMS[st.id].armor);
-    out.push(k === 'chest' ? ['torso', m] : ['pieces', PIECE_BLOCK[k] * 7 + m]);
+    const prism = !!ARMORS[ITEMS[st.id].armor].prism, m = ARMOR_LAYERS.indexOf(prism ? 'diamond' : ITEMS[st.id].armor);
+    out.push(k === 'chest' ? ['torso', m, prism] : ['pieces', PIECE_BLOCK[k] * 7 + m, prism]);
   });
   return out;
 }
 // how much of you is in gold, for the shine
 const goldShare = () => armorSum(A => (A.shine ? 1 : 0));
+const prismShare = () => armorSum(A => (A.prism ? 1 : 0));
+// prismasteel armor is the diamond layer recoloured: the layer's own light and
+// dark kept, the colour taken from a rainbow that slides across you, then cut
+// back to the layer's shape, with a glint running over it now and then. one
+// canvas, reused, because each layer is drawn straight after it's tinted.
+const TINT = mk(CELL, CELL), TINT_G = TINT.getContext('2d');
+function playTintLayer(im, sx, sy, h, t) {
+  const g = TINT_G;
+  g.globalCompositeOperation = 'source-over';
+  g.clearRect(0, 0, CELL, CELL);
+  g.drawImage(im, sx, sy, CELL, h, 0, 0, CELL, h);
+  g.globalCompositeOperation = 'color';
+  const shift = reduceMotion ? 0 : t / 12, gr = g.createLinearGradient(0, 0, CELL, CELL);
+  for (let k = 0; k <= 6; k++) gr.addColorStop(k / 6, `hsl(${(shift + k * 60) % 360},90%,60%)`);
+  g.fillStyle = gr;
+  g.fillRect(0, 0, CELL, CELL);
+  g.globalCompositeOperation = 'destination-in';
+  g.drawImage(im, sx, sy, CELL, h, 0, 0, CELL, h);
+  const ph = (t % 2400) / 2400;
+  if (!reduceMotion && ph < 0.35) {
+    g.globalCompositeOperation = 'source-atop';
+    g.fillStyle = 'rgba(255,255,255,0.55)';
+    const x = -12 + (ph / 0.35) * 72;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 5, 0); g.lineTo(x - 19, CELL); g.lineTo(x - 24, CELL); g.fill();
+  }
+  g.globalCompositeOperation = 'source-over';
+  return TINT;
+}
 function playSpeedMult() {
   // iron slows you down by its share: a full set is the old 85%. drawing the
   // bow slows you a little too, like holding it steady.
@@ -5415,6 +5502,11 @@ function playUpdate(dt, t) {
     if (gold > 0 && !reduceMotion && Math.random() < dt * 6 * gold) {
       particles.push({ x: player.x + (Math.random() - 0.5) * 14, y: player.y - 8 - Math.random() * 18, vx: 0, vy: -6, g: 0, life: 0.5, t: 0, col: '#fff3a0', size: 1 });
     }
+    // and prismasteel throws off sparkles in every colour
+    const prism = prismShare();
+    if (prism > 0 && !reduceMotion && Math.random() < dt * 7 * prism) {
+      particles.push({ x: player.x + (Math.random() - 0.5) * 14, y: player.y - 8 - Math.random() * 20, vx: 0, vy: -8, g: 0, life: 0.6, t: 0, col: hsl(Math.random() * 360, 0.9, 0.75), size: 1 });
+    }
   }
 
   // only what's where you are moves: the overworld waits while you're indoors,
@@ -5437,6 +5529,7 @@ function playUpdate(dt, t) {
   shakeAmp = Math.max(0, shakeAmp - dt * 10);
   tickGround(dt);
   if (typeof raceTick === 'function') raceTick(dt);
+  if (typeof wolfTick === 'function') wolfTick(dt);
   tickCine(dt);
   tickBossBar(dt);
   tickMusic(dt);
@@ -5688,6 +5781,7 @@ function playRenderOverlay(toX, toY, t) {
   }
 
   if (typeof raceOverlay === 'function') raceOverlay(toX, toY, t);
+  if (typeof wolfOverlay === 'function') wolfOverlay(toX, toY, t);
 
   // floating numbers and pickups
   floats.forEach(f => {
@@ -5770,7 +5864,7 @@ canvas.addEventListener('pointerdown', e => {
   if (tgt && CLICK_ONLY.has(tgt.type)) {
     const name = tgt.type === 'station' ? { craft: 'Crafting Table', furnace: 'Furnace', chest: 'Chest' }[tgt.st.kind] : tgt.type === 'building' ? tgt.b.name : '???';
     if (!inReach(tgt)) toast('Too far...', name, 'Walk up to it first');
-    else if (tgt.type === 'station' && tgt.st.locked) { toast('Locked', 'Moe\'s Loot', 'Defeat Moe the Mole first.'); sfx.deny(); }
+    else if (tgt.type === 'station' && tgt.st.locked) { toast(...(tgt.st.lockMsg || ['Locked', 'Moe\'s Loot', 'Defeat Moe the Mole first.'])); sfx.deny(); }
     else if (tgt.type === 'station') openUI(tgt.st.kind, tgt.st);
     else if (tgt.type === 'building') useBuilding(tgt.b);
     else takePart();
@@ -5912,7 +6006,10 @@ function showTip(x, y) {
   // a pile on the ground: its name, and how many if there's more than one
   const pile = under === canvas && started && !ui && groundAt({ x: cam.x + (x * dpr) / S, y: cam.y + (y * dpr) / S });
   if (!el && !pile) { tipEl.hidden = true; return; }
-  tipEl.textContent = el ? el.dataset.tip : `${ITEMS[pile.st.id].name}${pile.st.n > 1 ? ` ×${pile.st.n}` : ''}`;
+  const tip = el ? el.dataset.tip : `${ITEMS[pile.st.id].name}${pile.st.n > 1 ? ` ×${pile.st.n}` : ''}`;
+  // prismasteel's name is a rainbow
+  if (el ? el.hasAttribute('data-rainbow') : ITEMS[pile.st.id].prism) tipEl.innerHTML = `<span class="rainbow">${esc(tip)}</span>`;
+  else tipEl.textContent = tip;
   tipEl.hidden = false;
   const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
   tipEl.style.left = `${Math.min(x + 14, window.innerWidth - w - 6)}px`;

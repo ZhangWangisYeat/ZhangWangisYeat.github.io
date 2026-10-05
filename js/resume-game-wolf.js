@@ -510,6 +510,8 @@ function tickCard(dt) {
   if (beat(0.2)) { wolf.state = 'stand'; sfx.howl(false); addShake(2); }
   if (beat(0.5)) {
     wolfRoom.sealed = true;
+    // and if you're somehow still in the doorway, it shoves you out of its way
+    if (player.y > wolfRoom.h - 34 && Math.abs(player.x - SEAL_X) < 22) player.y = wolfRoom.h - 34;
     wolfSeal.gone = false;
     burst(wolfSeal.x, wolfSeal.y - 12, '200,190,255', 24);
     sfx.shatter();
@@ -964,7 +966,9 @@ function resetWolf() {
 // hooks the play layer calls
 function wolfEnter(r) {
   if (r !== wolfRoom) return;
-  player.y = r.h - 20;
+  // a couple of steps in, clear of where the crystal wall grows over the door
+  // (coming in at 20 from the bottom left you standing inside it, trapped)
+  player.y = r.h - 40;
   if (WQ.dead) setTimeout(() => toast('Inside', 'The Crystal Den', 'Her light has gone out...'), 50);
   else startWolfMeet();
 }

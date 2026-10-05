@@ -455,20 +455,35 @@ function skeletonFrame(pose, frame, o = {}) {
 // walls of the corridor seen from above. one more for each race you lose, up
 // to ten.
 function makeRemains(v) {
-  const G = pixelGrid(30, 18), r = mulberry32(7370 + v);
-  const bone = (x0, y0, x1, y1) => { pxLine(G, x0, y0, x1, y1, BONE.mid); G.set(x0, y0, BONE.hi); G.set(x1, y1, BONE.hi); };
-  const flip = v % 2 ? -1 : 1, cx = 15;
-  pxBlob(G, cx + flip * 9, 8, 3.6, 3.2, (dx, dy) => (dx + dy < -0.3 ? BONE.hi : BONE.mid));
-  G.set(cx + flip * 10, 8, BONE.gap); G.set(cx + flip * 8, 8, BONE.gap); G.set(cx + flip * 9, 10, BONE.gap);
-  for (let k = 0; k < 4; k++) pxLine(G, cx - 3 - flip, 5 + k * 2, cx + 3 - flip, 5 + k * 2, k % 2 ? BONE.lo : BONE.hi);
-  pxLine(G, cx - 5 * flip, 9, cx + 4 * flip, 9, BONE.mid);
-  bone(cx - flip * 6, 10, cx - flip * 12, 13 + v % 3);
-  bone(cx - flip * 6, 7, cx - flip * 13, 5 + (v % 2));
-  bone(cx + flip * 2, 12, cx + flip * 5 + ((r() * 3) | 0), 16);
-  bone(cx - flip, 3, cx - flip * 4, 1);
+  // slumped against a wall on its left, legs stuck out across the floor, skull
+  // lolling forward or to one side (four ways, v), an arm in its lap or down
+  // by its side
+  const G = pixelGrid(26, 24);
+  const line = (x0, y0, x1, y1, c) => pxLine(G, x0, y0, x1, y1, c);
+  const tilt = [0, 1, -1, 2][v];
+  // legs: thigh out from the hip, shin on along the floor, little feet up
+  const bent = v % 2;
+  line(8, 18, 14, 18 - bent * 3, BONE.mid);
+  line(14, 18 - bent * 3, 20, 20, BONE.mid);
+  line(9, 20, 21, 21, BONE.lo);
+  G.set(21, 19, BONE.hi); G.set(22, 20, BONE.hi);
+  // pelvis and the spine leaning back against the wall
+  for (let x = 6; x <= 10; x++) { G.set(x, 17, BONE.hi); G.set(x, 18, BONE.lo); }
+  for (let y = 8; y <= 16; y++) G.set(4 + Math.round((y - 8) / 4), y, BONE.mid);
+  [9, 11, 13].forEach((ry, i) => { for (let x = 5 + Math.round((ry - 8) / 4); x <= 10 - (i === 2 ? 1 : 0); x++) G.set(x, ry, x === 10 ? BONE.lo : BONE.hi); });
+  // the skull, slumped
+  const sx = 7 + tilt, sy = 5 + Math.abs(tilt);
+  pxBlob(G, sx, sy, 3.6, 3.2, (dx, dy) => (dx + dy < -0.4 ? BONE.hi : dx + dy < 0.5 ? BONE.mid : BONE.lo));
+  G.set(sx + 1, sy, BONE.gap); G.set(sx + 2, sy, BONE.gap); G.set(sx + 3, sy + 2, BONE.gap);
+  for (let x = sx; x <= sx + 3; x++) G.set(x, sy + 3, x % 2 ? '#ffffff' : BONE.lo);
+  // arms
+  if (v < 2) { line(6, 10, 9, 15, BONE.mid); line(9, 15, 13, 16, BONE.mid); }
+  else { line(6, 10, 4, 16, BONE.lo); line(4, 16, 5, 20, BONE.lo); }
+  line(8, 10, 11, 14, BONE.hi);
   return G.outline(() => '#1c1a16').canvas();
 }
-const REMAINS_ART = [0, 1, 2, 3].map(makeRemains);
+const flipCanvas = c => { const o = mk(c.width, c.height), g = o.getContext('2d'); g.translate(c.width, 0); g.scale(-1, 1); g.drawImage(c, 0, 0); return o; };
+const REMAINS_ART = [0, 1, 2, 3].map(makeRemains), REMAINS_FLIP = REMAINS_ART.map(flipCanvas);
 
 // the big door at the end of the track: two dark wooden leaves bound in iron,
 // a skull over the top and a bone-shaped keyhole between them. open is 0 to 1
@@ -861,29 +876,37 @@ obstacles.forEach(o => {
     raceRoom.glows.push({ x, y: y - 12, rgb: GLOW.torch, rad: 3.4, flicker: true, strength: 0.24 });
   });
 }
-// a skeleton for every race you've lost, left where you fell (which is always
-// at the finish), up to ten, nudged apart so they don't land on top of each
-// other. they're flat, part of the floor.
+// a skeleton for every race you've lost (up to ten), but not lying across the
+// floor where you fell (alex: that was awkward): they're part of the scenery
+// of the stretch between the finish line and the door, slumped against its
+// walls, one more each time, alternating sides and spread along it. they're
+// flat, so you walk and drive over them like the floor.
+const REMAINS_SPOTS = (() => {
+  const out = [], ty0 = Math.floor(DOOR_Y / TILE) + 3, ty1 = FLAG_ROWS[1].ty - 2;
+  for (let k = 0; k < 10; k++) {
+    const ty = Math.round(ty1 - ((ty1 - ty0) * (Math.floor(k / 2) + (k % 2) * 0.5)) / 5), side = k % 2 ? 1 : -1;
+    // from the middle of the track out to the last floor tile before the wall
+    let tx = Math.floor(DOOR_X / TILE);
+    while (rtAt(tx + side, ty) === T.FLOOR) tx += side;
+    out.push({ x: tx * TILE + 8 + side * 1, y: ty * TILE + 14, side });
+  }
+  return out;
+})();
 const remains = [];
 function showRemains() {
   remains.forEach(o => { const i = raceRoom.things.indexOf(o); if (i >= 0) raceRoom.things.splice(i, 1); });
   remains.length = 0;
-  DQ.bones.forEach(([x, y], k) => {
-    const o = { flat: true, x, y: y + 6, frames: [REMAINS_ART[k % 4]] };
+  REMAINS_SPOTS.slice(0, Math.min(10, DQ.bones.length)).forEach((sp, k) => {
+    // (the art leans on a wall to its left, so the ones against the right
+    // hand wall are mirrored)
+    const o = { flat: true, x: sp.x + (sp.side < 0 ? 4 : -4), y: sp.y, frames: [(sp.side < 0 ? REMAINS_ART : REMAINS_FLIP)[k % 4]] };
     remains.push(o);
     raceRoom.things.push(o);
   });
 }
+// (bones only counts how many there are now; the spots are fixed)
 function addBones(x, y) {
-  if (DQ.bones.length >= 10) return;
-  let px = x, py = y;
-  for (let k = 0; k < 30 && DQ.bones.some(([bx, by]) => Math.hypot(bx - px, by - py) < 26); k++) {
-    const a = k * 2.4, r = 14 + k * 2.5;
-    px = x + Math.cos(a) * r;
-    py = y + Math.sin(a) * r * 0.7;
-    if (!onFloor(px, py, 6)) { px = x; py = y; }
-  }
-  DQ.bones.push([Math.round(px), Math.round(py)]);
+  if (DQ.bones.length < 10) DQ.bones.push([Math.round(x), Math.round(y)]);
 }
 showRemains();
 // the banner over the finish: a post either side of the track and a red

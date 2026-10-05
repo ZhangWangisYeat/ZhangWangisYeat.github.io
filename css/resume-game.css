@@ -663,6 +663,8 @@ body.keys-closed .keys,
 body.map-closed .minimap { display: none; }
 body.keys-closed .chip[data-panel="keys"],
 body.map-closed .chip[data-panel="map"] { display: inline-flex; }
+.chip-hop { color: var(--accent); }
+body.can-hop .chip-hop { display: inline-flex; }
 
 .j-intro {
   position: relative;
@@ -892,6 +894,31 @@ body.is-talking .toast { opacity: 0; }
 .rh-list { margin: 14px 0 16px; padding-left: 18px; text-align: left; font-size: 0.84rem; line-height: 1.45; color: var(--ink-2); }
 .rh-list li + li { margin-top: 5px; }
 .rh-list b { color: var(--accent); }
+.rh-skip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: -4px 0 14px;
+  font-family: var(--px);
+  font-size: 0.52rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+.rh-skip input {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  background: var(--well);
+  box-shadow: inset 0 0 0 2px var(--edge-hi);
+  cursor: pointer;
+}
+.rh-skip input:checked { background: var(--accent); box-shadow: inset 0 0 0 2px #000, 0 0 0 1px var(--accent); }
+.rh-skip input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rh-skip:hover { color: var(--ink-2); }
 body.is-help .toast { opacity: 0; }
 
 .warp {

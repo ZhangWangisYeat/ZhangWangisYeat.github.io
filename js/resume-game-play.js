@@ -4088,7 +4088,8 @@ function targetAt(m) {
     if (room === caveRoom && quest.cave.rock && !quest.cave.part && thingAt(m, o => o === hollowThing)) {
       return { type: 'part', thing: hollowThing, key: 'part', cx: hollowThing.x, cy: hollowThing.y - 10 };
     }
-    return typeof raceTarget === 'function' ? raceTarget(m) : null;
+    // (the race track's walls, and the ore wolf's)
+    return (typeof raceTarget === 'function' && raceTarget(m)) || (typeof wolfTarget === 'function' ? wolfTarget(m) : null);
   }
   const b = BUILDINGS.find(bd => thingAt(m, o => o === bd.thing));
   if (b) return { type: 'building', b, thing: b.thing, key: `b:${b.room.id}`, cx: b.thing.x, cy: b.thing.y - 10 };
@@ -4119,8 +4120,10 @@ function mineInfo(tgt) {
   }
   const where = room ? null : regionAt(tgt.cx / TILE, tgt.cy / TILE);
   if (where && !biomeOpen(where)) return { time: Infinity, locked: where };
-  // the walls along darryl's track won't budge until you've beaten him
-  if (tgt.type === 'racetile' && !raceWon()) return { time: Infinity, hint: ['Not now', tgt.ore ? ITEMS[tgt.ore].name : 'Stone', 'Beat Darryl first.'] };
+  // the walls along darryl's track won't budge until you've beaten him (and
+  // the ore wolf's until you've beaten her: a wall like that brings its own
+  // lock and its own hint)
+  if (tgt.type === 'racetile' && (tgt.locked ? tgt.locked() : !raceWon())) return { time: Infinity, hint: ['Not now', tgt.ore ? ITEMS[tgt.ore].name : 'Stone', tgt.lockHint || 'Beat Darryl first.'] };
   if (tgt.type === 'tree') {
     if (!tgt.great && !quest.greatTree) return { time: Infinity };
     const base = MINE_TIME.wood * (tgt.great ? 1.4 : 1);
@@ -4214,7 +4217,7 @@ function breakTarget(tgt, info) {
       burst(o.x, o.y - 16, o.tree === 'pine' ? '47,109,81' : dead ? '154,77,49' : '98,178,64', 16);
     }
   } else if (tgt.type === 'racetile') {
-    raceMineTile(tgt, info);
+    (tgt.mine || raceMineTile)(tgt, info);
   } else {
     const i = idx(tgt.tx, tgt.ty);
     tiles[i] = baseOf(i);
@@ -5823,6 +5826,7 @@ function toHotbar(ref, i) {
 }
 function playKey(e, onControl) {
   if (typeof raceKey === 'function' && raceKey(e)) return true;
+  if (typeof wolfKey === 'function' && wolfKey(e)) return true;
   const k = e.key.toLowerCase();
   if (k === 'e') { e.preventDefault(); if (ui) closeUI(); else openUI('inv'); return true; }
   if (k === 'escape' && ui) { closeUI(); return true; }

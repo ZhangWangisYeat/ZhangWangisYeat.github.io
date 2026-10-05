@@ -77,6 +77,7 @@
     <div class="hud-chips">
       <button type="button" class="chip px" data-panel="map"><kbd>M</kbd> Map</button>
       <button type="button" class="chip px" data-panel="keys"><kbd>K</kbd> Controls</button>
+      <span class="chip px chip-hop"><kbd>Shift</kbd> Hop out</span>
     </div>
   </div>
 
@@ -141,7 +142,20 @@
       <li>Jagged rocks crack your cart, slowing you permanently.</li>
       <li>Mud and water slow you down. Mud is worse.</li>
     </ul>
+    <label class="rh-skip"><input type="checkbox" id="race-help-skip" /><span>Don't show this again</span></label>
     <button type="button" class="px-btn px px-btn-primary" id="race-help-go">Let's race!</button>
+  </div>
+  <div class="race-help px" id="wolf-help" role="dialog" aria-labelledby="wolf-help-title" hidden>
+    <p class="rh-eyebrow">Tip</p>
+    <p class="rh-title" id="wolf-help-title">Breaking her lattices</p>
+    <ul class="rh-list">
+      <li>Only something you <b>shoot or throw</b> breaks a lattice.</li>
+      <li><b>Iron, emerald and diamond arrows</b> break any lattice in one shot.</li>
+      <li>Weaker arrows break most in one, but the <b>emerald and diamond</b> lattices take two.</li>
+      <li><b>Snowballs</b> take seven hits each, and can't break the emerald or diamond lattices at all.</li>
+    </ul>
+    <label class="rh-skip"><input type="checkbox" id="wolf-help-skip" /><span>Don't show this again</span></label>
+    <button type="button" class="px-btn px px-btn-primary" id="wolf-help-go">Got it</button>
   </div>
 
   <div class="warp" id="warp" aria-hidden="true"></div>

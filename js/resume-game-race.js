@@ -12,7 +12,7 @@
 // slot, and he wears it.
 quest.darryl = Object.assign({
   met: false, losses: 0, won: false, keyGiven: false, doorOpen: false, statue: false,
-  armless: false, fled: false, tutorial: false, seen: false, hatch: false, stash: {}, mined: [], chest: null, bones: []
+  armless: false, fled: false, tutorial: false, hideHelp: false, seen: false, hatch: false, stash: {}, mined: [], chest: null, bones: []
 }, quest.darryl && typeof quest.darryl === 'object' ? quest.darryl : {});
 const DQ = quest.darryl;
 const STASH_SLOTS = ['head', 'chest', 'legs', 'feet', 'hand'];
@@ -986,7 +986,7 @@ const vprofFor = (grip, vmax, brake) => {
 const DARRYL_V = vprofFor(DARRYL.grip, DARRYL.vmax, DARRYL.brake);
 
 const race = { phase: 'pre', t: 0, riding: false, result: null, pFin: null, dFin: null, judge: null, thief: null, goT: 0 };
-let helpOpen = false;
+let helpOpen = false, hopChip = false;
 
 function parkCart(c, s, d) {
   const p = trackPt(s, d);
@@ -1560,6 +1560,10 @@ function walkDarryl(x, y, speed, then) { Object.assign(darryl, { state: 'walk', 
 // the race itself, every frame
 function raceTick(dt) {
   syncShaft();
+  // the "shift | hop out" chip in the hud (with the map and controls chips,
+  // alex: it used to be a label stuck under the cart) while you can hop out
+  const canHop = room === raceRoom && race.riding && (race.phase === 'free' || carts.you.fin);
+  if (canHop !== hopChip) { hopChip = canHop; document.body.classList.toggle('can-hop', canHop); }
   hatchThing.gone = !DQ.won;
   hatchGlow.off = !DQ.won || !DQ.hatch;
   if (helpOpen) { tickHelpDemo(dt); return; }
@@ -1586,7 +1590,9 @@ function raceTick(dt) {
         race.t = 0;
         bossMusic(true, RACE_TUNE);
         walkDarryl(Dc.x + 12, Dc.y + 2, 120, () => { darryl.state = 'hop'; darryl.t = 0; });
-        if (!DQ.tutorial) { DQ.tutorial = true; openHelp(); markDirty(); }
+        // the controls card comes up every race, unless you've ticked "don't
+        // show this again" on it (alex)
+        if (!DQ.hideHelp) openHelp();
       });
     } else if (race.phase === 'free' && DQ.won && !DQ.fled) {
       if (countItem('exotic-core')) startTalk(coreTalk(), () => toast('Darryl ran off', 'Crumpled Map', 'He dropped something...'));
@@ -2057,17 +2063,6 @@ function raceOverlay(toX, toY, t) {
       ctx.fillText('GO!', toX(Dc.x), toY(Dc.y - 40));
     }
   }
-  // after the race, a reminder that shift gets you out
-  if (race.riding && (race.phase === 'free' || Y.fin) && !Y.spin && !Y.hole) {
-    const sfs = Math.max(8, 8 * Math.round((S * 3) / 8));
-    ctx.font = `${sfs}px Silkscreen, monospace`;
-    ctx.fillStyle = 'rgba(12,12,16,0.75)';
-    const label = 'SHIFT: HOP OUT', tw = ctx.measureText(label).width;
-    ctx.fillRect(toX(Y.x) - tw / 2 - sfs * 0.5, toY(Y.y + 16) - sfs * 0.8, tw + sfs, sfs * 1.6);
-    ctx.fillStyle = '#cfcfcf';
-    ctx.fillText(label, toX(Y.x), toY(Y.y + 16) + 1);
-    ctx.font = `${fs}px Silkscreen, monospace`;
-  }
   // mash w: a big prompt and how close you are to getting out of trouble
   const m = Y.spin || Y.hole;
   if (race.riding && m) {
@@ -2191,6 +2186,7 @@ const demo = { t: 0 };
 function openHelp() {
   helpOpen = true;
   helpEl.hidden = false;
+  $('#race-help-skip').checked = false;
   document.body.classList.add('is-help');
   demo.t = 0;
   setTimeout(() => $('#race-help-go').focus(), 50);
@@ -2198,6 +2194,7 @@ function openHelp() {
 function closeHelp() {
   helpOpen = false;
   helpEl.hidden = true;
+  if ($('#race-help-skip').checked) { DQ.hideHelp = true; markDirty(); }
   document.body.classList.remove('is-help');
   sfx.ui();
 }

@@ -688,7 +688,9 @@ const vaultRoom = {
   // hatch has been placed further down)
   outside: { x: shaftThing.x, y: shaftThing.y }, exit: { x: shaftThing.x, y: shaftThing.y + 34 },
   door: VAULT_DOOR,
-  blocked: (x, y) => vaultWalls(x, y) || (Math.abs(x - 120) < 26 && y > 74 && y < 104) || ((x > 62 && x < 82) || (x > 158 && x < 178)) && y > 52 && y < 96,
+  // the walls, the statue, and the chest in front of it. the lava channels
+  // aren't walls: you can walk into them, it just hurts (see vaultTick)
+  blocked: (x, y) => vaultWalls(x, y) || (Math.abs(x - 120) < 26 && y > 74 && y < 104) || (Math.abs(x - 120) < 19 && y > 116 && y < 134),
   // the way down goes back out onto the track, in front of the door
   bottomTo: () => {
     room = raceRoom;
@@ -710,7 +712,7 @@ const vaultRoom = {
 };
 EXTRA_ROOMS.push(raceRoom, vaultRoom);
 BUILDINGS.push({
-  thing: shaftThing, tile: shaftPoi.at, room: raceRoom, name: 'Mine Shaft', open: shaftOpen,
+  thing: shaftThing, tile: shaftPoi.at, room: raceRoom, get name() { return DQ.won ? 'Darryl\'s Raceway' : 'Mine Shaft'; }, open: shaftOpen,
   shut: ['Sealed', '? ? ?', 'Beat the bosses before it first.'], hint: () => shaftOpen() && !DQ.seen
 });
 
@@ -766,9 +768,11 @@ const HATCH_AT = (() => {
   }
   return best;
 })();
-const hatchThing = { flat: true, hatch: true, x: HATCH_AT[0] * TILE + 8, y: HATCH_AT[1] * TILE + 14, frames: [HATCH_ART[DQ.hatch ? 1 : 0]] };
+// (and none of it is there at all until you've beaten darryl, alex: no way
+// out of the tunnel's far end before you've earned it)
+const hatchThing = { flat: true, hatch: true, x: HATCH_AT[0] * TILE + 8, y: HATCH_AT[1] * TILE + 14, frames: [HATCH_ART[DQ.hatch ? 1 : 0]], gone: !DQ.won };
 things.push(hatchThing);
-const hatchGlow = { x: hatchThing.x, y: hatchThing.y - 10, rgb: '255,150,60', rad: 1.6, flicker: true, strength: 0.2, off: !DQ.hatch };
+const hatchGlow = { x: hatchThing.x, y: hatchThing.y - 10, rgb: '255,150,60', rad: 1.6, flicker: true, strength: 0.2, off: !DQ.hatch || !DQ.won };
 glows.push(hatchGlow);
 vaultRoom.outside = { x: hatchThing.x, y: hatchThing.y };
 vaultRoom.exit = { x: hatchThing.x, y: hatchThing.y + 28 };
@@ -795,7 +799,38 @@ function rollVaultLoot() {
   return Array.from({ length: 12 }, (_, i) => out[i] || null);
 }
 DQ.chest = Array.isArray(DQ.chest) ? Array.from({ length: 12 }, (_, i) => validStack(DQ.chest[i])) : rollVaultLoot();
-const vaultChest = addStation('chest', 192, 124, vaultRoom);
+// the vault's chest sits right in front of the statue, and it's the grandest
+// chest in the game: black lacquered wood with gold bands and corners, an
+// arched lid with a gold flame on it, lava-orange inlay glowing in the front,
+// a big gold lock with a ruby set in it, and gold claw feet
+function makeVaultChest() {
+  const w = 36, h = 28, G = pixelGrid(w, h), cx = 17.5;
+  for (let y = 11; y <= 24; y++) for (let x = 1; x <= 34; x++) {
+    const band = x === 5 || x === 30 || y === 11 || y === 24;
+    let col = band ? (y === 11 ? '#fff0a0' : '#d9a92b') : x < 4 ? '#4a4252' : x > 32 ? '#1c1820' : '#2e2836';
+    if (!band && (y === 15 || y === 20) && x > 6 && x < 29) col = (x + y) % 3 ? '#ff8a2a' : '#ffd27a';
+    G.set(x, y, col);
+  }
+  for (let y = 2; y <= 10; y++) {
+    const inset = Math.round(Math.max(0, 4 - y) * 1.5);
+    for (let x = 1 + inset; x <= 34 - inset; x++) {
+      const rim = y === 10 || x === 1 + inset || x === 34 - inset || y === 2;
+      G.set(x, y, rim ? (y < 4 ? '#fff0a0' : '#d9a92b') : y < 5 ? '#4a4252' : '#3a3240');
+    }
+  }
+  // the gold flame on the lid
+  [[17, 4], [18, 4], [17, 5], [18, 5], [16, 6], [17, 6], [18, 6], [19, 6], [17, 7], [18, 7], [18, 3], [16, 5], [19, 5]].forEach(([x, y]) => G.set(x, y, y < 5 ? '#fff0a0' : '#f2c84b'));
+  // the lock with its ruby, and the keyhole
+  for (let y = 8; y <= 16; y++) for (let x = 14; x <= 21; x++) G.set(x, y, y === 8 || x === 14 ? '#fff0a0' : x === 21 || y === 16 ? '#a8800f' : '#e6b83a');
+  pxBlob(G, cx, 11, 1.6, 1.6, (dx, dy) => (dx + dy < -0.4 ? '#ffb0a0' : '#d0342c'));
+  G.set(17, 14, '#3a2a0a'); G.set(18, 14, '#3a2a0a'); G.set(17, 15, '#3a2a0a');
+  // claw feet
+  [[2, 25], [31, 25]].forEach(([x, y]) => { for (let k = 0; k < 4; k++) { G.set(x + k, y, '#d9a92b'); G.set(x + k, y + 1, k % 2 ? '#a8800f' : '#f2c84b'); } });
+  return G.outline(() => '#120c06').canvas();
+}
+const vaultChest = addStation('chest', 120, 134, vaultRoom);
+vaultChest.frames = [makeVaultChest()];
+vaultRoom.glows.push({ x: 120, y: 124, rgb: '255,210,120', rad: 2.4, flicker: true, strength: 0.2 });
 vaultChest.slots = DQ.chest;
 vaultChest.where = 'in the vault';
 
@@ -1496,9 +1531,11 @@ function walkDarryl(x, y, speed, then) { Object.assign(darryl, { state: 'walk', 
 // the race itself, every frame
 function raceTick(dt) {
   syncShaft();
+  hatchThing.gone = !DQ.won;
+  hatchGlow.off = !DQ.won || !DQ.hatch;
   if (helpOpen) { tickHelpDemo(dt); return; }
   tickTalk(dt);
-  if (room === vaultRoom) { vaultTick(); return; }
+  if (room === vaultRoom) { vaultTick(dt); return; }
   if (room !== raceRoom) return;
   const Y = carts.you, Dc = carts.darryl;
   if (race.judge) tickJudge(dt);
@@ -1717,7 +1754,47 @@ function tickDoor(dt) {
   if (q.t > 2.9) door.seq = null;
 }
 // in the vault: the ladder up the back wall takes you outside
-function vaultTick() {
+// the two lava channels either side of the statue: they bubble, and every few
+// seconds one of them shoots a spout of lava up out of the floor that rains
+// back down into it, lighting the room up as it goes. step into one and it
+// hurts (a heart, then another every so often while you stay in) and sets you
+// on fire, which lava does even indoors.
+const LAVA_POOLS = [{ x0: 64, x1: 80, y0: 54, y1: 94, t: 1.2 }, { x0: 160, x1: 176, y0: 54, y1: 94, t: 2.6 }];
+LAVA_POOLS.forEach((L, i) => { L.glow = vaultRoom.glows[i]; });
+let lavaHurtT = 0;
+function tickLava(dt) {
+  LAVA_POOLS.forEach(L => {
+    L.t -= dt;
+    L.glow.strength += ((L.spout > 0 ? 0.55 : 0.32) - L.glow.strength) * Math.min(1, dt * 6);
+    if (!reduceMotion && Math.random() < dt * 5) {
+      particles.push({ x: L.x0 + 2 + Math.random() * 12, y: L.y0 + 4 + Math.random() * 34, vx: 0, vy: -10, g: 30, life: 0.35, t: 0, col: Math.random() < 0.5 ? '#ffd23f' : '#ff8a1c', size: 1 });
+    }
+    if (L.t <= 0 && !(L.spout > 0)) {
+      L.spout = 0.9;
+      L.at = { x: (L.x0 + L.x1) / 2 + (Math.random() - 0.5) * 8, y: L.y0 + 10 + Math.random() * 24 };
+      sfx.geyser();
+    }
+    if (L.spout > 0) {
+      L.spout -= dt;
+      if (!reduceMotion) for (let k = 0; k < 3; k++) {
+        particles.push({ x: L.at.x + (Math.random() - 0.5) * 6, y: L.at.y, vx: (Math.random() - 0.5) * 40, vy: -110 - Math.random() * 70, g: 260, life: 0.9, t: 0, col: ['#fff1a8', '#ffd23f', '#ff8a1c', '#e0561a'][(Math.random() * 4) | 0], size: Math.random() < 0.5 ? 2 : 1 });
+      }
+      if (L.spout <= 0) L.t = 2 + Math.random() * 2.5;
+    }
+  });
+  lavaHurtT -= dt;
+  if (player.dead) return;
+  const inLava = LAVA_POOLS.some(L => player.x > L.x0 - 2 && player.x < L.x1 + 2 && player.y > L.y0 + 2 && player.y < L.y1 + 4);
+  if (inLava && lavaHurtT <= 0) {
+    lavaHurtT = 0.9;
+    loseHp(1, 'Lava!', '#ff7b1c');
+    ignite(true);
+    burst(player.x, player.y - 4, '255,140,40', 12);
+    sfx.ignite();
+  }
+}
+function vaultTick(dt) {
+  tickLava(dt);
   if (room !== vaultRoom || player.dead) return;
   if (Math.abs(player.x - 36) < 9 && player.y < 40 && (keys.has('KeyW') || keys.has('ArrowUp'))) {
     keys.delete('KeyW');
@@ -1743,7 +1820,7 @@ function raceEnter(r) {
       DQ.seen = true;
       toast('Underground', 'An old mine shaft', 'Someone is whistling down here...');
       markDirty();
-    }
+    } else if (DQ.won) toast('Inside', 'Darryl\'s Raceway', 'Still smells like burnt rubber...');
   }
   if (r === vaultRoom) {
     player.y = r.h - 20;
@@ -2144,6 +2221,7 @@ Object.assign(sfx, {
     for (let i = 0; i < n; i++) tone((392 + (i % 2) * 49) * (0.97 + Math.random() * 0.06), 0.04, 'triangle', 0.035, i * 0.075);
   },
   click: () => { tone(1800, 0.03, 'square', 0.04); tone(900, 0.04, 'square', 0.03, 0.03); },
+  geyser: () => { noiseBurst(0.35, 300, 0.12); tone(70, 0.3, 'sawtooth', 0.03); },
   clunk: () => { noiseBurst(0.14, 500, 0.14); tone(95, 0.18, 'square', 0.05); },
   creak: () => {
     if (!soundOn) return;

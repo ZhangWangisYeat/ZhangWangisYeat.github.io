@@ -3755,8 +3755,10 @@ function loseHp(amount, label, col = '#ff6b6b') {
 // on fire: half a heart a second for five seconds, and any water puts it out.
 // poisoned: half a heart a second for as long as the poison lasts.
 const BURN_TICKS = 5;
-function ignite() {
-  if (room || player.dead || inWater(player)) return;
+// force: set alight even indoors (the lava in the vault). anything else that
+// sets you on fire only works outside.
+function ignite(force) {
+  if ((room && !force) || player.dead || inWater(player)) return;
   if (!vitals.burn) { floatText('On fire!', player.x, player.y - 40, '#ff9a3c'); sfx.ignite(); }
   vitals.burn = { left: BURN_TICKS, t: 0 };
   renderHUD();
@@ -5191,6 +5193,7 @@ function checkDoors() {
   if (room || player.dead) return;
   const pushing = keys.has('KeyW') || keys.has('ArrowUp');
   for (const b of BUILDINGS) {
+    if (b.thing.gone) continue;
     if (b.hole) {
       const pit = b.pit || { x: b.thing.x, y: b.thing.y - 9, w: 9 };
       if (!player.moving || Math.abs(player.x - pit.x) > pit.w || Math.abs(player.y - pit.y) > 5) continue;

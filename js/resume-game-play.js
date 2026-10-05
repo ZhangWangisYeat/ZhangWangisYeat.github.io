@@ -5119,7 +5119,9 @@ function playDrawSleeper(toX, toY) {
 
 // going in and out of buildings. you come in at the door facing the back
 // wall, and leave onto the ground just outside it facing out.
-function enterRoom(r, quiet) {
+// at is where to put you when you don't come in by the room's own door (the
+// vault's hatch drops you at the foot of its ladder)
+function enterRoom(r, quiet, at) {
   room = r;
   player.x = r.door * TILE + 8;
   player.y = r.h - 6;
@@ -5134,6 +5136,12 @@ function enterRoom(r, quiet) {
   if (r === denRoom || r.burrow !== undefined) player.y = r.h - HOLE_IN;
   if (r === denRoom && !moe.dead) startMoeIntro();
   if (typeof raceEnter === 'function') raceEnter(r);
+  if (at) {
+    player.x = at.x; player.y = at.y; player.face = 'down';
+    // you came down a ladder walking up into it: let go of up, or you'd walk
+    // straight back up the ladder you just came down
+    keys.delete('KeyW'); keys.delete('ArrowUp');
+  }
   Object.assign(cam, roomCam());
   if (quiet) return;
   sfx.region();
@@ -5187,7 +5195,7 @@ function checkDoors() {
       const pit = b.pit || { x: b.thing.x, y: b.thing.y - 9, w: 9 };
       if (!player.moving || Math.abs(player.x - pit.x) > pit.w || Math.abs(player.y - pit.y) > 5) continue;
       if (!buildingOpen(b)) lockedToast(regionAt(b.tile[0] + 0.5, b.tile[1] + 0.5));
-      else if (b.open()) enterRoom(b.room);
+      else if (b.open()) enterRoom(b.room, false, b.arrive);
       // a shut hole: say so once in a while, not every frame you walk over it
       else if (performance.now() > (b.shutAt || 0)) { b.shutAt = performance.now() + 4000; toast(...b.shut()); sfx.deny(); }
       return;
@@ -5198,12 +5206,12 @@ function checkDoors() {
     // hidden behind the canvas, and still be outside.
     const doorX = b.tile[0] * TILE + 8, doorY = b.tile[1] * TILE;
     const inDoor = Math.abs(player.x - doorX) < 8 && player.y > doorY - 4 && player.y < b.thing.y;
-    if (inDoor && (player.moving || pushing) && b.open() && buildingOpen(b)) { enterRoom(b.room); return; }
+    if (inDoor && (player.moving || pushing) && b.open() && buildingOpen(b)) { enterRoom(b.room, false, b.arrive); return; }
   }
 }
 function useBuilding(b) {
   if (!buildingOpen(b)) { lockedToast(regionAt(b.tile[0] + 0.5, b.tile[1] + 0.5)); return; }
-  if (b.open()) { enterRoom(b.room); return; }
+  if (b.open()) { enterRoom(b.room, false, b.arrive); return; }
   toast(...(typeof b.shut === 'function' ? b.shut() : b.shut));
   sfx.deny();
 }

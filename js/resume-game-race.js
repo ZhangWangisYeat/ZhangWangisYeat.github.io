@@ -12,7 +12,7 @@
 // slot, and he wears it.
 quest.darryl = Object.assign({
   met: false, losses: 0, won: false, keyGiven: false, doorOpen: false, statue: false,
-  armless: false, fled: false, tutorial: false, seen: false, stash: {}, mined: [], chest: null, bones: []
+  armless: false, fled: false, tutorial: false, seen: false, hatch: false, stash: {}, mined: [], chest: null, bones: []
 }, quest.darryl && typeof quest.darryl === 'object' ? quest.darryl : {});
 const DQ = quest.darryl;
 const STASH_SLOTS = ['head', 'chest', 'legs', 'feet', 'hand'];
@@ -684,8 +684,8 @@ const vaultWalls = roomWalls(VAULT_COLS, VAULT_ROWS, VAULT_DOOR);
 const vaultRoom = {
   id: 'vault', w: VAULT_COLS * TILE, h: VAULT_ROWS * TILE, dust: '#4e4650', shade: 0.5, underground: true,
   canvas: paintVault(),
-  // the ladder comes up a couple of steps from the shaft, not in its mouth,
-  // or still holding w would walk you straight back in
+  // (outside and exit are the hatch the ladder comes up through, set once the
+  // hatch has been placed further down)
   outside: { x: shaftThing.x, y: shaftThing.y }, exit: { x: shaftThing.x, y: shaftThing.y + 34 },
   door: VAULT_DOOR,
   blocked: (x, y) => vaultWalls(x, y) || (Math.abs(x - 120) < 26 && y > 74 && y < 104) || ((x > 62 && x < 82) || (x > 158 && x < 178)) && y > 52 && y < 96,
@@ -712,6 +712,69 @@ EXTRA_ROOMS.push(raceRoom, vaultRoom);
 BUILDINGS.push({
   thing: shaftThing, tile: shaftPoi.at, room: raceRoom, name: 'Mine Shaft', open: shaftOpen,
   shut: ['Sealed', '? ? ?', 'Beat the bosses before it first.'], hint: () => shaftOpen() && !DQ.seen
+});
+
+// the hatch. the vault is a long way down the tunnel from the shaft, so its
+// ladder doesn't come out at the shaft (alex: it should make sense): it comes
+// up through a hatch in the floor of an open bit of the mines, away from every
+// landmark. it only opens from below, so it's shut tight until you've climbed
+// out through it once (no skipping the race), and after that it's a way in
+// and out both ways: walk into it and you climb down to the foot of the ladder.
+function makeHatch(open) {
+  const w = 30, h = 24, G = pixelGrid(w, h), cx = 14.5, cy = 12;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (x - cx) / 14, dy = (y - cy) / 11.5;
+    const d = Math.sqrt(dx * dx + dy * dy) - (hash2(x >> 1, y >> 1, 960) - 0.5) * 0.2;
+    if (d > 1) continue;
+    const lit = -(dx * 0.5 + dy * 0.9) + (hash2(x, y, 961) - 0.5) * 0.5;
+    G.set(x, y, lit > 0.4 ? '#a2a2a2' : lit > 0 ? '#8a8a8a' : lit > -0.4 ? '#6e6e6e' : '#585858');
+  }
+  const x0 = 7, x1 = 22, y0 = 5, y1 = 18;
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const frame = x === x0 || x === x1 || y === y0 || y === y1;
+    if (frame) { G.set(x, y, y === y0 || x === x0 ? '#a8703f' : '#5e3a1e'); continue; }
+    if (!open) {
+      // the trapdoor: planks with two iron straps and a ring to pull
+      G.set(x, y, x % 4 === 0 ? '#4e301a' : y === 8 || y === 15 ? '#7a7a84' : '#8a5a32');
+      continue;
+    }
+    // looking down it: dark, with the warm glow of the vault right at the bottom
+    G.set(x, y, y > y1 - 4 ? (y === y1 - 1 ? '#7a2a10' : '#3a1208') : '#0a0807');
+  }
+  if (!open) { G.set(15, 11, '#c9c9d4'); G.set(14, 12, '#c9c9d4'); G.set(16, 12, '#c9c9d4'); G.set(15, 13, '#c9c9d4'); }
+  else {
+    // the top of the ladder poking up out of it
+    for (let y = 1; y <= y1 - 2; y++) { G.set(10, y, y < y0 + 2 ? '#c48a4f' : '#6b4422'); G.set(19, y, y < y0 + 2 ? '#c48a4f' : '#6b4422'); }
+    for (let y = 2; y <= y1 - 3; y += 3) for (let x = 11; x <= 18; x++) G.set(x, y, y < y0 + 2 ? '#d9a36a' : y < y0 + 7 ? '#8a5a32' : '#4e301a');
+  }
+  return G.outline(() => '#262626').canvas();
+}
+const HATCH_ART = [makeHatch(false), makeHatch(true)];
+const HATCH_AT = (() => {
+  // the nearest open, reachable stretch of mine floor to a spot in the east of
+  // the mines, at least 6 tiles from any landmark and 5 from any mole hole
+  const want = [100, 47];
+  let best = null, bd = Infinity;
+  for (let y = 44; y < H - 2; y++) for (let x = 62; x < W - 2; x++) {
+    const i = idx(x, y);
+    if (QUADS[quad[i]] !== 'mines' || tiles[i] !== T.FLOOR || !reach[i]) continue;
+    let open = true;
+    for (let dy = -1; dy <= 1 && open; dy++) for (let dx = -1; dx <= 1; dx++) if (solidTile(x + dx, y + dy) || tiles[idx(x + dx, y + dy)] === T.WATER) { open = false; break; }
+    if (!open || POIS.some(q => Math.hypot(q.at[0] - x, q.at[1] - y) < 6) || MOLE_HOLES.some(([hx, hy]) => Math.hypot(hx - x, hy - y) < 5)) continue;
+    const d = Math.hypot(x - want[0], y - want[1]);
+    if (d < bd) { bd = d; best = [x, y]; }
+  }
+  return best;
+})();
+const hatchThing = { flat: true, hatch: true, x: HATCH_AT[0] * TILE + 8, y: HATCH_AT[1] * TILE + 14, frames: [HATCH_ART[DQ.hatch ? 1 : 0]] };
+things.push(hatchThing);
+const hatchGlow = { x: hatchThing.x, y: hatchThing.y - 10, rgb: '255,150,60', rad: 1.6, flicker: true, strength: 0.2, off: !DQ.hatch };
+glows.push(hatchGlow);
+vaultRoom.outside = { x: hatchThing.x, y: hatchThing.y };
+vaultRoom.exit = { x: hatchThing.x, y: hatchThing.y + 28 };
+BUILDINGS.push({
+  thing: hatchThing, tile: HATCH_AT, room: vaultRoom, name: 'Hatch', hole: true, pit: { x: hatchThing.x, y: hatchThing.y - 11, w: 8 },
+  open: () => !!DQ.hatch, shut: () => ['Shut tight', 'A hatch', 'It only opens from below.'], hint: () => false, arrive: { x: 36, y: 50 }
 });
 
 // the statue and the chest in the vault
@@ -1659,7 +1722,15 @@ function vaultTick() {
   if (Math.abs(player.x - 36) < 9 && player.y < 40 && (keys.has('KeyW') || keys.has('ArrowUp'))) {
     keys.delete('KeyW');
     keys.delete('ArrowUp');
+    // up the ladder and out through the hatch, which stays open from now on
+    if (!DQ.hatch) {
+      DQ.hatch = true;
+      hatchThing.frames = [HATCH_ART[1]];
+      hatchGlow.off = false;
+      markDirty();
+    }
     playLeaveRoom();
+    sfx.creak();
   }
 }
 

@@ -1877,12 +1877,49 @@ function rotDraw(P, px, py, D, a, along, across = along) {
 const DRILL_STEPS = 32, DRILL_D = 74;
 const DRILL_ROT = [0, 1, 2].map(spin => rotSet(makeDrillGrid(spin), 3.5, 7.5, DRILL_D, DRILL_STEPS));
 // when he comes up out of the floor the drill he's holding over his head is
-// exactly as wide as his hole (13px thick x 4 = 52, HOLE_RX * 2), so what you
-// see is what hurts you, but only 1.5 times as long (it was 2.4, which looked
-// like a tower, alex wanted it squatter and more believable). it only ever
-// points straight up, so that one angle is all that's drawn.
-const DRILL_BIG = 1.5, DRILL_WIDE = 4, DRILL_BIG_D = 124;
-const DRILL_UP = [0, 1, 2].map(spin => rotDraw(rotPrep(makeDrillGrid(spin)), 3.5, 7.5, DRILL_BIG_D, -Math.PI / 2, DRILL_BIG, DRILL_WIDE));
+// exactly as wide as his hole (HOLE_RX * 2 = 52), so what you see is what hurts
+// you. it used to be the held drill blown up 4x across and 1.5x along, which
+// turned every pixel into a fat block and looked stretched and cartoonish
+// (alex), so it has its own sprite at the game's real pixel size: the top of
+// the hazard striped motor housing sticking up out of the hole and the steel
+// collar on it (both the full 52 wide, the rest is down the hole), and a
+// thick bit nearly as wide with spiral threads tapering to a point, in the held drill's colours. three frames of
+// the thread turning. it only ever points straight up.
+const DRILL_UP_W = 56, DRILL_UP_H = 62, DRILL_TIP = 54;
+function makeDrillUp(spin) {
+  const G = pixelGrid(DRILL_UP_W, DRILL_UP_H), cx = 27.5;
+  // the motor housing: rounded at the top corners, lit along the top edge
+  for (let y = 48; y < DRILL_UP_H; y++) for (let x = 2; x <= 53; x++) {
+    if (y === 48 && (x < 4 || x > 51)) continue;
+    if (y === 49 && (x < 3 || x > 52)) continue;
+    const u = (x - cx) / 26;
+    let col = ((x + y) >> 2) % 2 ? '#f2c84b' : '#1f1f24';
+    if (y <= 49) col = '#fff0a0';
+    else if (u < -0.82) col = col === '#f2c84b' ? '#fff0a0' : '#34343c';
+    else if (u > 0.8) col = col === '#f2c84b' ? '#a8800f' : '#141418';
+    G.set(x, y, col);
+  }
+  // the collar
+  for (let y = 44; y <= 47; y++) for (let x = 2; x <= 53; x++) {
+    const u = (x - cx) / 26;
+    G.set(x, y, y === 44 ? '#ffffff' : u < -0.5 ? '#e6e9ef' : u > 0.55 ? '#7a7e88' : '#c9c4bd');
+  }
+  // the bit: a cone, shaded like a cylinder (lit on the left), with a spiral
+  // thread wound round it that moves up as it turns
+  for (let y = 3; y <= 43; y++) {
+    const half = 1 + ((y - 3) / 40) * 23;
+    for (let x = Math.round(cx - half); x <= Math.round(cx + half); x++) {
+      const v = (x - cx) / half;
+      const thread = ((((y + v * 6 + spin * 2.67) % 8) + 8) % 8) < 2.4;
+      let col = v < -0.55 ? '#eef2f8' : v < 0.05 ? '#c3cad7' : v < 0.6 ? '#98a1b2' : '#6c7486';
+      if (thread) col = v < -0.55 ? '#a7b0c0' : v < 0.3 ? '#5d6578' : '#454c5c';
+      G.set(x, y, col);
+    }
+  }
+  G.set(28, 2, '#ffffff'); G.set(27, 3, '#ffffff');
+  return G.outline(() => '#121218').canvas();
+}
+const DRILL_UP = [0, 1, 2].map(makeDrillUp);
 
 // a pile of rocks that comes down over the way out when the fight starts
 function makeRubble() {
@@ -2498,7 +2535,7 @@ function updateMoe(c, dt) {
       // you (see below). hit him from just outside the hole.
       c.aim = -Math.PI / 2;
       c.flip = player.x < c.x;
-      if (Math.random() < dt * 30) burst(c.x + (Math.random() - 0.5) * 6, c.y - 4 - 34 * DRILL_BIG, Math.random() < 0.5 ? '255,220,140' : '255,140,60', 1);
+      if (Math.random() < dt * 30) burst(c.x + (Math.random() - 0.5) * 6, c.y - 4 - DRILL_TIP, Math.random() < 0.5 ? '255,220,140' : '255,140,60', 1);
       if (c.t >= (mad ? MOE.stuckMad : MOE.stuck)) {
         c.pops++;
         if (c.pops >= (mad ? MOE.popsMad : MOE.pops)) { c.state = 'climb'; c.t = 0; }
@@ -2975,7 +3012,7 @@ function drawMoe(c, toX, toY, t) {
   if (raised) { hand.x = c.x; hand.y = c.y - 4; }
   const k = ((Math.round((c.aim / (Math.PI * 2)) * DRILL_STEPS) % DRILL_STEPS) + DRILL_STEPS) % DRILL_STEPS;
   const drill = raised
-    ? () => ctx.drawImage(DRILL_UP[Math.floor(c.spin) % 3], toX(hand.x - DRILL_BIG_D / 2), toY(hand.y - DRILL_BIG_D / 2), DRILL_BIG_D * S, DRILL_BIG_D * S)
+    ? () => ctx.drawImage(DRILL_UP[Math.floor(c.spin) % 3], toX(hand.x - DRILL_UP_W / 2), toY(hand.y + 8 - DRILL_UP_H), DRILL_UP_W * S, DRILL_UP_H * S)
     : () => ctx.drawImage(DRILL_ROT[Math.floor(c.spin) % 3][k], toX(hand.x - DRILL_D / 2), toY(hand.y - DRILL_D / 2), DRILL_D * S, DRILL_D * S);
   // pointing up, the drill goes behind him
   const behind = Math.sin(c.aim) < -0.35;
@@ -2993,7 +3030,7 @@ function drawMoe(c, toX, toY, t) {
   ctx.restore();
   if (sinkPx > 0) drawHoleRim(c, toX, toY, true);
   if (raised) {
-    const tx = toX(hand.x), ty = toY(hand.y - 34 * DRILL_BIG), pulse = reduceMotion ? 0.8 : 0.7 + Math.sin(t / 45) * 0.3;
+    const tx = toX(hand.x), ty = toY(hand.y - DRILL_TIP), pulse = reduceMotion ? 0.8 : 0.7 + Math.sin(t / 45) * 0.3;
     ctx.globalCompositeOperation = 'lighter';
     const g = ctx.createRadialGradient(tx, ty, 0, tx, ty, 14 * S);
     g.addColorStop(0, `rgba(255,236,170,${0.55 * pulse})`);

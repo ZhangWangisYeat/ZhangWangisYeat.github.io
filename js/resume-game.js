@@ -2047,10 +2047,15 @@ function drawPlayer(toX, toY, t) {
   const srcH = wading ? CELL - 8 : CELL;
   const dx = toX(player.x - 24), dy = toY(player.y - 42 + sink);
   const img = sheetPlay.complete && sheetPlay.naturalWidth ? sheetPlay : sheet;
-  // whatever armor you're wearing, as [sheet, layer] from the play layer
+  // whatever armor you're wearing, as [sheet, layer, tint] from the play layer.
+  // a tinted layer (prismasteel) is recoloured by the play layer first and
+  // comes back as its own little canvas
   const layers = (typeof playArmorLayers === 'function' ? playArmorLayers() : [])
-    .map(([which, layer]) => [which === 'torso' ? armorSheet : piecesSheet, (layer * 10 + row) * CELL])
+    .map(([which, layer, tint]) => [which === 'torso' ? armorSheet : piecesSheet, (layer * 10 + row) * CELL, tint])
     .filter(([im]) => im.naturalWidth);
+  const drawLayer = ([im, y, tint], x0, y0) => (tint && typeof playTintLayer === 'function'
+    ? ctx.drawImage(playTintLayer(im, col * CELL, y, srcH, t), 0, 0, CELL, srcH, x0, y0, CELL * S, srcH * S)
+    : ctx.drawImage(im, col * CELL, y, CELL, srcH, x0, y0, CELL * S, srcH * S));
   if (typeof playDrawHeld === 'function') playDrawHeld(dx, dy, row, col, false);
   ctx.save();
   if (player.blink) ctx.globalAlpha = 0.4;
@@ -2058,10 +2063,10 @@ function drawPlayer(toX, toY, t) {
     ctx.translate(dx + CELL * S, dy);
     ctx.scale(-1, 1);
     ctx.drawImage(img, col * CELL, row * CELL, CELL, srcH, 0, 0, CELL * S, srcH * S);
-    layers.forEach(([im, y]) => ctx.drawImage(im, col * CELL, y, CELL, srcH, 0, 0, CELL * S, srcH * S));
+    layers.forEach(l => drawLayer(l, 0, 0));
   } else {
     ctx.drawImage(img, col * CELL, row * CELL, CELL, srcH, dx, dy, CELL * S, srcH * S);
-    layers.forEach(([im, y]) => ctx.drawImage(im, col * CELL, y, CELL, srcH, dx, dy, CELL * S, srcH * S));
+    layers.forEach(l => drawLayer(l, dx, dy));
   }
   ctx.restore();
   if (typeof playDrawHeld === 'function') playDrawHeld(dx, dy, row, col, true);

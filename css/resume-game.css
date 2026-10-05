@@ -723,6 +723,20 @@ body.map-closed .chip[data-panel="map"] { display: inline-flex; }
 .boss-track i { background: linear-gradient(#ff6a52, #c0392b 60%, #8a2418); }
 .boss-bar.is-mad .boss-track { --edge: #a02818; }
 .boss-bar.is-mad .boss-name { color: #ffb09a; }
+.boss-note {
+  margin-top: 6px;
+  min-height: 1em;
+  font-family: var(--px);
+  font-size: 0.56rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #d8ccff;
+  text-shadow: 0 2px 0 #000;
+}
+.boss-note.is-urgent { color: #ff8a7a; animation: bob 0.5s steps(2) infinite; }
+.boss-bar.is-prism .boss-track { --edge: #6e55c8; }
+.boss-bar.is-prism .boss-track i { background: linear-gradient(90deg, #ff6a8a, #ffd36a, #7ef0a0, #6ad8ff, #b48aff); }
+.boss-bar.is-shell .boss-track i { background: linear-gradient(#e8fffc, #5fe0d0 60%, #1d8b82); }
 
 .cine { position: fixed; inset: 0; pointer-events: none; z-index: 21; }
 .cine::before,
@@ -807,6 +821,22 @@ body.is-cine .boss-bar { opacity: 0; }
 .talk.is-reply { box-shadow: inset 0 0 0 var(--n) var(--edge-hi); }
 .talk.is-reply .talk-name { color: var(--muted); }
 .talk.is-reply .talk-text { color: var(--accent); }
+.talk.is-mind { box-shadow: inset 0 0 0 var(--n) #8f7bff, 0 0 24px rgba(143, 123, 255, 0.35); }
+.talk.is-mind .talk-name { color: #b9a8ff; }
+.talk.is-mind .talk-text { color: #ece6ff; font-style: italic; text-shadow: 0 0 8px rgba(160, 140, 255, 0.55); }
+.talk.is-mind.is-reply { box-shadow: inset 0 0 0 var(--n) var(--edge-hi); }
+.talk.is-mind.is-reply .talk-name { color: var(--muted); }
+.talk.is-mind.is-reply .talk-text { color: var(--accent); font-style: normal; text-shadow: none; }
+.rainbow {
+  background: linear-gradient(90deg, #ff7a9a, #ffc46a, #fff38a, #8af0a8, #7ad8ff, #b49aff, #ff7a9a);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: rainbow-run 2.4s linear infinite;
+}
+@keyframes rainbow-run { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .rainbow { animation: none; } }
 body.is-talking .toast { opacity: 0; }
 
 .race-help {

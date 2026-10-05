@@ -1281,15 +1281,21 @@ function driveDarryl(c, dt) {
 // time. click, space, enter or e skips to the end of a line, then goes on.
 const talkEl = $('#talk'), talkName = $('#talk-name'), talkText = $('#talk-text');
 let talk = null;
-// you turn to face him whenever a conversation starts
+// you turn to face him whenever a conversation starts. who is who's talking
+// to you: darryl, unless it's somebody else (the ore wolf talks to you with the
+// same box, js/resume-game-wolf.js): their name, their voice, where they are
+// (to face them) and a class for the box.
+const DARRYL_WHO = { name: 'Darryl', voice: mood => sfx.darryl(mood), at: () => (darryl.gone ? null : darryl), cls: '' };
 function faceToward(x, y) {
   const dx = x - player.x, dy = y - player.y;
   if (Math.abs(dx) >= Math.abs(dy) * 0.8) { player.face = 'side'; player.flip = dx < 0; }
   else player.face = dy < 0 ? 'up' : 'down';
 }
-function startTalk(steps, done) {
-  if (!darryl.gone) faceToward(darryl.x, darryl.y);
-  talk = { steps, i: -1, t: 0, done };
+function startTalk(steps, done, who = DARRYL_WHO) {
+  const at = who.at();
+  if (at) faceToward(at.x, at.y);
+  talk = { steps, i: -1, t: 0, done, who };
+  talkEl.className = `talk px${who.cls ? ` ${who.cls}` : ''}`;
   document.body.classList.add('is-talking');
   nextLine();
 }
@@ -1303,7 +1309,7 @@ function nextLine() {
   if (!talk) return;
   talkEl.hidden = !!st.act;
   talkEl.classList.toggle('is-reply', !!st.you);
-  talkName.textContent = st.you ? 'You' : 'Darryl';
+  talkName.textContent = st.you ? 'You' : st.name || talk.who.name;
   talkText.textContent = '';
 }
 function advanceTalk() {
@@ -1336,7 +1342,7 @@ function tickTalk(dt) {
     talk.shown = n;
     talkText.textContent = (st.you ? '▶ ' : '') + text.slice(0, n);
     // his voice, a little blip on every other letter as it's typed out
-    if (st.d && n > was && /[a-z0-9]/i.test(text[n - 1] || '') && (n % 2 === 0 || n - was > 1)) sfx.darryl(st.mood);
+    if (st.d && n > was && /[a-z0-9]/i.test(text[n - 1] || '') && (n % 2 === 0 || n - was > 1)) talk.who.voice(st.mood);
   }
 }
 const typing = () => talk && talk.steps[talk.i].d && talk.t * TALK_RATE < talk.steps[talk.i].d.length;
@@ -1429,7 +1435,7 @@ function fleeDarryl() {
 
 // losing: he points at you and you turn to bones. if you had anything good on
 // you he walks over and takes the best of it (see pickLoot).
-const LOOT_RANK = { gold: 10, diamond: 3, emerald: 2, iron: 1 };
+const LOOT_RANK = { gold: 10, prismasteel: 4, diamond: 3, emerald: 2, iron: 1 };
 const LOOT_KIND = { sword: 1, pickaxe: 2, axe: 3 };
 function lootValue(st) {
   if (!st) return null;

@@ -5446,7 +5446,8 @@ function playTintLayer(im, sx, sy, h, t) {
   g.drawImage(im, sx, sy, CELL, h, 0, 0, CELL, h);
   g.globalCompositeOperation = 'color';
   const shift = reduceMotion ? 0 : t / 12, gr = g.createLinearGradient(0, 0, CELL, CELL);
-  for (let k = 0; k <= 6; k++) gr.addColorStop(k / 6, `hsl(${(shift + k * 60) % 360},90%,60%)`);
+  // (two turns of the colour wheel across the cell, so every piece shows a few colours at once)
+  for (let k = 0; k <= 6; k++) gr.addColorStop(k / 6, `hsl(${(shift + k * 120) % 360},90%,62%)`);
   g.fillStyle = gr;
   g.fillRect(0, 0, CELL, CELL);
   g.globalCompositeOperation = 'destination-in';

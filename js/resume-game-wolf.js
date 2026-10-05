@@ -54,44 +54,52 @@ const WOLF = {
 // muzzle and glowing ruby eyes. shell is the same wolf turned to solid
 // diamond, cut into big facets with white edges. her tails are drawn live
 // (drawRestTails), so they can sway and shoot out.
-const WOLF_W = 80, WOLF_H = 54, WOLF_GY = 51;
+const WOLF_W = 94, WOLF_H = 58, WOLF_GY = 55;
 const BAND_ORDER = ['marble', 'diamond', 'gold', 'emerald', 'iron', 'ruby', 'stone'];
 function bandAt(x, y) {
   const v = x * 0.5 + y * 0.95 + Math.sin(y * 0.33 + x * 0.11) * 3.2 + Math.sin(x * 0.21) * 2;
-  return BAND_ORDER[((Math.floor(v / 6.2) % 7) + 7) % 7];
+  return BAND_ORDER[((Math.floor(v / 5.4) % 7) + 7) % 7];
 }
-// the shape of her for a pose: the ellipses her body is made of (haunch,
-// torso, chest, neck, head, muzzle), and her legs from hip to paw
+// the shape of her for a pose, as a wolf and not a horse: a long body low
+// between the legs, a heavy haunch, a tucked waist and a deep chest, a thick
+// neck carrying the head forward (not up), a long tapering snout, tall
+// pointed ears, and back legs that bend at the hock. parts are the ellipses
+// her body is made of (haunch, waist, chest, neck, head, snout, jaw, and a
+// folded leg when she's lying down). legs go hip, knee, paw.
 function wolfShape(pose, f) {
   if (pose === 'lie') {
     return {
-      parts: [[25, 41, 10, 7.5], [39, 42, 17, 6.5], [52, 41, 9, 7], [58, 36, 6, 6], [63, 33, 6.5, 5.2], [71, 36, 5.5, 3]],
-      head: [63, 33], muzzle: [71, 36], legs: [], paws: [[54, 47, 17], [16, 47, 12]], spine: [34, 36]
+      parts: [[26, 45, 12, 8], [44, 46, 17, 6], [62, 45, 10, 7], [70, 40, 6, 6], [77, 38, 7, 5.5], [86, 41, 6, 3], [83, 43, 4, 1.5], [22, 51, 9, 3.2]],
+      head: [77, 38], snout: [86, 41, 6], legs: [], paws: [[70, 50, 88], [68, 52, 90]], spine: [[71, 39], [48, 40]], ruff: false, bd: 0, howl: false
     };
   }
   let bd = 0, hx = 0, hy = 0;
-  if (pose === 'crouch') { bd = 4; hx = 2; hy = 6; }
+  if (pose === 'crouch') { bd = 4; hx = 2; hy = 5; }
   if (pose === 'run') bd = [0, 1, 0, 1][f];
-  const breathe = pose === 'stand' && f === 1 ? 0.7 : 0;
-  const parts = [[25, 27 + bd, 10, 10], [38, 28 + bd, 16, 8.5 + breathe], [51, 27 + bd, 9, 10.5 + breathe], [56 + hx * 0.5, 18 + bd + hy * 0.6, 6, 9]];
-  let head, muzzle;
+  const br = pose === 'stand' && f === 1 ? 0.7 : 0;
+  const parts = [[26, 34 + bd, 12, 10], [44, 33 + bd, 16, 7.5 + br * 0.5], [64, 34 + bd, 11, 11 + br], [71 + hx * 0.5, 25 + bd + hy * 0.6, 8, 9]];
+  let head, snout;
   if (pose === 'howl') {
-    head = [60, 8];
-    muzzle = [64, 2.5, 3.4, 5];
-    parts[3] = [56, 16, 6, 10];
+    parts[3] = [71, 21, 8, 10];
+    head = [76, 11];
+    snout = [81, 4, 4, 5.5];
+    parts.push([head[0], head[1], 7, 6], snout);
   } else {
-    head = [61 + hx, 12 + bd + hy];
-    muzzle = [69 + hx, 14.5 + bd + hy, 5.5, 3.2];
+    head = [78 + hx, 18 + bd + hy];
+    snout = [87 + hx, 21 + bd + hy, 6, 3.2];
+    parts.push([head[0], head[1], 7, 6], snout, [snout[0] - 3, snout[1] + 3, 4, 1.8]);
   }
-  parts.push([head[0], head[1], 6.5, 5.5], muzzle);
-  // near back leg, far back leg, far front leg, near front leg
-  const legs = [[23, 0, 0], [29, Math.PI, 1], [49, Math.PI, 1], [54, 0, 0]].map(([x, ph, far]) => {
+  // near back, far back, far front, near front
+  const legs = [[24, 20, 0, 0], [31, 27, 0.6, 1], [67, 67, Math.PI + 0.6, 1], [61, 61, Math.PI, 0]].map(([x, kx, ph, far], i) => {
+    const front = i >= 2;
     let sw = 0, lift = 0;
-    if (pose === 'run') { const a = (f / 4) * Math.PI * 2 + ph; sw = Math.sin(a) * 3.5; lift = Math.max(0, -Math.cos(a)) * 2.5; }
-    if (pose === 'crouch') sw = x < 40 ? -2 : 2;
-    return { x0: x, y0: 32 + bd, x1: x + sw, y1: WOLF_GY - 1 - lift, far };
+    if (pose === 'run') { const a = (f / 4) * Math.PI * 2 + ph; sw = Math.sin(a) * 4; lift = Math.max(0, Math.cos(a)) * 3; }
+    if (pose === 'crouch') sw = front ? 2 : -2;
+    const hip = [x, (front ? 41 : 39) + bd], paw = [x + (front ? 1 : -1) + sw, WOLF_GY - 1 - lift];
+    const knee = [kx + sw * 0.6 + (pose === 'crouch' ? (front ? 2 : -2) : 0), 48 + bd * 0.5 - lift * 0.5];
+    return { pts: [hip, knee, paw], far };
   });
-  return { parts, head, muzzle, legs, paws: [], spine: [34, 20 + bd] };
+  return { parts, head, snout: [snout[0], snout[1], snout[2]], legs, paws: [], spine: [[head[0] - 7, head[1] + 1], [50, 26 + bd]], ruff: pose !== 'howl', bd, howl: pose === 'howl' };
 }
 function makeWolf(pose, f, shell) {
   const G = pixelGrid(WOLF_W, WOLF_H), P = wolfShape(pose, f);
@@ -101,19 +109,24 @@ function makeWolf(pose, f, shell) {
     if (x < 0 || y < 0 || x >= WOLF_W || y >= WOLF_H) return;
     const Pp = ORE_PAL[shell ? 'diamond' : ore], sh = shell ? 3 : 2;
     const l = lit + (hash2(x >> sh, y >> sh, shell ? 1231 : 1201) - 0.5) * (shell ? 0.8 : 0.5);
-    G.set(x, y, l > 0.55 ? Pp.hi : l > 0.12 ? Pp.lt : l > -0.32 ? Pp.md : Pp.dk);
+    G.set(x, y, l > (shell ? 0.55 : 0.72) ? Pp.hi : l > (shell ? 0.12 : 0.22) ? Pp.lt : l > -0.32 ? Pp.md : Pp.dk);
     key[y * WOLF_W + x] = shell ? `${Math.floor((x + y) / 7)}:${Math.floor((x - y + 99) / 7)}` : k;
   };
-  // legs first (the far ones darker), then the body over the top of them
+  // legs first (the far ones darker), hip to knee to paw, thick at the top
+  // and thinner down to the paw, then the body over the top of them
   P.legs.slice().sort((a, b) => b.far - a.far).forEach(L => {
-    for (let y = L.y0; y <= L.y1; y++) {
-      const u = (y - L.y0) / Math.max(1, L.y1 - L.y0), cx = L.x0 + (L.x1 - L.x0) * u, half = 2.2 - u * 0.5;
-      for (let x = Math.round(cx - half); x <= Math.round(cx + half); x++) put(x, y, bandAt(x, y), (cx - x) / 3 - (L.far ? 0.45 : 0), bandAt(x, y));
-    }
-    for (let x = Math.round(L.x1) - 2; x <= Math.round(L.x1) + 3; x++) for (let y = L.y1 - 1; y <= L.y1; y++) put(x, y, 'iron', y === L.y1 - 1 ? 0.3 : -0.4 - (L.far ? 0.3 : 0), 'paw');
+    const [h, k, p] = L.pts, dark = L.far ? 0.45 : 0;
+    [[h, k, 2.6, 2], [k, p, 2, 1.5]].forEach(([a, b, w0, w1]) => {
+      const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) * 2));
+      for (let i = 0; i <= n; i++) {
+        const u = i / n, cx = a[0] + (b[0] - a[0]) * u, cy = a[1] + (b[1] - a[1]) * u, half = w0 + (w1 - w0) * u;
+        for (let x = Math.round(cx - half); x <= Math.round(cx + half); x++) put(x, cy, bandAt(x, Math.round(cy)), (cx - x) / 3.5 - dark, bandAt(x, Math.round(cy)));
+      }
+    });
+    for (let x = Math.round(p[0]) - 2; x <= Math.round(p[0]) + 3; x++) for (let y = Math.round(p[1]) - 1; y <= Math.round(p[1]); y++) put(x, y, 'iron', y < Math.round(p[1]) ? 0.3 : -0.4 - dark, 'paw');
   });
-  P.paws.forEach(([x0, y0, len]) => {
-    for (let x = x0; x <= x0 + len; x++) for (let y = y0 - 2; y <= y0; y++) put(x, y, bandAt(x, y), y === y0 - 2 ? 0.4 : -0.1, bandAt(x, y));
+  P.paws.forEach(([x0, y0, x1]) => {
+    for (let x = x0; x <= x1; x++) for (let y = y0 - 1; y <= y0; y++) put(x, y, x > x1 - 4 ? 'iron' : bandAt(x, y), y < y0 ? 0.35 : -0.2, x > x1 - 4 ? 'paw' : bandAt(x, y));
   });
   for (let y = 0; y < WOLF_H; y++) for (let x = 0; x < WOLF_W; x++) {
     let best = null, bd = 1;
@@ -122,48 +135,59 @@ function makeWolf(pose, f, shell) {
       if (d <= bd) { bd = d; best = { i, dx, dy }; }
     });
     if (!best) continue;
-    const ore = best.i === 5 ? 'marble' : bandAt(x, y);
-    put(x, y, ore, -(best.dx * 0.55 + best.dy * 0.85), best.i === 5 ? 'muzzle' : ore);
+    // (the jaw is pale marble, the rest of her the mosaic)
+    const jaw = best.i === 6;
+    const ore = jaw ? 'marble' : bandAt(x, y);
+    put(x, y, ore, -(best.dx * 0.45 + best.dy * 0.75), jaw ? 'jaw' : ore);
   }
-  // pointed crystal ears
-  const [hx, hy] = P.head;
-  [[hx - 4, hx - 1, hx - 3, hy - 12], [hx, hx + 3, hx + 1, hy - 11]].forEach(([a, b, ax, ay], e) => {
+  // tall pointed ears (the far one first and darker, the near one with a dark
+  // inside), laid back when she howls
+  const [hx, hy] = P.head, back = P.howl ? -3 : 0, up = P.howl ? 3 : 0;
+  [[hx + 1, hx + 5, hx + 3 + back, hy - 12 + up, 1], [hx - 4, hx + 1, hx - 3 + back, hy - 13 + up, 0]].forEach(([a, b, ax, ay, far]) => {
     for (let y = Math.round(ay); y <= hy - 3; y++) {
       const u = (y - ay) / (hy - 3 - ay), l = ax + (a - ax) * u, r = ax + (b - ax) * u;
-      for (let x = Math.round(l); x <= Math.round(r); x++) put(x, y, e ? 'diamond' : 'marble', x <= Math.round(l) ? 0.7 : 0, e ? 'diamond' : 'marble');
+      for (let x = Math.round(l); x <= Math.round(r); x++) {
+        const inner = !far && x === Math.round((l + r) / 2) && y > ay + 3 && y < hy - 4;
+        if (inner) { G.set(x, y, '#3a2236'); key[y * WOLF_W + x] = 'ear'; } else put(x, y, bandAt(x, y), (x <= Math.round(l) ? 0.6 : 0) - far * 0.4, 'ear');
+      }
     }
   });
-  // a mane of crystal spikes down her neck, one of each ore, diamond nearest
-  // her head
-  const [sx, sy] = P.spine;
+  // hackles: a ridge of crystal shards from the back of her head down over
+  // her shoulders, one of each ore, diamond nearest her head
+  const [[s0x, s0y], [s1x, s1y]] = P.spine;
   for (let k = 0; k < 7; k++) {
-    const u = k / 6, bx = hx - 6 + (sx - (hx - 6)) * u, by = hy + 4 + (sy - (hy + 4)) * u, len = 6 + (k % 2 ? -1.5 : 1.5) - k * 0.35;
-    const ore = ORES[6 - k];
+    const u = k / 6, bx = s0x + (s1x - s0x) * u, by = s0y + (s1y - s0y) * u, len = 7 + (k % 2 ? -2 : 1) - k * 0.5;
     for (let s = 0; s <= len; s++) {
-      const half = 1.4 * (1 - s / (len + 1));
-      for (let w = -half; w <= half; w += 0.5) put(bx - s * 0.45 + w, by - s, ore, w < 0 ? 0.8 : 0.1, `m${k}`);
+      const half = 1.5 * (1 - s / (len + 1));
+      for (let w = -half; w <= half; w += 0.5) put(bx - s * 0.55 + w, by - s, ORES[6 - k], w < 0 ? 0.8 : 0.1, `m${k}`);
     }
+  }
+  // a ruff of fur shards down the front of her chest
+  if (P.ruff) {
+    [[73, 29], [74, 33], [72, 37], [69, 40]].forEach(([x, y], k) => {
+      for (let s = 0; s <= 3; s++) put(x + s * 0.5, y + P.bd + s * 0.7, k % 2 ? 'marble' : 'diamond', 0.5 - s * 0.15, `r${k}`);
+    });
   }
   // seams where one ore meets another (gold), or the diamond's facet edges (white)
   const seam = shell ? '#ffffff' : '#ffe9a8';
   const seams = [];
   for (let y = 0; y < WOLF_H; y++) for (let x = 0; x < WOLF_W; x++) {
     const k = key[y * WOLF_W + x];
-    if (k === null) continue;
+    if (k === null || k === 'ear') continue;
     const r = x + 1 < WOLF_W ? key[y * WOLF_W + x + 1] : null, d = y + 1 < WOLF_H ? key[(y + 1) * WOLF_W + x] : null;
-    if ((r !== null && r !== k) || (d !== null && d !== k)) seams.push([x, y]);
+    if ((r !== null && r !== 'ear' && r !== k) || (d !== null && d !== 'ear' && d !== k)) seams.push([x, y]);
   }
   seams.forEach(([x, y]) => G.set(x, y, seam));
-  // the face: an angry ruby eye under a dark brow, the nose and the line of
-  // her mouth
-  const [mx, my, mrx] = P.muzzle;
-  G.set(hx + 2, hy - 1, '#ff3b3b'); G.set(hx + 3, hy - 1, '#ff3b3b'); G.set(hx + 3, hy - 2, '#ffd0c8');
-  for (let x = hx; x <= hx + 4; x++) G.set(x, hy - 3 + (x > hx + 2 ? 1 : 0), '#241a2c');
-  if (pose !== 'howl') {
-    G.set(mx + mrx - 1, my - 1, '#1a1420'); G.set(mx + mrx, my - 1, '#1a1420'); G.set(mx + mrx, my, '#1a1420');
-    for (let x = Math.round(mx - 4); x <= Math.round(mx + 3); x++) G.set(x, Math.round(my + 2), '#3a2a3e');
-    G.set(Math.round(mx + 2), Math.round(my + 3), '#ffffff');
-  } else G.set(Math.round(mx), Math.round(my - 4), '#1a1420');
+  // the face: a narrowed ruby eye under a brow slanting down to her nose, the
+  // nose on the end of the snout, the line of her mouth and a fang
+  const [sx, sy, srx] = P.snout;
+  for (let x = hx; x <= hx + 4; x++) G.set(x, hy - 3 + (x >= hx + 2 ? 1 : 0), '#241a2c');
+  G.set(hx + 2, hy - 1, '#ff3b3b'); G.set(hx + 3, hy - 1, '#ff3b3b'); G.set(hx + 4, hy - 1, '#c41e1e');
+  if (!P.howl) {
+    G.set(sx + srx - 1, sy - 2, '#1a1420'); G.set(sx + srx, sy - 2, '#1a1420'); G.set(sx + srx, sy - 1, '#1a1420');
+    for (let x = Math.round(sx - 6); x <= Math.round(sx + 3); x++) G.set(x, Math.round(sy + 2), '#3a2a3e');
+    G.set(Math.round(sx + 1), Math.round(sy + 3), '#ffffff');
+  } else { G.set(Math.round(sx + 1), Math.round(sy - 5), '#1a1420'); G.set(Math.round(sx + 2), Math.round(sy - 4), '#1a1420'); }
   return G.outline(() => '#120f18').canvas();
 }
 const WOLF_POSES = { stand: 2, run: 4, crouch: 1, howl: 1, lie: 1 };
@@ -172,7 +196,7 @@ const WOLF_ART = Object.fromEntries([false, true].map(shell => [shell ? 'shell' 
 const WOLF_WHITE = new Map();
 const wolfWhite = img => { if (!WOLF_WHITE.has(img)) WOLF_WHITE.set(img, whiteOf(img)); return WOLF_WHITE.get(img); };
 // where her tails come out of her, per pose (sprite pixels)
-const TAIL_ROOT = { stand: [17, 22], run: [17, 22], crouch: [17, 26], howl: [17, 22], lie: [17, 35] };
+const TAIL_ROOT = { stand: [15, 28], run: [15, 28], crouch: [15, 32], howl: [15, 28], lie: [15, 42] };
 
 // the little things: a flung ore (a lump, or a crystal for the gems), drawn a
 // quarter turn at a time as it tumbles, and a lattice (a cube of seven nodes'
@@ -394,7 +418,7 @@ lockWolfChest(!WQ.dead);
 // fight is her own: updateWolf runs it, wolfHit decides what a hit does and
 // wolfDown starts her end (the play layer asks the def for these).
 CREATURES.orewolf = {
-  name: WOLF_NAME, boss: true, steady: true, hp: WOLF.hp, speed: WOLF.speed, knock: 0, h: 44, box: { w: 54, h: 22 },
+  name: WOLF_NAME, boss: true, steady: true, hp: WOLF.hp, speed: WOLF.speed, knock: 0, h: 44, box: { w: 62, h: 24 },
   regen: 0, rest: 'wait', chip: '230,226,250', drops: [],
   update: updateWolf, hit: wolfHit, down: wolfDown, mad: () => false
 };
@@ -417,7 +441,9 @@ const wolfGlow = { x: 0, y: 0, rgb: '225,215,255', rad: 3.6, flicker: true, stre
 wolfRoom.glows.push(wolfGlow);
 
 const flung = [], tails = [], lattices = [];
-let meet = null, card = null, mourn = null, immuneT = 0, noteText = '';
+// (latBroken counts this lattice phase's breaks: broken ones are taken out of
+// the list, so the list can't say how many went)
+let meet = null, card = null, mourn = null, immuneT = 0, noteText = '', latBroken = 0;
 const FIGHTING = ['stalk', 'windup', 'lunge', 'dazed', 'recover', 'howl', 'tails', 'stagger'];
 const fighting = () => FIGHTING.includes(wolf.state);
 // she talks to you in your head: the same box as darryl's, in violet, with her
@@ -513,7 +539,7 @@ function tickPhase(c, dt) {
   c.pt -= dt;
   if (c.phase === 'armored' && c.pt <= 0) startLattices(c);
   else if (c.phase === 'lattice') {
-    if (lattices.length && lattices.every(L => !L.alive)) openUp(c);
+    if (latBroken >= 7) openUp(c);
     else if (c.pt <= 0) retractLattices(c);
   }
 }
@@ -530,6 +556,7 @@ function startLattices(c) {
   crackShell(c);
   c.phase = 'lattice';
   c.pt = WOLF.lattice;
+  latBroken = 0;
   lattices.forEach(L => removeLattice(L));
   lattices.length = 0;
   const spots = [];
@@ -563,6 +590,8 @@ function retractLattices(c) {
 }
 function openUp(c) {
   c.phase = 'open';
+  lattices.forEach(removeLattice);
+  lattices.length = 0;
   Object.assign(c, { state: 'stagger', t: 0 });
   for (let i = 0; i < 50; i++) {
     const a = Math.random() * Math.PI * 2, sp = 40 + Math.random() * 120;
@@ -587,7 +616,7 @@ function breakLattice(L) {
     const a = Math.random() * Math.PI * 2, sp = 40 + Math.random() * 90;
     particles.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 30, g: 200, life: 0.5 + Math.random() * 0.4, t: 0, col: Math.random() < 0.4 ? ORE_PAL[L.ore].hi : ORE_PAL[L.ore].md, size: 1 });
   }
-  const n = lattices.filter(k => !k.alive).length;
+  const n = ++latBroken;
   floatText(`${n}/7`, cx, cy - 12, ORE_PAL[L.ore].lt);
   sfx.shatter();
   sfx.chime(ORES.indexOf(L.ore));
@@ -714,8 +743,9 @@ function updateTails(dt) {
     const last = T.path[T.path.length - 1];
     if (Math.hypot(T.x - last[0], T.y - last[1]) >= 3) T.path.push([T.x, T.y]);
     if (wolfRoom.blocked(T.x, T.y + 8)) { T.back = true; burst(T.x, T.y, ORE_PAL[T.ore].rgb, 8); sfx.clang(); continue; }
-    if (!player.dead && Math.hypot(T.x - player.x, T.y - (player.y - 10)) < 10) {
-      hurtPlayer(TAIL_DMG[T.ore], T.x, T.y);
+    // (a tail that reaches you while you're still blinking from the last hit
+    // carries on past)
+    if (!player.dead && Math.hypot(T.x - player.x, T.y - (player.y - 10)) < 10 && hurtPlayer(TAIL_DMG[T.ore], T.x, T.y)) {
       burst(T.x, T.y, ORE_PAL[T.ore].rgb, 12);
       T.back = true;
       continue;
@@ -766,6 +796,9 @@ function updateWolf(c, dt) {
   const open = c.phase === 'open';
   switch (c.state) {
     case 'rise':
+      face();
+      if (c.t > 0.9) { c.state = 'stand'; c.t = 0; }
+      break;
     case 'stand':
     case 'still':
       face();
@@ -873,6 +906,7 @@ function wolfHit(c, dmg) {
 function wolfDown(c) {
   Object.assign(c, { state: 'dying', t: 0, shell: 0 });
   bossBar(false);
+  bossBarEl.classList.remove('is-shell', 'is-prism');
   bossMusic(false);
   clearAttacks();
   sfx.howl(true);
@@ -966,7 +1000,7 @@ function wolfTick(dt) {
   if (fighting() || wolf.state === 'still') {
     const ph = wolf.phase, secs = Math.max(0, Math.ceil(wolf.pt));
     const text = ph === 'armored' ? `Encased in diamond | ${secs}s`
-      : ph === 'lattice' ? `Lattices ${lattices.filter(L => !L.alive).length + (7 - lattices.length)} of 7 | ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`
+      : ph === 'lattice' ? `Lattices ${latBroken} of 7 | ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`
         : 'Vulnerable';
     if (text !== noteText) {
       noteText = text;
@@ -994,10 +1028,11 @@ function pxDisc(toX, toY, x, y, r, col) {
 // crystal point on the end
 function drawChain(toX, toY, pts, ore, glow) {
   const P = ORE_PAL[ore], n = pts.length;
-  const rad = i => 3 - (i / Math.max(1, n - 1)) * 1.3;
+  const rad = i => { const u = i / Math.max(1, n - 1); return 2.4 + 2.3 * Math.sin(Math.PI * u * 0.85) - 2.5 * u * u; };
   pts.forEach(([x, y], i) => pxDisc(toX, toY, x, y, rad(i) + 1, P.out));
-  pts.forEach(([x, y], i) => pxDisc(toX, toY, x, y, rad(i), glow ? P.lt : P.md));
-  pts.forEach(([x, y], i) => { if (i % 2 === 0) pxDisc(toX, toY, x - 0.7, y - 0.8, rad(i) * 0.45, P.hi); });
+  pts.forEach(([x, y], i) => pxDisc(toX, toY, x, y, rad(i), glow ? P.lt : P.dk));
+  pts.forEach(([x, y], i) => pxDisc(toX, toY, x - rad(i) * 0.2, y - rad(i) * 0.25, rad(i) * 0.7, glow ? P.hi : P.md));
+  pts.forEach(([x, y], i) => pxDisc(toX, toY, x - rad(i) * 0.35, y - rad(i) * 0.5, rad(i) * 0.3, glow ? '#ffffff' : P.lt));
   const [tx, ty] = pts[n - 1], [px, py] = pts[Math.max(0, n - 2)], a = Math.atan2(ty - py, tx - px);
   for (let s = 0; s < 5; s++) pxDisc(toX, toY, tx + Math.cos(a) * s, ty + Math.sin(a) * s, 1.8 - s * 0.35, s < 2 ? P.lt : P.hi);
 }
@@ -1009,13 +1044,13 @@ function drawRestTails(c, toX, toY, t, pose) {
   const out = new Set(tails.map(T => T.k));
   const lie = pose === 'lie';
   for (let i = 0; i < 7; i++) {
-    if (c.state === 'tails' && (out.has(i) || i < c.k)) { if (out.has(i) || tails.some(T => T.k === i)) continue; }
-    let a = Math.PI * (lie ? 1.0 + i * 0.03 : 1.05 + i * 0.075) + (reduceMotion ? 0 : Math.sin(t / 420 + i * 0.8) * 0.12);
+    if (out.has(i)) continue;
+    let a = Math.PI * (lie ? 1.0 + i * 0.035 : 0.97 + i * 0.075) + (reduceMotion ? 0 : Math.sin(t / 420 + i * 0.8) * 0.1);
     let x = bx, y = by;
     const pts = [[x, y]];
-    for (let s = 0; s < 9; s++) {
-      a += lie ? -0.02 : 0.09;
-      x += Math.cos(a) * 2.6 * sx; y += Math.sin(a) * 2.6;
+    for (let s = 0; s < 13; s++) {
+      a += lie ? -0.015 : 0.085;
+      x += Math.cos(a) * 2.5 * sx; y += Math.sin(a) * 2.5;
       pts.push([x, y]);
     }
     const ore = c.shell > 0.6 ? 'diamond' : ORES[i];
@@ -1029,8 +1064,8 @@ function drawWolf(c, toX, toY, t) {
   const shake = ['windup', 'dazed', 'dying', 'stagger'].includes(c.state) && !reduceMotion ? Math.round(Math.sin(t / 25)) : 0;
   const left = Math.round(c.x - WOLF_W / 2) + shake, top = Math.round(c.y - WOLF_GY);
   ctx.fillStyle = 'rgba(0,0,0,0.28)';
-  ctx.fillRect(toX(c.x - 26), toY(c.y - 1), 52 * S, 2 * S);
-  ctx.fillRect(toX(c.x - 20), toY(c.y), 40 * S, S);
+  ctx.fillRect(toX(c.x - 30), toY(c.y - 1), 60 * S, 2 * S);
+  ctx.fillRect(toX(c.x - 24), toY(c.y), 48 * S, S);
   // the last moment before she breaks apart she's pure light
   if (c.state === 'shatter') ctx.globalAlpha = Math.max(0, 1 - c.t / 1.2);
   drawRestTails(c, toX, toY, t, pose);
@@ -1071,7 +1106,7 @@ function drawWolf(c, toX, toY, t) {
       const p = (t / 650 + k * 0.29) % 1;
       if (p > 0.22) continue;
       const seed = Math.floor(t / 650 + k * 0.29) * 7 + k;
-      const sx = left + 18 + hash2(seed, 1, 1501) * 44, sy = top + 12 + hash2(seed, 2, 1501) * 26, g = 1 - Math.abs(p / 0.22 - 0.5) * 2;
+      const sx = left + 20 + hash2(seed, 1, 1501) * 52, sy = top + 16 + hash2(seed, 2, 1501) * 26, g = 1 - Math.abs(p / 0.22 - 0.5) * 2;
       ctx.fillStyle = `rgba(255,255,255,${0.4 + g * 0.6})`;
       ctx.fillRect(toX(sx), toY(sy - 1), S, 3 * S);
       ctx.fillRect(toX(sx - 1), toY(sy), 3 * S, S);
@@ -1105,16 +1140,18 @@ function drawWolfFloor(o, toX, toY, t) {
     const u = F.wait > 0 ? 0 : Math.min(1, F.t / F.dur), k = 0.35 + u * 0.65;
     const R = WOLF.fling.rx * (1.25 - u * 0.25), RY = WOLF.fling.ry * (1.25 - u * 0.25);
     const pulse = reduceMotion ? 1 : 0.6 + 0.4 * Math.sin(t / (90 - 50 * u));
-    ctx.fillStyle = `rgba(255,60,40,${(0.08 + 0.16 * u) * pulse})`;
+    ctx.fillStyle = `rgba(255,60,40,${(0.14 + 0.22 * u) * pulse})`;
     for (let y = -Math.round(RY); y <= Math.round(RY); y++) {
       const half = Math.round(Math.sqrt(Math.max(0, 1 - (y / (RY + 0.5)) ** 2)) * R);
       ctx.fillRect(toX(F.x1 - half), toY(F.y1 + y), half * 2 * S, S);
     }
-    const ring = `rgba(255,${Math.round(170 - 120 * u)},60,${k * (0.6 + 0.4 * pulse)})`;
-    for (let i = 0; i < 48; i++) {
-      const a = (i / 48) * Math.PI * 2;
-      P(F.x1 + Math.cos(a) * R - 0.5, F.y1 + Math.sin(a) * RY - 0.5, ring, 1, 1);
+    const ring = `rgba(255,${Math.round(170 - 120 * u)},60,${Math.min(1, k * (0.75 + 0.4 * pulse))})`;
+    for (let i = 0; i < 56; i++) {
+      const a = (i / 56) * Math.PI * 2;
+      P(F.x1 + Math.cos(a) * R - 1, F.y1 + Math.sin(a) * RY - 1, ring, 2, 2);
     }
+    P(F.x1 - 3, F.y1, ring, 7, 1);
+    P(F.x1, F.y1 - 2, ring, 1, 5);
     const sw = Math.round(2 + 8 * u);
     P(F.x1 - sw / 2, F.y1 - 1, `rgba(0,0,0,${0.2 + 0.3 * u})`, sw, 2);
   });
@@ -1148,8 +1185,8 @@ function wolfOverlay(toX, toY, t) {
     });
     for (let i = 0; i < 72; i++) {
       const a = (i / 72) * Math.PI * 2, wob = reduceMotion ? 0 : Math.sin(t / 200 + i) * 1.5;
-      ctx.fillStyle = `hsla(${(i * 5 + t / 8) % 360},90%,70%,${0.25 + 0.2 * Math.sin(t / 150 + i * 0.7)})`;
-      ctx.fillRect(toX(cx + Math.cos(a) * (40 + wob)), toY(cy + 2 + Math.sin(a) * (28 + wob)), S, S);
+      ctx.fillStyle = `hsla(${(i * 5 + t / 8) % 360},90%,70%,${0.3 + 0.2 * Math.sin(t / 150 + i * 0.7)})`;
+      ctx.fillRect(toX(cx + Math.cos(a) * (48 + wob)), toY(cy + 2 + Math.sin(a) * (30 + wob)), S, S);
     }
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -1167,7 +1204,7 @@ function wolfOverlay(toX, toY, t) {
   });
   tails.forEach(T => {
     const r = tailRoot(c), pts = [[r.x, r.y], ...T.path.slice(1)];
-    if (pts.length > 1) drawChain(toX, toY, pts, T.ore, true);
+    if (pts.length > 1) drawChain(toX, toY, pts, T.ore, false);
   });
   const ripple = (x, y) => {
     for (let k = 0; k < 3; k++) {
@@ -1179,7 +1216,7 @@ function wolfOverlay(toX, toY, t) {
       }
     }
   };
-  const head = { x: c.x + (c.flip ? -22 : 22), y: c.y - 40 };
+  const head = { x: c.x + (c.flip ? -31 : 31), y: c.y - 40 };
   if (!c.gone && wolfTalking() && talk.steps[talk.i] && talk.steps[talk.i].d && !reduceMotion) ripple(head.x, head.y);
   if (mourn && !c.gone) {
     // "for my son." over her, in the violet of her voice
@@ -1191,9 +1228,9 @@ function wolfOverlay(toX, toY, t) {
     ctx.textBaseline = 'middle';
     ctx.globalAlpha = a;
     ctx.fillStyle = '#000';
-    ctx.fillText('For my son.', toX(c.x) + 2, toY(c.y - 62) + 2);
+    ctx.fillText('For my son.', toX(c.x) + 2, toY(c.y - 66) + 2);
     ctx.fillStyle = '#ece6ff';
-    ctx.fillText('For my son.', toX(c.x), toY(c.y - 62));
+    ctx.fillText('For my son.', toX(c.x), toY(c.y - 66));
     ctx.globalAlpha = 1;
   }
 }

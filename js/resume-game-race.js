@@ -1228,7 +1228,7 @@ function greeting() {
   if (L >= 3 && L <= 8) lines.push({ d: 'You really don\'t give up huh?' });
   if (L >= 9) lines.push({ d: `I think you should probably give up man. ${L + 1} tries is honestly embarrassing.` });
   return lines.concat(
-    { d: 'It\'s at the end of this corridor, we\'ll have to take the minecarts.' },
+    { d: `${L ? 'Anyways, it' : 'It'}'s at the end of this corridor, we'll have to take the minecarts.` },
     { you: 'Could you take me there?' },
     { d: 'Sure, but last one there\'s a rotting skeleton!' }
   );

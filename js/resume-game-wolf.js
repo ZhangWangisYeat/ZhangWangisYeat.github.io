@@ -11,11 +11,11 @@
 // drops prismasteel, the tier above diamond. loads after resume-game-race.js
 // and talks to you through its dialogue box.
 
-quest.wolf = Object.assign({ met: false, dead: false, chestOpened: false, chest: null },
+quest.wolf = Object.assign({ met: false, dead: false, chestOpened: false, chest: null, mined: [], hideTip: false },
   quest.wolf && typeof quest.wolf === 'object' ? quest.wolf : {});
 const WQ = quest.wolf;
-// what the game calls her (alex hasn't named her yet, so it's one place to change)
-const WOLF_NAME = 'The Ore Wolf';
+// what the game calls her (alex named her, it's the one place to change it)
+const WOLF_NAME = 'Lupus Wolfram';
 
 // her seven ores, weakest first. a flung ore does ORE_DMG hearts before armor
 // where it lands (gold the least, then half a heart more each step from stone
@@ -43,63 +43,62 @@ const WOLF = {
   hp: 200, speed: 66, speedOpen: 84, keep: 4.6, backOff: 2.6,
   windup: 0.62, windupOpen: 0.48, lunge: 340, lungeTime: 0.36, lungeDmg: 5, touchDmg: 1,
   shellFirst: 20, shell: 30, lattice: 60,
-  fling: { min: 4, max: 7, fly: 1.15, flyOpen: 1, rx: 15, ry: 9, drop: 0.06 },
+  fling: { min: 4, max: 7, rx: 15, ry: 9, drop: 0.06 },
   tails: { gap: 1, speed: 235, turn: 2.5, life: 1.5 }
 };
 
-// her sprite, facing right like every other creature: a big wolf whose whole
-// body is a mosaic of her seven ores in wavy diagonal bands, each faceted and
-// lit from the top left, with thin gold seams where one ore meets the next
-// (like mended pottery), a mane of crystal spikes down her neck, a marble
-// muzzle and glowing ruby eyes. shell is the same wolf turned to solid
-// diamond, cut into big facets with white edges. her tails are drawn live
-// (drawRestTails), so they can sway and shoot out.
+// her sprite, facing right like every other creature: a slim, long legged wolf
+// (alex wanted her more elegant than the first one: a fine head with a long
+// narrow snout and tall sharp ears, a slender neck, a deep but narrow chest, a
+// tucked waist and long thin legs). her body is a mosaic of her seven ores in
+// broad diagonal bands, lit from the top left, with thin gold seams where one
+// meets the next, a few crystal shards stand up along her neck, and her eye is
+// ruby. shell is her turned to plain solid diamond: no bands, no seams, just
+// diamond and its shine. her tails are drawn live (drawRestTails), so they can
+// sway, stand up and shoot out.
 const WOLF_W = 94, WOLF_H = 58, WOLF_GY = 55;
 const BAND_ORDER = ['marble', 'diamond', 'gold', 'emerald', 'iron', 'ruby', 'stone'];
 function bandAt(x, y) {
-  const v = x * 0.5 + y * 0.95 + Math.sin(y * 0.33 + x * 0.11) * 3.2 + Math.sin(x * 0.21) * 2;
-  return BAND_ORDER[((Math.floor(v / 5.4) % 7) + 7) % 7];
+  const v = x * 0.55 + y * 0.9 + Math.sin(y * 0.22 + x * 0.08) * 2.2;
+  return BAND_ORDER[((Math.floor(v / 7) % 7) + 7) % 7];
 }
-// the shape of her for a pose, as a wolf and not a horse: a long body low
-// between the legs, a heavy haunch, a tucked waist and a deep chest, a thick
-// neck carrying the head forward (not up), a long tapering snout, tall
-// pointed ears, and back legs that bend at the hock. parts are the ellipses
-// her body is made of (haunch, waist, chest, neck, head, snout, jaw, and a
-// folded leg when she's lying down). legs go hip, knee, paw.
+// the shape of her for a pose: the ellipses her body is made of (haunch,
+// waist, chest, neck, head, snout, jaw, and a folded leg when she's lying
+// down), and her legs from hip to knee (the hock, at the back) to paw
 function wolfShape(pose, f) {
   if (pose === 'lie') {
     return {
-      parts: [[26, 45, 12, 8], [44, 46, 17, 6], [62, 45, 10, 7], [70, 40, 6, 6], [77, 38, 7, 5.5], [86, 41, 6, 3], [83, 43, 4, 1.5], [22, 51, 9, 3.2]],
-      head: [77, 38], snout: [86, 41, 6], legs: [], paws: [[70, 50, 88], [68, 52, 90]], spine: [[71, 39], [48, 40]], ruff: false, bd: 0, howl: false
+      parts: [[28, 46, 10, 6.5], [45, 47, 15, 4.5], [61, 46, 8.5, 5.5], [69, 41, 4.5, 5.5], [76, 38.5, 5.6, 4.4], [85.5, 40.5, 6.8, 2.2], [82.5, 42.7, 4.5, 1.1], [23, 51, 8, 2.6]],
+      head: [76, 38.5], snout: [85.5, 40.5, 6.8], legs: [], paws: [[69, 51, 89], [67, 53, 91]], spine: [[70, 37], [58, 41]], howl: false
     };
   }
   let bd = 0, hx = 0, hy = 0;
   if (pose === 'crouch') { bd = 4; hx = 2; hy = 5; }
   if (pose === 'run') bd = [0, 1, 0, 1][f];
-  const br = pose === 'stand' && f === 1 ? 0.7 : 0;
-  const parts = [[26, 34 + bd, 12, 10], [44, 33 + bd, 16, 7.5 + br * 0.5], [64, 34 + bd, 11, 11 + br], [71 + hx * 0.5, 25 + bd + hy * 0.6, 8, 9]];
+  const br = pose === 'stand' && f === 1 ? 0.5 : 0;
+  const parts = [[28, 33 + bd, 10, 8], [45, 33 + bd, 15, 5.2 + br * 0.4], [62, 33 + bd, 8.5, 8.5 + br], [70 + hx * 0.5, 25 + bd + hy * 0.6, 4.6, 8]];
   let head, snout;
   if (pose === 'howl') {
-    parts[3] = [71, 21, 8, 10];
-    head = [76, 11];
-    snout = [81, 4, 4, 5.5];
-    parts.push([head[0], head[1], 7, 6], snout);
+    parts[3] = [70, 20, 4.6, 9];
+    head = [75, 10];
+    snout = [79.5, 3.5, 2.4, 5.5];
+    parts.push([head[0], head[1], 5.6, 4.4], snout);
   } else {
-    head = [78 + hx, 18 + bd + hy];
-    snout = [87 + hx, 21 + bd + hy, 6, 3.2];
-    parts.push([head[0], head[1], 7, 6], snout, [snout[0] - 3, snout[1] + 3, 4, 1.8]);
+    head = [77 + hx, 18 + bd + hy];
+    snout = [86.5 + hx, 20.5 + bd + hy, 6.8, 2.2];
+    parts.push([head[0], head[1], 5.6, 4.4], snout, [snout[0] - 3, snout[1] + 2.2, 4.5, 1.1]);
   }
   // near back, far back, far front, near front
-  const legs = [[24, 20, 0, 0], [31, 27, 0.6, 1], [67, 67, Math.PI + 0.6, 1], [61, 61, Math.PI, 0]].map(([x, kx, ph, far], i) => {
+  const legs = [[26, 22, 0, 0], [32, 28, 0.6, 1], [64, 64, Math.PI + 0.6, 1], [59, 59, Math.PI, 0]].map(([x, kx, ph, far], i) => {
     const front = i >= 2;
     let sw = 0, lift = 0;
     if (pose === 'run') { const a = (f / 4) * Math.PI * 2 + ph; sw = Math.sin(a) * 4; lift = Math.max(0, Math.cos(a)) * 3; }
     if (pose === 'crouch') sw = front ? 2 : -2;
-    const hip = [x, (front ? 41 : 39) + bd], paw = [x + (front ? 1 : -1) + sw, WOLF_GY - 1 - lift];
-    const knee = [kx + sw * 0.6 + (pose === 'crouch' ? (front ? 2 : -2) : 0), 48 + bd * 0.5 - lift * 0.5];
+    const hip = [x, (front ? 39 : 37) + bd], paw = [x + (front ? 1 : -1) + sw, WOLF_GY - 1 - lift];
+    const knee = [kx + sw * 0.6 + (pose === 'crouch' ? (front ? 2 : -2) : 0), 47 + bd * 0.5 - lift * 0.5];
     return { pts: [hip, knee, paw], far };
   });
-  return { parts, head, snout: [snout[0], snout[1], snout[2]], legs, paws: [], spine: [[head[0] - 7, head[1] + 1], [50, 26 + bd]], ruff: pose !== 'howl', bd, howl: pose === 'howl' };
+  return { parts, head, snout: [snout[0], snout[1], snout[2]], legs, paws: [], spine: [[head[0] - 6, head[1] + 1], [58, 25 + bd]], howl: pose === 'howl' };
 }
 function makeWolf(pose, f, shell) {
   const G = pixelGrid(WOLF_W, WOLF_H), P = wolfShape(pose, f);
@@ -107,26 +106,26 @@ function makeWolf(pose, f, shell) {
   const put = (x, y, ore, lit, k) => {
     x = Math.round(x); y = Math.round(y);
     if (x < 0 || y < 0 || x >= WOLF_W || y >= WOLF_H) return;
-    const Pp = ORE_PAL[shell ? 'diamond' : ore], sh = shell ? 3 : 2;
-    const l = lit + (hash2(x >> sh, y >> sh, shell ? 1231 : 1201) - 0.5) * (shell ? 0.8 : 0.5);
-    G.set(x, y, l > (shell ? 0.55 : 0.72) ? Pp.hi : l > (shell ? 0.12 : 0.22) ? Pp.lt : l > -0.32 ? Pp.md : Pp.dk);
-    key[y * WOLF_W + x] = shell ? `${Math.floor((x + y) / 7)}:${Math.floor((x - y + 99) / 7)}` : k;
+    const Pp = ORE_PAL[shell ? 'diamond' : ore];
+    // (a little grain in the ore, none at all in the diamond)
+    const l = lit + (shell ? 0 : (hash2(x >> 2, y >> 2, 1201) - 0.5) * 0.2);
+    G.set(x, y, l > (shell ? 0.5 : 0.62) ? Pp.hi : l > (shell ? 0.1 : 0.18) ? Pp.lt : l > -0.32 ? Pp.md : Pp.dk);
+    key[y * WOLF_W + x] = shell ? 'diamond' : k;
   };
-  // legs first (the far ones darker), hip to knee to paw, thick at the top
-  // and thinner down to the paw, then the body over the top of them
+  // legs first (the far ones darker): long and thin, hip to knee to paw
   P.legs.slice().sort((a, b) => b.far - a.far).forEach(L => {
     const [h, k, p] = L.pts, dark = L.far ? 0.45 : 0;
-    [[h, k, 2.6, 2], [k, p, 2, 1.5]].forEach(([a, b, w0, w1]) => {
+    [[h, k, 1.5, 1.2], [k, p, 1.1, 0.9]].forEach(([a, b, w0, w1]) => {
       const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) * 2));
       for (let i = 0; i <= n; i++) {
         const u = i / n, cx = a[0] + (b[0] - a[0]) * u, cy = a[1] + (b[1] - a[1]) * u, half = w0 + (w1 - w0) * u;
-        for (let x = Math.round(cx - half); x <= Math.round(cx + half); x++) put(x, cy, bandAt(x, Math.round(cy)), (cx - x) / 3.5 - dark, bandAt(x, Math.round(cy)));
+        for (let x = Math.round(cx - half); x <= Math.round(cx + half); x++) put(x, cy, bandAt(x, Math.round(cy)), (cx - x) / 2.5 - dark, bandAt(x, Math.round(cy)));
       }
     });
-    for (let x = Math.round(p[0]) - 2; x <= Math.round(p[0]) + 3; x++) for (let y = Math.round(p[1]) - 1; y <= Math.round(p[1]); y++) put(x, y, 'iron', y < Math.round(p[1]) ? 0.3 : -0.4 - dark, 'paw');
+    for (let x = Math.round(p[0]) - 1; x <= Math.round(p[0]) + 2; x++) put(x, p[1], 'iron', -0.1 - dark, 'paw');
   });
   P.paws.forEach(([x0, y0, x1]) => {
-    for (let x = x0; x <= x1; x++) for (let y = y0 - 1; y <= y0; y++) put(x, y, x > x1 - 4 ? 'iron' : bandAt(x, y), y < y0 ? 0.35 : -0.2, x > x1 - 4 ? 'paw' : bandAt(x, y));
+    for (let x = x0; x <= x1; x++) put(x, y0, x > x1 - 3 ? 'iron' : bandAt(x, y0), 0.1, x > x1 - 3 ? 'paw' : bandAt(x, y0));
   });
   for (let y = 0; y < WOLF_H; y++) for (let x = 0; x < WOLF_W; x++) {
     let best = null, bd = 1;
@@ -140,55 +139,54 @@ function makeWolf(pose, f, shell) {
     const ore = jaw ? 'marble' : bandAt(x, y);
     put(x, y, ore, -(best.dx * 0.45 + best.dy * 0.75), jaw ? 'jaw' : ore);
   }
-  // tall pointed ears (the far one first and darker, the near one with a dark
-  // inside), laid back when she howls
+  // tall sharp ears (the far one first and darker, the near one with a thin
+  // dark line down its middle), laid back when she howls
   const [hx, hy] = P.head, back = P.howl ? -3 : 0, up = P.howl ? 3 : 0;
-  [[hx + 1, hx + 5, hx + 3 + back, hy - 12 + up, 1], [hx - 4, hx + 1, hx - 3 + back, hy - 13 + up, 0]].forEach(([a, b, ax, ay, far]) => {
-    for (let y = Math.round(ay); y <= hy - 3; y++) {
-      const u = (y - ay) / (hy - 3 - ay), l = ax + (a - ax) * u, r = ax + (b - ax) * u;
+  [[hx + 1, hx + 4, hx + 3 + back, hy - 11 + up, 1], [hx - 3, hx + 0.5, hx - 2 + back, hy - 12 + up, 0]].forEach(([a, b, ax, ay, far]) => {
+    for (let y = Math.round(ay); y <= hy - 2; y++) {
+      const u = (y - ay) / (hy - 2 - ay), l = ax + (a - ax) * u, r = ax + (b - ax) * u;
       for (let x = Math.round(l); x <= Math.round(r); x++) {
-        const inner = !far && x === Math.round((l + r) / 2) && y > ay + 3 && y < hy - 4;
+        const inner = !far && !shell && x === Math.round((l + r) / 2) && y > ay + 3 && y < hy - 3;
         if (inner) { G.set(x, y, '#3a2236'); key[y * WOLF_W + x] = 'ear'; } else put(x, y, bandAt(x, y), (x <= Math.round(l) ? 0.6 : 0) - far * 0.4, 'ear');
       }
     }
   });
-  // hackles: a ridge of crystal shards from the back of her head down over
-  // her shoulders, one of each ore, diamond nearest her head
+  // a few slim crystal shards standing up along her neck and shoulders
   const [[s0x, s0y], [s1x, s1y]] = P.spine;
-  for (let k = 0; k < 7; k++) {
-    const u = k / 6, bx = s0x + (s1x - s0x) * u, by = s0y + (s1y - s0y) * u, len = 7 + (k % 2 ? -2 : 1) - k * 0.5;
+  for (let k = 0; k < 5; k++) {
+    const u = k / 4, bx = s0x + (s1x - s0x) * u, by = s0y + (s1y - s0y) * u, len = 5 + (k % 2 ? -1 : 0.5) - k * 0.4;
     for (let s = 0; s <= len; s++) {
-      const half = 1.5 * (1 - s / (len + 1));
-      for (let w = -half; w <= half; w += 0.5) put(bx - s * 0.55 + w, by - s, ORES[6 - k], w < 0 ? 0.8 : 0.1, `m${k}`);
+      const half = 1 * (1 - s / (len + 1));
+      for (let w = -half; w <= half; w += 0.5) put(bx - s * 0.5 + w, by - s, ORES[6 - k], w < 0 ? 0.8 : 0.1, `m${k}`);
     }
   }
-  // a ruff of fur shards down the front of her chest
-  if (P.ruff) {
-    [[73, 29], [74, 33], [72, 37], [69, 40]].forEach(([x, y], k) => {
-      for (let s = 0; s <= 3; s++) put(x + s * 0.5, y + P.bd + s * 0.7, k % 2 ? 'marble' : 'diamond', 0.5 - s * 0.15, `r${k}`);
-    });
+  // seams where one ore meets another, in gold (none on the diamond)
+  if (!shell) {
+    const seams = [];
+    for (let y = 0; y < WOLF_H; y++) for (let x = 0; x < WOLF_W; x++) {
+      const k = key[y * WOLF_W + x];
+      if (k === null || k === 'ear') continue;
+      const r = x + 1 < WOLF_W ? key[y * WOLF_W + x + 1] : null, d = y + 1 < WOLF_H ? key[(y + 1) * WOLF_W + x] : null;
+      if ((r !== null && r !== 'ear' && r !== k) || (d !== null && d !== 'ear' && d !== k)) seams.push([x, y]);
+    }
+    seams.forEach(([x, y]) => G.set(x, y, '#ffe9a8'));
+  } else {
+    // the diamond catches the light along every top edge
+    for (let y = 1; y < WOLF_H; y++) for (let x = 0; x < WOLF_W; x++) if (key[y * WOLF_W + x] && !key[(y - 1) * WOLF_W + x]) G.set(x, y, '#ffffff');
   }
-  // seams where one ore meets another (gold), or the diamond's facet edges (white)
-  const seam = shell ? '#ffffff' : '#ffe9a8';
-  const seams = [];
-  for (let y = 0; y < WOLF_H; y++) for (let x = 0; x < WOLF_W; x++) {
-    const k = key[y * WOLF_W + x];
-    if (k === null || k === 'ear') continue;
-    const r = x + 1 < WOLF_W ? key[y * WOLF_W + x + 1] : null, d = y + 1 < WOLF_H ? key[(y + 1) * WOLF_W + x] : null;
-    if ((r !== null && r !== 'ear' && r !== k) || (d !== null && d !== 'ear' && d !== k)) seams.push([x, y]);
-  }
-  seams.forEach(([x, y]) => G.set(x, y, seam));
-  // the face: a narrowed ruby eye under a brow slanting down to her nose, the
-  // nose on the end of the snout, the line of her mouth and a fang
+  // the face: a narrowed eye under a brow slanting down to her nose (ruby, or
+  // pale and glowing in the diamond), the nose on the end of her snout, the
+  // line of her mouth and a fang
   const [sx, sy, srx] = P.snout;
-  for (let x = hx; x <= hx + 4; x++) G.set(x, hy - 3 + (x >= hx + 2 ? 1 : 0), '#241a2c');
-  G.set(hx + 2, hy - 1, '#ff3b3b'); G.set(hx + 3, hy - 1, '#ff3b3b'); G.set(hx + 4, hy - 1, '#c41e1e');
+  const brow = shell ? '#1d8b82' : '#241a2c', eye = shell ? ['#ffffff', '#c8fff8'] : ['#ff3b3b', '#c41e1e'];
+  for (let x = hx; x <= hx + 3; x++) G.set(x, hy - 3 + (x >= hx + 2 ? 1 : 0), brow);
+  G.set(hx + 2, hy - 1, eye[0]); G.set(hx + 3, hy - 1, eye[1]);
   if (!P.howl) {
-    G.set(sx + srx - 1, sy - 2, '#1a1420'); G.set(sx + srx, sy - 2, '#1a1420'); G.set(sx + srx, sy - 1, '#1a1420');
-    for (let x = Math.round(sx - 6); x <= Math.round(sx + 3); x++) G.set(x, Math.round(sy + 2), '#3a2a3e');
+    G.set(sx + srx, sy - 1, '#1a1420'); G.set(sx + srx - 1, sy - 1, shell ? '#1d8b82' : '#1a1420');
+    for (let x = Math.round(sx - 5); x <= Math.round(sx + 3); x++) G.set(x, Math.round(sy + 2), shell ? '#1d8b82' : '#3a2a3e');
     G.set(Math.round(sx + 1), Math.round(sy + 3), '#ffffff');
-  } else { G.set(Math.round(sx + 1), Math.round(sy - 5), '#1a1420'); G.set(Math.round(sx + 2), Math.round(sy - 4), '#1a1420'); }
-  return G.outline(() => '#120f18').canvas();
+  } else G.set(Math.round(sx + 1), Math.round(sy - 5), '#1a1420');
+  return G.outline(() => (shell ? '#0e3d38' : '#120f18')).canvas();
 }
 const WOLF_POSES = { stand: 2, run: 4, crouch: 1, howl: 1, lie: 1 };
 const WOLF_ART = Object.fromEntries([false, true].map(shell => [shell ? 'shell' : 'ore',
@@ -196,7 +194,7 @@ const WOLF_ART = Object.fromEntries([false, true].map(shell => [shell ? 'shell' 
 const WOLF_WHITE = new Map();
 const wolfWhite = img => { if (!WOLF_WHITE.has(img)) WOLF_WHITE.set(img, whiteOf(img)); return WOLF_WHITE.get(img); };
 // where her tails come out of her, per pose (sprite pixels)
-const TAIL_ROOT = { stand: [15, 28], run: [15, 28], crouch: [15, 32], howl: [15, 28], lie: [15, 42] };
+const TAIL_ROOT = { stand: [20, 28], run: [20, 28], crouch: [20, 32], howl: [20, 28], lie: [20, 42] };
 
 // the little things: a flung ore (a lump, or a crystal for the gems), drawn a
 // quarter turn at a time as it tumbles, and a lattice (a cube of seven nodes'
@@ -248,9 +246,7 @@ function makeLattice(ore, k) {
 }
 const LATTICE_ART = Object.fromEntries(ORES.map(o => [o, Array.from({ length: LATTICE_FRAMES }, (_, k) => makeLattice(o, k))]));
 
-// the crystal wall that grows over the way out once the fight starts, and the
-// cave mouth out in the mines once it's open: the lair's rock with a dark
-// mouth, violet light inside, and crystals of all seven ores growing round it
+// the crystal wall that grows over the way out once the fight starts
 function makeSeal() {
   const G = pixelGrid(52, 32), r = mulberry32(1401);
   for (let k = 0; k < 11; k++) {
@@ -262,71 +258,104 @@ function makeSeal() {
   }
   return G.outline(() => '#120f18').canvas();
 }
-function makeCrystalLair() {
-  const w = 48, h = 40, cx = 23.5, ground = h - 2;
-  const G = pixelGrid(w, h);
-  rockMound(G, w, ground, false);
+// her cave mouth out in the mines, its own thing and not the other lairs' rock
+// (alex): an angular mound of dark violet slate cut into facets, studded all
+// over with ore, a crown of big crystals of all seven ores growing out of it,
+// and an arched mouth lit from inside in prism colours
+function makeOreCave() {
+  const w = 48, h = 48, cx = 23.5, ground = h - 2, G = pixelGrid(w, h), r = mulberry32(1402);
+  const ROCK = ['#7a7390', '#5e5874', '#47415a', '#322d40'];
+  const top = x => ground - 30 * Math.sqrt(Math.max(0, 1 - ((x - cx) / 23) ** 2));
   for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
-    const mx = (x - cx) / 7.5, my = (y - ground) / 14, d = mx * mx + my * my;
-    if (d > 1 || y > ground) continue;
-    G.set(x, y, d > 0.72 ? '#2a2236' : d > 0.35 ? '#120c1e' : y > ground - 3 ? '#4a3a7a' : '#1e1436');
+    const dx = (x - cx) / 23, dy = (y - ground) / 30, edge = (hash2(x >> 2, y >> 2, 1403) - 0.5) * 0.16;
+    if (dx * dx + dy * dy > 1 + edge) continue;
+    const facet = hash2(Math.floor((x + y * 0.6) / 6), Math.floor((x - y * 0.6 + 40) / 6), 1404);
+    const lit = -(dx * 0.6 + dy * 0.7) * 0.8 + (facet - 0.5) * 0.8;
+    G.set(x, y, ROCK[lit > 0.45 ? 0 : lit > 0.05 ? 1 : lit > -0.35 ? 2 : 3]);
   }
-  const r = mulberry32(1402);
-  [[cx - 10, ground - 6, -0.6], [cx - 9, ground - 13, -0.3], [cx - 4, ground - 17, -0.1], [cx + 3, ground - 17, 0.15], [cx + 9, ground - 13, 0.35], [cx + 10, ground - 6, 0.6], [cx + 1, ground - 19, 0]].forEach(([bx, by, lean], k) => {
-    const P = ORE_PAL[ORES[k]], len = 5 + r() * 3;
+  // ore studded through it, little clusters like the ore in the mine walls
+  const studs = ['gold', 'ruby', 'emerald', 'diamond', 'iron', 'marble'];
+  for (let k = 0; k < 22; k++) {
+    const ox = Math.round(5 + r() * 38), oy = Math.round(top(ox) + 4 + r() * (ground - top(ox) - 6)), P = ORE_PAL[studs[k % studs.length]];
+    [[0, 0], [1, 0], [0, 1], [1, 1], [-1, 1]].slice(0, 2 + (k % 3)).forEach(([ddx, ddy], j) => { if (G.get(ox + ddx, oy + ddy)) G.set(ox + ddx, oy + ddy, j === 0 ? P.hi : P.md); });
+  }
+  // the mouth: an arch lit from inside, violet up top and the seven colours
+  // glowing along its floor
+  for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
+    const mx = (x - cx) / 7.5, my = (y - ground) / 15, d = mx * mx + my * my;
+    if (d > 1.2 || y > ground) continue;
+    if (d > 1) { if (G.get(x, y)) G.set(x, y, '#9a92b2'); continue; }
+    const glow = y > ground - 2 && d < 0.8 ? ORE_PAL[ORES[Math.min(6, Math.floor(((x - cx + 7.5) / 15) * 7))]].dk : null;
+    G.set(x, y, glow || (d > 0.72 ? '#221a30' : d > 0.35 ? '#140e20' : '#2a1e48'));
+  }
+  // and the crown: a crystal of each ore growing up and out of the top
+  [[cx - 16, -0.8, 6], [cx - 11, -0.5, 8], [cx - 5, -0.2, 10], [cx + 1, 0.05, 11], [cx + 7, 0.3, 9], [cx + 12, 0.55, 8], [cx + 17, 0.85, 6]].forEach(([bx, lean, len], k) => {
+    const P = ORE_PAL[ORES[k]], by = top(bx) + 3;
     for (let s = 0; s <= len; s++) {
-      const half = 1.6 * (1 - s / (len + 1));
-      for (let ww = -half; ww <= half; ww += 0.5) G.set(bx + ww + s * lean, by - s, ww < 0 ? P.hi : P.md);
+      const half = 2.2 * (1 - s / (len + 1)) ** 0.7;
+      for (let ww = -half; ww <= half; ww += 0.5) G.set(bx + ww + s * lean, by - s, ww < -half * 0.35 ? P.hi : ww < half * 0.35 ? P.lt : P.md);
     }
+    G.set(bx + len * lean, by - len, '#ffffff');
   });
-  return G.outline(() => '#262626').canvas();
+  return G.outline(() => '#1a1622').canvas();
 }
 
-// the arena: a cavern of dark slate with crystals glinting in the walls,
-// polished floor tiles with thin veins of all seven ores running through them,
-// and a faint ring of the seven inlaid round the middle of the floor
+// the arena as tiles (WT), so its walls can be dug like the mines': wall all
+// round (two rows at the back) with a gap for the door, plain dark flagstones
+// inside (alex wanted the floor simpler, no inlaid ring or veins), and the
+// walls thick with ore of every kind, which won't budge until she's beaten
 const WOLF_COLS = 26, WOLF_ROWS = 18, WOLF_DOOR = 13;
+WQ.mined = Array.isArray(WQ.mined) ? WQ.mined.filter(n => Number.isInteger(n)) : [];
+const WT = new Uint8Array(WOLF_COLS * WOLF_ROWS);
+const wti = (tx, ty) => ty * WOLF_COLS + tx;
+const WALL_ORES = [[T.IRON, 0.3], [T.GOLD, 0.24], [T.RUBY, 0.2], [T.EMERALD, 0.14], [T.DIAMOND, 0.12]];
+for (let ty = 0; ty < WOLF_ROWS; ty++) for (let tx = 0; tx < WOLF_COLS; tx++) {
+  const wall = tx === 0 || tx === WOLF_COLS - 1 || ty <= 1 || (ty === WOLF_ROWS - 1 && tx !== WOLF_DOOR);
+  let t = T.FLOOR;
+  if (wall) {
+    t = T.WALL;
+    if (hash2(tx, ty, 1450) < 0.55) {
+      let u = hash2(tx, ty, 1451);
+      t = (WALL_ORES.find(([, p]) => (u -= p) < 0) || WALL_ORES[0])[0];
+    }
+  }
+  WT[wti(tx, ty)] = t;
+}
+WQ.mined.forEach(i => { if (i >= 0 && i < WT.length) WT[i] = T.FLOOR; });
+// (outside the grid is rock, except straight down out of the door)
+const wtAt = (tx, ty) => (tx === WOLF_DOOR && ty >= WOLF_ROWS - 1 ? T.FLOOR
+  : tx < 0 || ty < 0 || tx >= WOLF_COLS || ty >= WOLF_ROWS ? T.WALL : WT[wti(tx, ty)]);
+const wolfSolid = (x, y) => !!SOLID[wtAt(Math.floor(x / TILE), Math.floor(y / TILE))];
+function makeFlagstone(v) {
+  const c = mk(TILE, TILE), g = c.getContext('2d');
+  const base = 44 + (v - 1.5) * 3;
+  g.fillStyle = `rgb(${base},${base + 1},${base + 8})`;
+  g.fillRect(0, 0, TILE, TILE);
+  g.fillStyle = 'rgb(30,31,38)';
+  g.fillRect(0, 0, TILE, 1); g.fillRect(0, 0, 1, TILE);
+  g.fillStyle = `rgb(${base + 7},${base + 8},${base + 15})`;
+  g.fillRect(1, 1, TILE - 2, 1);
+  for (let k = 0; k < 4; k++) {
+    g.fillStyle = k % 2 ? `rgb(${base - 6},${base - 5},${base + 2})` : `rgb(${base + 5},${base + 6},${base + 12})`;
+    g.fillRect(2 + ((hash2(v, k, 1455) * 12) | 0), 3 + ((hash2(k, v, 1456) * 11) | 0), 1, 1);
+  }
+  return c;
+}
+const FLAGSTONE = [0, 1, 2, 3].map(makeFlagstone);
+function paintWolfTile(g, tx, ty) {
+  const t = wtAt(tx, ty), px = tx * TILE, py = ty * TILE;
+  if (SOLID[t]) {
+    g.drawImage(TEX[t][(hash2(tx, ty, 1452) * 4) | 0], px, py);
+    if (!SOLID[wtAt(tx, ty + 1)]) { g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(px, py + 13, TILE, 3); }
+    if (!SOLID[wtAt(tx, ty - 1)]) { g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(px, py, TILE, 1); }
+  } else {
+    g.drawImage(FLAGSTONE[(hash2(tx, ty, 1453) * 4) | 0], px, py);
+    if (SOLID[wtAt(tx, ty - 1)]) { g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(px, py, TILE, 3); }
+  }
+}
 function paintWolfRoom() {
   const w = WOLF_COLS * TILE, h = WOLF_ROWS * TILE, c = mk(w, h), g = c.getContext('2d');
-  const img = g.createImageData(w, h), D = img.data;
-  const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
-  const put = (x, y, [r, gg, b], a = 1) => {
-    if (x < 0 || y < 0 || x >= w || y >= h) return;
-    const i = (y * w + x) * 4;
-    D[i] = D[i] + (r - D[i]) * a; D[i + 1] = D[i + 1] + (gg - D[i + 1]) * a; D[i + 2] = D[i + 2] + (b - D[i + 2]) * a; D[i + 3] = 255;
-  };
-  const wallAt = (x, y) => x < 16 || x >= w - 16 || y < 32 || (y >= h - 16 && Math.floor(x / TILE) !== WOLF_DOOR);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const n = hash2(x, y, 1410);
-    if (wallAt(x, y)) {
-      const face = y >= 18 && y < 32 && x >= 16 && x < w - 16;
-      const v = face ? 64 - (31 - y) * 2 : 24 + vnoise(x / 9, y / 9, 1411) * 16;
-      put(x, y, [v, v + 2, v + 12]);
-      if (vnoise(x / 4, y / 4, 1412) > 0.8 && n < 0.35) put(x, y, rgb(ORE_PAL[ORES[(hash2(x >> 2, y >> 2, 1413) * 7) | 0]].lt));
-    } else {
-      const tx = x % 16, ty = y % 16;
-      const v = tx === 0 || ty === 0 ? 30 : 46 + (hash2(x >> 4, y >> 4, 1414) - 0.5) * 12 + (tx + ty < 4 ? 6 : 0);
-      put(x, y, [v, v + 1, v + 9]);
-      if (n < 0.03) put(x, y, [84, 84, 100]);
-    }
-  }
-  // veins of ore wandering through the floor
-  const r = mulberry32(1415);
-  for (let k = 0; k < 16; k++) {
-    const col = rgb(ORE_PAL[ORES[k % 7]].md);
-    let x = 24 + r() * (w - 48), y = 40 + r() * (h - 64), a = r() * Math.PI * 2;
-    for (let s = 0; s < 70; s++) {
-      a += (r() - 0.5) * 0.7; x += Math.cos(a) * 1.4; y += Math.sin(a) * 1.4;
-      if (!wallAt(Math.round(x), Math.round(y))) put(Math.round(x), Math.round(y), col, 0.45);
-    }
-  }
-  // the ring in the middle, a seventh of it per ore
-  const cx = w / 2, cy = h / 2 + 12;
-  for (let a = 0; a < Math.PI * 2; a += 0.004) {
-    const col = rgb(ORE_PAL[ORES[Math.floor((a / (Math.PI * 2)) * 7)]].md);
-    [70, 71, 46].forEach(R => put(Math.round(cx + Math.cos(a) * R), Math.round(cy + Math.sin(a) * R * 0.62), col, 0.32));
-  }
-  g.putImageData(img, 0, 0);
+  for (let ty = 0; ty < WOLF_ROWS; ty++) for (let tx = 0; tx < WOLF_COLS; tx++) paintWolfTile(g, tx, ty);
   // daylight from the mines coming in at the door
   const gr = g.createLinearGradient(0, h, 0, h - 26);
   gr.addColorStop(0, 'rgba(255,236,200,0.25)');
@@ -335,13 +364,41 @@ function paintWolfRoom() {
   g.fillRect(WOLF_DOOR * TILE, h - 26, TILE, 26);
   return c;
 }
+function repaintWolf(tx, ty) {
+  const g = wolfRoom.canvas.getContext('2d');
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (tx + dx >= 0 && ty + dy >= 0 && tx + dx < WOLF_COLS && ty + dy < WOLF_ROWS) paintWolfTile(g, tx + dx, ty + dy);
+  }
+}
+// digging her walls (the play layer treats these like the race track's walls,
+// with her own lock and hint)
+function wolfTarget(m) {
+  if (room !== wolfRoom) return null;
+  const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE);
+  if (tx < 0 || ty < 0 || tx >= WOLF_COLS || ty >= WOLF_ROWS) return null;
+  const t = WT[wti(tx, ty)];
+  if (!SOLID[t]) return null;
+  return {
+    type: 'racetile', tx, ty, key: `wt:${wti(tx, ty)}`, cx: tx * TILE + 8, cy: ty * TILE + 8, cls: ORE_ITEM[t] ? 'ore' : 'stone', ore: ORE_ITEM[t],
+    locked: () => !WQ.dead, lockHint: 'Beat her first.', mine: wolfMineTile
+  };
+}
+function wolfMineTile(tgt, info) {
+  const i = wti(tgt.tx, tgt.ty);
+  WT[i] = T.FLOOR;
+  WQ.mined.push(i);
+  repaintWolf(tgt.tx, tgt.ty);
+  burst(tgt.cx, tgt.cy, '140,140,140', 12);
+  if (info.drops) gain(tgt.ore || 'stone', 1, tgt.cx, tgt.cy - 8);
+  else floatText('Nothing dropped', tgt.cx, tgt.cy - 8, '#bdbdbd');
+  markDirty();
+}
 
 // her lair out in the mines: bruinpop's boarded up lair until darryl's door
-// has been opened (mailsisibox found), then a crystal cave mouth you can walk
-// into
+// has been opened (mailsisibox found), then her ore cave, which you walk into
 const bruinPoi = POIS.find(p => p.id === 'bruinpop');
 const lairThing = bruinPoi.thing;
-const CRYSTAL_LAIR = makeCrystalLair();
+const ORE_CAVE = makeOreCave();
 const lairMouth = idx(bruinPoi.at[0], bruinPoi.at[1]);
 const lairOpen = () => found.has('mailsisibox');
 const lairGlow = { x: lairThing.x, y: lairThing.y - 10, rgb: '190,160,255', rad: 2.2, flicker: true, strength: 0.22, off: true };
@@ -351,23 +408,25 @@ function syncLair() {
   const open = lairOpen();
   if (open === lairWasOpen) return;
   lairWasOpen = open;
-  lairThing.frames = open ? [CRYSTAL_LAIR] : SPRITE.lair;
+  lairThing.frames = open ? [ORE_CAVE] : SPRITE.lair;
   lairGlow.off = !open;
   if (open) extraSolid.delete(lairMouth);
   else extraSolid.add(lairMouth);
 }
 syncLair();
 
-const wolfWalls = roomWalls(WOLF_COLS, WOLF_ROWS, WOLF_DOOR);
 const SEAL_X = WOLF_DOOR * TILE + 8;
 const wolfRoom = {
   id: 'wolf', w: WOLF_COLS * TILE, h: WOLF_ROWS * TILE, dust: '#5a5866', shade: 0.4, fight: true, sealed: false, underground: true,
-  canvas: paintWolfRoom(),
+  canvas: null,
   outside: { x: lairThing.x, y: lairThing.y }, exit: { x: lairThing.x, y: lairThing.y + 10 }, door: WOLF_DOOR,
-  // once the fight starts, crystals grow over the way out until she's beaten
-  blocked: (x, y) => wolfWalls(x, y) || (wolfRoom.sealed && y > WOLF_ROWS * TILE - 26 && Math.abs(x - SEAL_X) < 18),
+  // the walls (checked at your feet, like any other room), and once the fight
+  // starts, the crystals grown over the way out until she's beaten
+  blocked: (x, y) => [[-4, -3], [3, -3], [-4, 0], [3, 0]].some(([dx, dy]) => wolfSolid(x + dx, y + dy))
+    || (wolfRoom.sealed && y > WOLF_ROWS * TILE - 26 && Math.abs(x - SEAL_X) < 18),
   things: [], glows: []
 };
+wolfRoom.canvas = paintWolfRoom();
 EXTRA_ROOMS.push(wolfRoom);
 BUILDINGS.push({
   thing: lairThing, tile: bruinPoi.at, room: wolfRoom, get name() { return WQ.dead ? 'The Crystal Den' : 'Crystal Cave'; }, open: lairOpen,
@@ -451,23 +510,24 @@ const fighting = () => FIGHTING.includes(wolf.state);
 const WOLF_WHO = { name: WOLF_NAME, voice: () => sfx.mind(), at: () => wolf, cls: 'is-mind' };
 const wolfTalking = () => !!talk && talk.who === WOLF_WHO;
 
-// what she says when you walk in. the first time it's the whole thing; after
-// she's beaten you she doesn't bother explaining again.
+// what she says when you walk in (alex's lines). the first time it's the
+// whole thing; after she's beaten you she just mocks you for coming back.
 function meetTalk() {
-  if (WQ.met) return [{ d: 'No matter.' }, { d: 'You will pay.' }];
+  if (WQ.met) return [{ d: 'Foolish child, you dare return?' }, { d: 'Didn\'t you learn your lesson the first time?' }];
   return [
     { d: 'So it\'s you.', name: '???' },
     { you: 'Who\'s speaking?' },
     { act: () => { faceToward(wolf.x, wolf.y); floatText('?', player.x, player.y - 34, '#ffd23f'); }, wait: 0.6 },
     { you: 'Is it you?' },
-    { d: 'The one who killed my son, Marmocyon.' },
-    { you: 'Who is that?' },
-    { d: 'The nameless marble hyena you cracked open without hesitation?' },
+    { d: 'The one who killed my son.' },
+    { you: 'How am I hearing you?' },
+    { d: 'The marble hyena you cracked open without hesitation?' },
     { d: 'To do what, create a sword that killed Moe?' },
+    { you: 'Slow down. What are you talking about?' },
     { d: 'Let me ask, what did Moe do to you?' },
     { you: '...' },
     { d: 'No matter.' },
-    { d: 'You will pay.' }
+    { d: 'You shall pay.' }
   ];
 }
 const defeatTalk = () => [
@@ -488,18 +548,47 @@ function tickMeet(dt) {
   if (meet.t > 0.5 && wolf.state === 'wait') { wolf.state = 'rise'; wolf.t = 0; sfx.snarl(); }
   if (meet.t > 1.5 && !meet.talked) {
     meet.talked = true;
-    startTalk(meetTalk(), startCard, WOLF_WHO);
+    startTalk(meetTalk(), () => (WQ.hideTip ? startCard() : openWolfTip()), WOLF_WHO);
     WQ.met = true;
     markDirty();
   }
   if (meet.talked && !wolfTalking()) meet = null;
+}
+// a quick tip on breaking her lattices, right before the fight (alex), every
+// time unless you've ticked "don't show this again"
+const wolfTipEl = $('#wolf-help');
+let tipOpen = false;
+function openWolfTip() {
+  meet = null;
+  tipOpen = true;
+  wolfTipEl.hidden = false;
+  $('#wolf-help-skip').checked = false;
+  document.body.classList.add('is-help');
+  setTimeout(() => $('#wolf-help-go').focus(), 50);
+}
+function closeWolfTip(go = true) {
+  if (!tipOpen) return;
+  tipOpen = false;
+  wolfTipEl.hidden = true;
+  document.body.classList.remove('is-help');
+  if ($('#wolf-help-skip').checked) { WQ.hideTip = true; markDirty(); }
+  sfx.ui();
+  if (go) startCard();
+}
+$('#wolf-help-go').addEventListener('click', () => closeWolfTip());
+function wolfKey(e) {
+  if (tipOpen) {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') { e.preventDefault(); closeWolfTip(); }
+    return !['j', 'k', 'm'].includes(e.key.toLowerCase());
+  }
+  return wolfHolds() && ['e', 'q', 'f'].includes(e.key.toLowerCase());
 }
 function startCard() {
   meet = null;
   card = { t: 0, prev: 0 };
   $('#cine-eyebrow').textContent = 'The Mines | Boss';
   $('#cine-title').textContent = WOLF_NAME;
-  $('#cine-sub').textContent = 'Mother of Marmocyon';
+  $('#cine-sub').textContent = 'Guardian of the Caves';
   document.body.classList.add('is-cine');
   bossMusic(true, WOLF_TUNE);
 }
@@ -529,7 +618,7 @@ function startFight() {
   Object.assign(wolf, { state: 'stalk', t: 0, cd: 1.4, phase: 'armored', pt: WOLF.shellFirst, last: null });
   sfx.molt();
   bossBar(true, wolf);
-  bossHint('wolf-shell', 'Encased', 'Pure diamond...', 'Nothing gets through. Dodge until it breaks.');
+  bossHint('wolf-shell', 'Encased', 'Pure diamond...', 'Nothing can pierce through. Just keep dodging.');
 }
 
 // the phases. armored: diamond all over, nothing hurts her. lattice: the
@@ -569,7 +658,7 @@ function startLattices(c) {
       if (Math.hypot(x - player.x, y - player.y) > 70 && Math.hypot(x - c.x, y - c.y) > 50 && spots.every(([sx, sy]) => Math.hypot(sx - x, sy - y) > 44)) break;
     }
     spots.push([x, y]);
-    const L = { ore, x, y, a: Math.random() * Math.PI * 2, sp: 36 + Math.random() * 18, z: 0, rise: 0, sink: null, alive: true, seed: Math.random(),
+    const L = { ore, x, y, a: Math.random() * Math.PI * 2, sp: 36 + Math.random() * 18, z: 0, rise: 0, sink: null, alive: true, seed: Math.random(), snow: 0, arrows: 0, hurt: 0,
       frames: [mk(1, 1)], draw: drawLattice, glow: { x, y, rgb: ORE_PAL[ore].rgb, rad: 1.8, flicker: true, strength: 0.3 } };
     lattices.push(L);
     wolfRoom.things.push(L);
@@ -579,16 +668,20 @@ function startLattices(c) {
   sfx.chime(0);
   setTimeout(() => sfx.chime(3), 120);
   setTimeout(() => sfx.chime(6), 240);
-  bossHint('wolf-lattice', 'Seven lattices', 'Shoot them down!', 'Break all seven with arrows before they sink back in.');
-  const canShoot = inv.slots.some(s => s && (ITEMS[s.id].arrow || ITEMS[s.id].throw)) && inv.slots.some(s => s && (ITEMS[s.id].ranged || ITEMS[s.id].throw));
-  if (!canShoot) setTimeout(() => toast('Seven lattices', 'You need arrows', 'Only something thrown or shot can break them.'), 2400);
+  bossHint('wolf-lattice', 'Seven cores', 'Shoot them down.', 'Destroy her protective cores.');
+  // nothing to shoot at all, or only snowballs (which can't touch the emerald
+  // or diamond ones, so without a bow and arrows you can't win)
+  const archer = inv.slots.some(s => s && ITEMS[s.id].arrow) && inv.slots.some(s => s && ITEMS[s.id].ranged);
+  const snow = inv.slots.some(s => s && ITEMS[s.id].throw);
+  if (!archer) setTimeout(() => (snow ? toast('Seven cores', 'You need arrows', 'Snowballs can\'t break the emerald or diamond ones.')
+    : toast('Seven cores', 'You need a projectile.', 'Only something thrown or shot can break them.')), 2400);
 }
 function retractLattices(c) {
   lattices.forEach(L => { if (L.alive && L.sink === null) L.sink = 0; });
   c.phase = 'armored';
   c.pt = WOLF.shell;
   sfx.molt();
-  bossHint('wolf-retract', 'Too slow', 'The lattices sank back in', 'She\'s diamond again. Break all seven next time.');
+  bossHint('wolf-retract', 'Too slow...', 'The lattices sank back in', 'She\'s diamond again. Break all seven next time.');
 }
 function openUp(c) {
   c.phase = 'open';
@@ -602,7 +695,7 @@ function openUp(c) {
   addShake(4);
   sfx.shatter();
   sfx.roar();
-  toast('Her shield is broken', `${WOLF_NAME} is open`, 'Every hit counts now. Watch out for her tails...');
+  toast('Her defenses break...', 'Attack now!', 'Every hit counts now. Watch out for her tails...');
 }
 function removeLattice(L) {
   const i = wolfRoom.things.indexOf(L);
@@ -618,24 +711,36 @@ function breakLattice(L) {
     const a = Math.random() * Math.PI * 2, sp = 40 + Math.random() * 90;
     particles.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 30, g: 200, life: 0.5 + Math.random() * 0.4, t: 0, col: Math.random() < 0.4 ? ORE_PAL[L.ore].hi : ORE_PAL[L.ore].md, size: 1 });
   }
-  const n = ++latBroken;
-  floatText(`${n}/7`, cx, cy - 12, ORE_PAL[L.ore].lt);
+  floatText(`${++latBroken}/7`, cx, cy - 12, ORE_PAL[L.ore].lt);
   sfx.shatter();
   sfx.chime(ORES.indexOf(L.ore));
 }
-// an arrow or a snowball flying into a lattice breaks it (the play layer asks
-// before checking creatures, so it's used up on the lattice)
+// something flying into a lattice (the play layer asks before checking
+// creatures, so it's used up on the lattice). what it takes (alex): iron,
+// emerald and diamond arrows break any of them in one; weaker arrows break
+// most in one but the emerald and diamond lattices in two; snowballs take
+// seven hits each and just bounce off the emerald and diamond ones.
+const TOUGH_LATTICE = new Set(['emerald', 'diamond']), STRONG_ARROW = new Set(['iron', 'emerald', 'diamond', 'prismasteel']);
 function wolfCatch(p) {
   if (room !== wolfRoom || p.from === 'mob') return false;
   const L = lattices.find(k => k.alive && k.sink === null && k.rise > 0.5 && Math.hypot(p.x - k.x, p.y - (k.y - k.z)) < 10);
   if (!L) return false;
-  breakLattice(L);
+  const tough = TOUGH_LATTICE.has(L.ore), cx = L.x, cy = L.y - L.z;
+  const chip = (text, col) => { L.hurt = 0.18; floatText(text, cx, cy - 12, col); burst(cx, cy, ORE_PAL[L.ore].rgb, 5); sfx.chime(ORES.indexOf(L.ore)); };
+  if (p.kind === 'snow') {
+    if (tough) { floatText('Arrows only', cx, cy - 12, '#bde9ff'); burst(cx, cy, '240,244,252', 6); sfx.clang(); return true; }
+    if (++L.snow >= 7) breakLattice(L); else chip(`Hit ${L.snow}/7`, '#eef3fb');
+    return true;
+  }
+  if (!tough || STRONG_ARROW.has(p.mat) || ++L.arrows >= 2) breakLattice(L);
+  else chip(`Hit ${L.arrows}/2`, ORE_PAL[L.ore].lt);
   return true;
 }
 function updateLattices(dt, t) {
   for (let i = lattices.length - 1; i >= 0; i--) {
     const L = lattices[i];
     if (!L.alive) { lattices.splice(i, 1); continue; }
+    L.hurt = Math.max(0, L.hurt - dt);
     if (L.sink !== null) {
       L.sink += dt / 0.8;
       if (L.sink >= 1) { removeLattice(L); lattices.splice(i, 1); burst(L.x, L.y - 2, '120,110,140', 6); continue; }
@@ -665,37 +770,67 @@ function chooseAttack(c) {
   c.last = pick;
   c.t = 0;
   if (pick === 'lunge') { c.state = 'windup'; sfx.snarl(); }
-  else if (pick === 'fling') c.state = 'howl';
-  else { c.state = 'tails'; c.k = 0; c.tailT = 0.5; bossHint('wolf-tails', 'Her tails!', 'Keep running', 'They follow you. Seven of them, one after another.'); }
+  else if (pick === 'fling') { c.state = 'howl'; c.pullEnd = 9; sfx.molt(); }
+  else { c.state = 'tails'; c.k = 0; c.tailT = 0.5; bossHint('wolf-tails', 'Her tails!', 'Keep running', 'Seven of them, one after another. They hurt.'); }
 }
-function flingOres(c) {
+// her ore pull (alex wanted it animated and a bit harder to dodge): she
+// glows, her tails stand straight up, and each ore is pulled up out of the
+// floor round her by the tail of the same ore (a beam of its colour between
+// them). they hang there for a moment, then she flings them at you one after
+// another. each is aimed as it's thrown, so its ring only shows up while it's
+// in the air, and the first of every volley goes where you're heading.
+const PULL = { rise: 0.5, lift: 0.45, hang: 0.2, gap: 0.13, fly: 0.85, flyOpen: 0.75 };
+let pv = { x: 0, y: 0, lx: 0, ly: 0 };
+function pullOres(c) {
   const open = c.phase === 'open', n = open ? 7 : rand(WOLF.fling.min, WOLF.fling.max);
-  const spots = [[player.x, player.y]];
-  for (let k = 1; k < n; k++) {
-    let x = player.x, y = player.y;
-    for (let tries = 0; tries < 30; tries++) {
-      const a = Math.random() * Math.PI * 2, r = 26 + Math.random() * 74;
-      x = clamp(player.x + Math.cos(a) * r, 30, wolfRoom.w - 30);
-      y = clamp(player.y + Math.sin(a) * r * 0.8, 50, wolfRoom.h - 24);
-      if (spots.every(([sx, sy]) => Math.hypot(sx - x, (sy - y) * 1.4) > 34)) break;
-    }
-    spots.push([x, y]);
+  const toYou = Math.atan2(player.y - c.y, player.x - c.x);
+  for (let k = 0; k < n; k++) {
+    const a = toYou + (((k + 0.5) / n) - 0.5) * Math.PI * 1.3, r = 50 + Math.random() * 10;
+    const gx = clamp(c.x + Math.cos(a) * r, 24, wolfRoom.w - 24), gy = clamp(c.y + Math.sin(a) * r * 0.5 + 6, 40, wolfRoom.h - 20);
+    flung.push({ ore: open ? 'diamond' : ORES[(Math.random() * 7) | 0], k, gx, gy, x: gx, y: gy, z: 0, hz: 24 + (k % 2) * 8, age: -k * 0.05, popped: false,
+      fly: false, launchAt: PULL.lift + PULL.hang + k * PULL.gap, lead: k === 0, t: 0, dur: open ? PULL.flyOpen : PULL.fly, h: 26 + Math.random() * 16, spin: Math.random() * 4 });
   }
-  spots.forEach(([x, y], k) => {
-    const a = (k / n) * Math.PI * 2, ox = c.x + Math.cos(a) * (22 + Math.random() * 10), oy = c.y + Math.sin(a) * 10 + 4;
-    flung.push({ ore: open ? 'diamond' : ORES[(Math.random() * 7) | 0], ox, oy, x1: x, y1: y, pull: 0, wait: 0.3 + k * 0.08, t: 0, dur: open ? WOLF.fling.flyOpen : WOLF.fling.fly, h: 50 + Math.random() * 30, spin: Math.random() * 4 });
-    burst(ox, oy, '150,140,160', 6);
-  });
-  addShake(2.5);
-  sfx.thud();
+  c.pullEnd = PULL.lift + PULL.hang + (n - 1) * PULL.gap + 0.35;
+  addShake(2);
   sfx.rumble();
+}
+function launchOre(F) {
+  let x = player.x, y = player.y;
+  if (F.lead) { x = player.x + pv.x * F.dur * 0.7; y = player.y + pv.y * F.dur * 0.7; }
+  else {
+    for (let tries = 0; tries < 30; tries++) {
+      const a = Math.random() * Math.PI * 2, r = 14 + Math.random() * 56;
+      x = player.x + Math.cos(a) * r; y = player.y + Math.sin(a) * r * 0.8;
+      if (flung.every(o => !o.fly || Math.hypot(o.x1 - x, (o.y1 - y) * 1.4) > 26)) break;
+    }
+  }
+  Object.assign(F, { fly: true, t: 0, x0: F.x, y0: F.y, z0: F.z, x1: clamp(x, 26, wolfRoom.w - 26), y1: clamp(y, 44, wolfRoom.h - 22) });
+  burst(F.x, F.y - F.z, ORE_PAL[F.ore].rgb, 6);
+  whoosh();
 }
 function updateFlung(dt) {
   for (let i = flung.length - 1; i >= 0; i--) {
     const F = flung[i];
-    if (F.wait > 0) { F.wait -= dt; F.pull += dt; continue; }
+    F.spin += dt * (F.fly ? 12 : 3);
+    if (!F.fly) {
+      F.age += dt;
+      if (F.age <= 0) continue;
+      if (!F.popped) {
+        // it breaks up out of the floor
+        F.popped = true;
+        burst(F.gx, F.gy - 2, '150,140,160', 8);
+        burst(F.gx, F.gy - 4, ORE_PAL[F.ore].rgb, 4);
+        sfx.chip();
+      }
+      const u = Math.min(1, F.age / PULL.lift);
+      F.z = (1 - (1 - u) ** 3) * F.hz + (u >= 1 && !reduceMotion ? Math.sin(F.age * 7 + F.k) * 1.5 : 0);
+      if (F.age >= F.launchAt) launchOre(F);
+      continue;
+    }
     F.t += dt;
-    F.spin += dt * 10;
+    const u = Math.min(1, F.t / F.dur);
+    F.x = F.x0 + (F.x1 - F.x0) * u; F.y = F.y0 + (F.y1 - F.y0) * u;
+    F.z = F.z0 * (1 - u) + F.h * 4 * u * (1 - u);
     if (F.t < F.dur) continue;
     // it lands: anyone in the ring is hit, it smashes, and once in a while it
     // leaves a piece of itself behind
@@ -761,7 +896,7 @@ function wolfPose(c, t) {
     case 'wait': return ['lie', 0];
     case 'rise': return c.t < 0.45 ? ['lie', 0] : ['crouch', 0];
     case 'windup': return ['crouch', 0];
-    case 'howl': return c.t < 0.95 ? ['howl', 0] : ['stand', 0];
+    case 'howl': return c.t < PULL.rise + (c.pullEnd || 1) - 0.3 ? ['howl', 0] : ['stand', 0];
     case 'dying': return c.t > 1 ? ['lie', 0] : ['crouch', 0];
     case 'kneel':
     case 'shatter': return ['lie', 0];
@@ -849,8 +984,8 @@ function updateWolf(c, dt) {
       break;
     case 'howl':
       face();
-      if (c.t - dt < 0.4 && c.t >= 0.4) flingOres(c);
-      if (c.t >= 1.3) { c.state = 'recover'; c.t = 0; }
+      if (c.t - dt < PULL.rise && c.t >= PULL.rise) pullOres(c);
+      if (c.t >= PULL.rise + (c.pullEnd || 1)) { c.state = 'recover'; c.t = 0; }
       break;
     case 'tails':
       face();
@@ -886,7 +1021,13 @@ function updateWolf(c, dt) {
     hurtPlayer(c.state === 'lunge' ? WOLF.lungeDmg : WOLF.touchDmg, c.x, c.y - 10);
   }
   if (c.moving) c.anim += dt;
-  Object.assign(wolfGlow, { x: c.x, y: c.y - 22, off: c.gone, strength: c.state === 'shatter' ? 0.2 + c.t * 0.5 : 0.2 });
+  const pulling = c.state === 'howl' && c.t < PULL.rise + (c.pullEnd || 1) - 0.25;
+  c.raise = clamp((c.raise || 0) + (pulling ? dt / 0.35 : -dt / 0.5), 0, 1);
+  if (pulling && Math.random() < dt * 30) {
+    const tip = c.tips && c.tips[(Math.random() * 7) | 0];
+    if (tip) particles.push({ x: tip[0], y: tip[1], vx: (Math.random() - 0.5) * 10, vy: -20 - Math.random() * 20, g: 0, life: 0.6, t: 0, col: hsl(Math.random() * 360, 0.9, 0.78), size: 1 });
+  }
+  Object.assign(wolfGlow, { x: c.x, y: c.y - 22, off: c.gone, strength: c.state === 'shatter' ? 0.2 + c.t * 0.5 : 0.2 + c.raise * 0.25 });
 }
 
 // what a hit does: nothing at all unless she's open (a clink off the diamond,
@@ -949,6 +1090,7 @@ function finishWolf(c) {
 function resetWolf() {
   if (wolfTalking()) endTalk(true);
   if (card) { card = null; document.body.classList.remove('is-cine'); cineEl.classList.remove('show-card'); }
+  closeWolfTip(false);
   meet = null;
   mourn = null;
   if (musicOn && musicTune === WOLF_TUNE) bossMusic(false);
@@ -959,7 +1101,7 @@ function resetWolf() {
   wolfSeal.gone = true;
   noteText = '';
   if (wolf.dead) return;
-  Object.assign(wolf, { x: wolf.hx, y: wolf.hy, hp: wolf.def.hp, state: 'wait', t: 0, cd: 0, phase: null, pt: 0, shell: 0, hurtT: 0, last: null, flip: false, k: 0 });
+  Object.assign(wolf, { x: wolf.hx, y: wolf.hy, hp: wolf.def.hp, state: 'wait', t: 0, cd: 0, phase: null, pt: 0, shell: 0, hurtT: 0, last: null, flip: false, k: 0, raise: 0 });
   wolfGlow.off = true;
 }
 
@@ -974,11 +1116,11 @@ function wolfEnter(r) {
 }
 function wolfLeave(r) { if (r === wolfRoom) resetWolf(); }
 function wolfHolds() {
-  return room === wolfRoom && (!!meet || !!card || wolfTalking() || wolf.state === 'dying' || wolf.state === 'shatter');
+  return room === wolfRoom && (!!meet || !!card || tipOpen || wolfTalking() || wolf.state === 'dying' || wolf.state === 'shatter');
 }
 // while she's talking the camera sits between the two of you
 function wolfCam() {
-  if (room !== wolfRoom || !(meet || card || wolfTalking())) return null;
+  if (room !== wolfRoom || !(meet || card || tipOpen || wolfTalking())) return null;
   return { x: (wolf.x + player.x) / 2, y: (wolf.y + player.y) / 2 - 18 };
 }
 function wolfTick(dt) {
@@ -989,6 +1131,11 @@ function wolfTick(dt) {
   if (meet) tickMeet(dt);
   if (card) tickCard(dt);
   const t = performance.now();
+  if (dt > 0) {
+    pv.x += ((player.x - pv.lx) / dt - pv.x) * 0.2; pv.y += ((player.y - pv.ly) / dt - pv.y) * 0.2;
+    if (Math.abs(pv.x) > 400 || Math.abs(pv.y) > 400) pv.x = pv.y = 0;
+    pv.lx = player.x; pv.ly = player.y;
+  }
   updateFlung(dt);
   updateTails(dt);
   updateLattices(dt, t);
@@ -1032,7 +1179,7 @@ function pxDisc(toX, toY, x, y, r, col) {
 // crystal point on the end
 function drawChain(toX, toY, pts, ore, glow) {
   const P = ORE_PAL[ore], n = pts.length;
-  const rad = i => { const u = i / Math.max(1, n - 1); return 2.4 + 2.3 * Math.sin(Math.PI * u * 0.85) - 2.5 * u * u; };
+  const rad = i => { const u = i / Math.max(1, n - 1); return 1.9 + 1.9 * Math.sin(Math.PI * u * 0.85) - 2 * u * u; };
   pts.forEach(([x, y], i) => pxDisc(toX, toY, x, y, rad(i) + 1, P.out));
   pts.forEach(([x, y], i) => pxDisc(toX, toY, x, y, rad(i), glow ? P.lt : P.dk));
   pts.forEach(([x, y], i) => pxDisc(toX, toY, x - rad(i) * 0.2, y - rad(i) * 0.25, rad(i) * 0.7, glow ? P.hi : P.md));
@@ -1046,19 +1193,24 @@ function drawRestTails(c, toX, toY, t, pose) {
   const r = TAIL_ROOT[pose] || TAIL_ROOT.stand, left = Math.round(c.x - WOLF_W / 2), top = Math.round(c.y - WOLF_GY);
   const bx = c.flip ? left + WOLF_W - 1 - r[0] : left + r[0], by = top + r[1], sx = c.flip ? -1 : 1;
   const out = new Set(tails.map(T => T.k));
-  const lie = pose === 'lie';
+  const lie = pose === 'lie', up = c.raise || 0, ease = up * up * (3 - 2 * up);
+  c.tips = c.tips || [];
   for (let i = 0; i < 7; i++) {
     if (out.has(i)) continue;
-    let a = Math.PI * (lie ? 1.0 + i * 0.035 : 0.97 + i * 0.075) + (reduceMotion ? 0 : Math.sin(t / 420 + i * 0.8) * 0.1);
+    // resting: fanned out behind her and curling up. pulling: straight up in
+    // a tall fan, quivering
+    const rest = Math.PI * (lie ? 1.0 + i * 0.035 : 0.97 + i * 0.075), stand = Math.PI * 1.5 + (i - 3) * 0.17;
+    let a = rest + (stand - rest) * ease + (reduceMotion ? 0 : Math.sin(t / (420 - 300 * ease) + i * 0.8) * (0.1 - 0.06 * ease));
     let x = bx, y = by;
     const pts = [[x, y]];
     for (let s = 0; s < 13; s++) {
-      a += lie ? -0.015 : 0.085;
+      a += (lie ? -0.015 : 0.085) * (1 - ease);
       x += Math.cos(a) * 2.5 * sx; y += Math.sin(a) * 2.5;
       pts.push([x, y]);
     }
+    c.tips[i] = [x, y];
     const ore = c.shell > 0.6 ? 'diamond' : ORES[i];
-    drawChain(toX, toY, pts, ore, c.state === 'tails' && i === c.k && c.tailT < 0.35);
+    drawChain(toX, toY, pts, ore, (c.state === 'tails' && i === c.k && c.tailT < 0.35) || ease > 0.5);
   }
 }
 function drawWolf(c, toX, toY, t) {
@@ -1072,6 +1224,21 @@ function drawWolf(c, toX, toY, t) {
   ctx.fillRect(toX(c.x - 24), toY(c.y), 48 * S, S);
   // the last moment before she breaks apart she's pure light
   if (c.state === 'shatter') ctx.globalAlpha = Math.max(0, 1 - c.t / 1.2);
+  // while she pulls ores up she glows, a soft light shifting through the
+  // colours of her ores behind her
+  const glowK = c.raise || 0;
+  if (glowK > 0.01) {
+    const gx = toX(c.x - (c.flip ? -6 : 6)), gy = toY(c.y - 30), R = 62 * S;
+    const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, R);
+    g.addColorStop(0, `hsla(${(t / 8) % 360},90%,75%,${0.38 * glowK})`);
+    g.addColorStop(0.5, `hsla(${(t / 8 + 60) % 360},90%,65%,${0.16 * glowK})`);
+    g.addColorStop(1, 'hsla(0,0%,100%,0)');
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = g;
+    ctx.fillRect(gx - R, gy - R, R * 2, R * 2);
+    ctx.restore();
+  }
   drawRestTails(c, toX, toY, t, pose);
   const blit = im => {
     if (c.flip) {
@@ -1083,6 +1250,13 @@ function drawWolf(c, toX, toY, t) {
     } else ctx.drawImage(im, toX(left), toY(top), WOLF_W * S, WOLF_H * S);
   };
   blit(c.hurtT > 0 && c.shell < 0.5 ? wolfWhite(img) : img);
+  if (glowK > 0.01) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.22 * glowK * (reduceMotion ? 1 : 0.75 + 0.25 * Math.sin(t / 90));
+    blit(wolfWhite(img));
+    ctx.restore();
+  }
   if (c.shell > 0) {
     // the diamond, up to however far it's grown
     ctx.save();
@@ -1137,11 +1311,13 @@ function drawWolf(c, toX, toY, t) {
 function drawWolfFloor(o, toX, toY, t) {
   const P = (x, y, col, w = 1, h = 1) => { ctx.fillStyle = col; ctx.fillRect(toX(x), toY(y), w * S, h * S); };
   flung.forEach(F => {
-    if (F.wait > 0) {
-      P(F.ox - 4, F.oy, '#140c10', 8, 1);
-      P(F.ox - 2, F.oy - 1, '#2a2030', 4, 1);
+    if (F.age > 0 && !F.fly) {
+      P(F.gx - 4, F.gy, '#140c10', 8, 1);
+      P(F.gx - 3, F.gy - 1, '#2a2030', 6, 1);
+      P(F.gx - 2, F.gy - 1, `rgba(0,0,0,${0.15 + 0.2 * Math.min(1, F.z / F.hz)})`, 4, 2);
     }
-    const u = F.wait > 0 ? 0 : Math.min(1, F.t / F.dur), k = 0.35 + u * 0.65;
+    if (!F.fly) return;
+    const u = Math.min(1, F.t / F.dur), k = 0.35 + u * 0.65;
     const R = WOLF.fling.rx * (1.25 - u * 0.25), RY = WOLF.fling.ry * (1.25 - u * 0.25);
     const pulse = reduceMotion ? 1 : 0.6 + 0.4 * Math.sin(t / (90 - 50 * u));
     ctx.fillStyle = `rgba(255,60,40,${(0.14 + 0.22 * u) * pulse})`;
@@ -1158,6 +1334,7 @@ function drawWolfFloor(o, toX, toY, t) {
     P(F.x1, F.y1 - 2, ring, 1, 5);
     const sw = Math.round(2 + 8 * u);
     P(F.x1 - sw / 2, F.y1 - 1, `rgba(0,0,0,${0.2 + 0.3 * u})`, sw, 2);
+    P(F.x - 2, F.y - 1, 'rgba(0,0,0,0.25)', 4, 1);
   });
 }
 function drawLattice(L, toX, toY, t) {
@@ -1166,7 +1343,9 @@ function drawLattice(L, toX, toY, t) {
   ctx.fillRect(toX(L.x - 4), toY(L.y - 1), 8 * S, 2 * S);
   ctx.globalAlpha = Math.min(1, k * 1.5);
   const fr = LATTICE_ART[L.ore][Math.floor(t / 90 + L.seed * 12) % LATTICE_FRAMES];
-  ctx.drawImage(fr, toX(L.x - 7), toY(L.y - L.z - 7), 15 * S, 15 * S);
+  // (it shudders when it's hit and doesn't break)
+  const j = L.hurt > 0 && !reduceMotion ? Math.round(Math.sin(t / 20) * 1.5) : 0;
+  ctx.drawImage(fr, toX(L.x - 7 + j), toY(L.y - L.z - 7), 15 * S, 15 * S);
   ctx.globalAlpha = 1;
 }
 // over everything: the threads of light from each lattice to her while they
@@ -1195,16 +1374,32 @@ function wolfOverlay(toX, toY, t) {
     ctx.globalCompositeOperation = 'source-over';
   }
   flung.forEach(F => {
-    let x, y, z;
-    if (F.wait > 0) { x = F.ox; y = F.oy; z = Math.min(1, F.pull / 0.25) * 12; }
-    else {
-      const u = Math.min(1, F.t / F.dur);
-      x = F.ox + (F.x1 - F.ox) * u; y = F.oy + (F.y1 - F.oy) * u;
-      z = 12 * (1 - u) + F.h * 4 * u * (1 - u);
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.fillRect(toX(x - 3), toY(y - 1), 6 * S, S);
+    if (F.age <= 0 && !F.fly) return;
+    const [r, g, b] = ORE_PAL[F.ore].rgb.split(','), ox = F.x, oy = F.y - F.z;
+    ctx.globalCompositeOperation = 'lighter';
+    const tip = !F.fly && c.tips && c.tips[ORES.indexOf(F.ore)];
+    if (tip && !c.gone) {
+      const n = Math.ceil(Math.hypot(tip[0] - ox, tip[1] - oy) / 2);
+      for (let i = 0; i <= n; i++) {
+        const a = 0.25 + 0.3 * (reduceMotion ? 0.5 : 0.5 + 0.5 * Math.sin(t / 60 - i * 0.6));
+        ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+        ctx.fillRect(toX(tip[0] + ((ox - tip[0]) * i) / n), toY(tip[1] + ((oy - tip[1]) * i) / n), S, S);
+      }
     }
-    ctx.drawImage(CHUNK[F.ore][Math.floor(F.spin) % 4], toX(x - 6), toY(y - z - 6), 12 * S, 12 * S);
+    const R = 9 * S, gg = ctx.createRadialGradient(toX(ox), toY(oy), 0, toX(ox), toY(oy), R);
+    gg.addColorStop(0, `rgba(${r},${g},${b},0.45)`);
+    gg.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    ctx.fillStyle = gg;
+    ctx.fillRect(toX(ox) - R, toY(oy) - R, R * 2, R * 2);
+    if (F.fly && !reduceMotion) {
+      for (let j = 1; j <= 3; j++) {
+        const u = Math.max(0, F.t / F.dur - j * 0.035), sx = F.x0 + (F.x1 - F.x0) * u, sy = F.y0 + (F.y1 - F.y0) * u - (F.z0 * (1 - u) + F.h * 4 * u * (1 - u));
+        ctx.fillStyle = `rgba(${r},${g},${b},${0.5 - j * 0.13})`;
+        ctx.fillRect(toX(sx - 1), toY(sy - 1), 3 * S, 3 * S);
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(CHUNK[F.ore][Math.floor(F.spin) % 4], toX(ox - 6), toY(oy - 6), 12 * S, 12 * S);
   });
   tails.forEach(T => {
     const r = tailRoot(c), pts = [[r.x, r.y], ...T.path.slice(1)];

@@ -40,8 +40,8 @@ const ORE_DROP = { gold: 'gold', stone: 'stone', marble: 'marble', iron: 'iron',
 // (shorter, so you get to the lattices sooner), shell is every time after a
 // lattice phase runs out, lattice is how long you get to break all seven.
 const WOLF = {
-  hp: 160, speed: 66, speedOpen: 84, keep: 4.6, backOff: 2.6,
-  windup: 0.62, windupOpen: 0.48, lunge: 340, lungeTime: 0.36, lungeDmg: 5, touchDmg: 1,
+  hp: 128, speed: 66, speedOpen: 84, keep: 4.6, backOff: 2.6,
+  windup: 0.62, windupOpen: 0.48, lunge: 340, lungeTime: 0.36, lungeDmg: 4, touchDmg: 1,
   shellFirst: 20, shell: 30, lattice: 60,
   fling: { min: 4, max: 7, rx: 15, ry: 9, drop: 0.06 },
   // a tail chases you loosely (turn), then once it's within strikeAt it
@@ -770,9 +770,13 @@ function updateLattices(dt, t) {
 // diamonds, and she can send her tails after you one at a time.
 function chooseAttack(c) {
   const open = c.phase === 'open', d = Math.hypot(player.x - c.x, player.y - c.y);
-  let opts = open ? ['lunge', 'fling', 'tails'] : ['lunge', 'fling'];
-  opts = opts.filter(o => o !== c.last);
-  let pick = opts[(Math.random() * opts.length) | 0];
+  // never the same twice running, and the tails come up half as often as the
+  // others (alex wanted them a bit rarer: about a quarter of her attacks once
+  // she's open, down from a third)
+  const weight = { lunge: 1, fling: 1, tails: 0.5 };
+  const opts = (open ? ['lunge', 'fling', 'tails'] : ['lunge', 'fling']).filter(o => o !== c.last);
+  let roll = Math.random() * opts.reduce((n, o) => n + weight[o], 0);
+  let pick = opts.find(o => (roll -= weight[o]) < 0) || opts[0];
   if (pick === 'lunge' && d > 8.5 * TILE) pick = opts.find(o => o !== 'lunge') || 'fling';
   c.last = pick;
   c.t = 0;

@@ -602,22 +602,57 @@ function makeLogo() {
   return c.toDataURL();
 }
 
-// the grizzly's cave on the lake island: a lumpy mound of boulders with moss
-// on top and a dark mouth at the bottom. it's exactly three tiles wide, which
-// is what the solid footprint in placeDecor assumes.
+// the grizzly's cave on the lake island, cut into a cliff of rock at the back
+// of the island (alex: an entrance in the side of a wall, not a mound of
+// boulders on the ground; the world puts the rock behind it, see generate). a
+// face of the same stone as the stone tiles round it (grey courses with
+// staggered joints), a rough dark mouth with a lip of paler stones, moss
+// growing over the top and dripping down in strands, grass round its feet and
+// two mossy boulders either side. 56 x 52, the mouth in the middle of the
+// bottom, three tiles of it solid.
 function makeCave() {
-  const w = 48, h = 40, cx = 23.5, ground = h - 2;
-  const G = pixelGrid(w, h);
-  rockMound(G, w, ground, true);
-  // the mouth, with a lip of lighter stones round the top of it
+  const w = 56, h = 52, cx = (w - 1) / 2, ground = h - 2, G = pixelGrid(w, h);
+  // the stone face, narrowing to a buttress either side on the floor row
   for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
-    const mx = (x - cx) / 7.5, my = (y - ground) / 14;
-    const d = mx * mx + my * my;
-    if (d > 1.25 || y > ground) continue;
-    if (d <= 1) G.set(x, y, d > 0.72 ? '#2a221c' : '#0d0a08');
-    else if (G.get(x, y)) G.set(x, y, hash2(x, y, 46) < 0.5 ? '#b3b3b3' : '#9a9a9a');
+    const low = y > ground - 15, half = low ? w / 2 - 6 - (y - (ground - 15)) * 0.35 + (hash2(x, y >> 2, 610) - 0.5) * 1.5 : w / 2;
+    if (Math.abs(x - cx) > half) continue;
+    const course = y >> 2, joint = (x + (course % 2 ? 3 : 10) + ((hash2(course, 0, 611) * 3) | 0)) % 8 === 0;
+    const n = hash2(x, y, 612);
+    G.set(x, y, y % 4 === 3 || joint ? '#6e6e6e' : n < 0.07 ? '#7a7a7a' : n < 0.14 ? '#9a9a9a' : '#8a8a8a');
   }
-  return G.outline(() => '#262626').canvas();
+  // the mouth: a rough arch, dark inside, with a lip of paler stones round it
+  const r = 11, acy = ground - 10;
+  for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
+    const jag = (hash2(x >> 1, y >> 1, 613) - 0.5) * 2;
+    const d = (y <= acy ? Math.hypot(x - cx, (y - acy) * 1.1) : Math.abs(x - cx)) - r - jag;
+    if (d > 2.2) continue;
+    if (d > 0) { if (G.get(x, y)) G.set(x, y, hash2(x, y, 614) < 0.5 ? '#b3b3b3' : '#a0a0a0'); continue; }
+    G.set(x, y, d > -1.3 ? '#2a221c' : d > -3.5 ? '#16110d' : '#0b0807');
+  }
+  // moss over the top of the cliff, dripping down the face in strands
+  for (let x = 0; x < w; x++) {
+    const depth = 2 + Math.round(hash2(x >> 1, 0, 615) * 3);
+    for (let y = 0; y < depth; y++) if (G.get(x, y)) G.set(x, y, (x + y) % 3 ? '#3f8f3a' : '#2f7330');
+    if (hash2(x, 1, 616) < 0.22) {
+      const len = 4 + Math.round(hash2(x, 2, 617) * 9);
+      for (let y = depth; y < depth + len; y++) if (G.get(x, y) && !(Math.abs(x - cx) < r + 2 && y > acy - r - 1)) G.set(x, y, y % 2 ? '#2f7330' : '#4f9f45');
+    }
+  }
+  // a fringe of moss hanging into the top of the mouth
+  for (let x = Math.round(cx - 7); x <= Math.round(cx + 7); x++) {
+    const top = acy - Math.round(Math.sqrt(Math.max(0, r * r - (x - cx) ** 2)) / 1.1);
+    for (let y = top; y < top + 1 + (x % 3 === 0 ? 2 : 0); y++) G.set(x, y, '#2f7330');
+  }
+  // mossy boulders either side of the mouth, and grass round its feet
+  [[cx - 17, ground - 3, 4.5], [cx + 17, ground - 2, 3.5]].forEach(([bx, by, br]) => {
+    for (let y = Math.floor(by - br); y <= ground; y++) for (let x = Math.floor(bx - br); x <= Math.ceil(bx + br); x++) {
+      const dx = (x - bx) / br, dy = (y - by) / (br * 0.8);
+      if (dx * dx + dy * dy > 1) continue;
+      G.set(x, y, dy < -0.45 ? (x % 2 ? '#3f8f3a' : '#2f7330') : dx + dy < -0.2 ? '#a6a6a6' : dx + dy < 0.5 ? '#8c8c8c' : '#6a6a6a');
+    }
+  });
+  for (let x = 2; x < w - 2; x++) if (hash2(x, 3, 618) < 0.35 && Math.abs(x - cx) > r + 2) { G.set(x, ground, '#30b943'); if (hash2(x, 4, 619) < 0.5) G.set(x, ground - 1, '#22a534'); }
+  return G.outline(c => (['#8a8a8a', '#6e6e6e', '#7a7a7a', '#9a9a9a', '#3f8f3a', '#2f7330', '#4f9f45'].includes(c) ? null : '#262626')).canvas();
 }
 // a few overlapping boulders instead of one smooth dome, each lit from the
 // top left on its own, with a dark seam wherever one sits in front of another.
@@ -1009,6 +1044,12 @@ function generate() {
       if (d <= 4.6) tiles[idx(x, y)] = baseOf(idx(x, y));
       else if (d <= 7) tiles[idx(x, y)] = BIOMES[QUADS[quad[idx(x, y)]]].wet;
     }
+  });
+  // the grizzly's cave is cut into a cliff at the back of its island (alex),
+  // so there's a block of rock behind it the same as the lairs' faces
+  POIS.filter(p => p.kind === 'cave').forEach(p => {
+    const [cx, cy] = p.at;
+    for (let y = cy - 4; y <= cy - 1; y++) for (let x = cx - 3; x <= cx + 3; x++) if (inside(x, y)) tiles[idx(x, y)] = BIOMES[QUADS[quad[idx(x, y)]]].rock;
   });
 
   // flood fill from spawn, then fill anything unreachable with rock so the

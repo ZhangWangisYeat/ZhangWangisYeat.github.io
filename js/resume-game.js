@@ -249,7 +249,13 @@ const store = {
   }
 };
 const found = new Set(store.read('dm-found', []).filter(id => POIS.some(p => p.id === id)));
+// sound effects and music are switched on and off separately (alex): soundOn
+// is the effects, musicPref the music (boss themes, the cave music, darryl's
+// whistling). anyone who'd only had the one switch keeps what they had.
 let soundOn = store.read('dm-sound', false);
+let musicPref = store.read('dm-music', soundOn);
+// the play layer hooks this to dip the music under each sound effect
+let duckHook = null;
 
 function mulberry32(a) {
   return () => {
@@ -1178,6 +1184,7 @@ function getAudio() {
 }
 function tone(freq, duration = 0.06, type = 'square', peak = 0.035, delay = 0) {
   if (!soundOn) return;
+  if (duckHook) duckHook();
   try {
     getAudio();
     const t0 = audio.currentTime + delay;
@@ -1221,17 +1228,39 @@ const sfx = {
   swing:  whoosh
 };
 
-const soundBtn = $('#sound-toggle');
+// the audio button opens a little menu with the two switches. its label says
+// what's on: all of it, all of it off, or which one is off.
+const soundBtn = $('#sound-toggle'), audioPanel = $('#audio-panel'), musicOpt = $('#audio-music'), sfxOpt = $('#audio-sfx');
 function paintSound() {
-  soundBtn.textContent = `Sound: ${soundOn ? 'on' : 'off'}`;
-  soundBtn.setAttribute('aria-pressed', String(soundOn));
+  soundBtn.textContent = soundOn && musicPref ? 'Audio: on' : !soundOn && !musicPref ? 'Audio: off' : !musicPref ? 'Music: off' : 'Sounds: off';
+  musicOpt.innerHTML = `Music <b>${musicPref ? 'on' : 'off'}</b>`;
+  sfxOpt.innerHTML = `Sounds <b>${soundOn ? 'on' : 'off'}</b>`;
+  musicOpt.setAttribute('aria-pressed', String(musicPref));
+  sfxOpt.setAttribute('aria-pressed', String(soundOn));
 }
-soundBtn.addEventListener('click', () => {
-  soundOn = !soundOn;
-  store.write('dm-sound', soundOn);
-  paintSound();
+function audioMenu(open) {
+  audioPanel.hidden = !open;
+  soundBtn.setAttribute('aria-expanded', String(open));
+}
+soundBtn.addEventListener('click', e => { e.stopPropagation(); audioMenu(audioPanel.hidden); });
+const audioChanged = () => { paintSound(); document.dispatchEvent(new Event('dm-audio')); };
+musicOpt.addEventListener('click', e => {
+  e.stopPropagation();
+  musicPref = !musicPref;
+  store.write('dm-music', musicPref);
+  if (musicPref) getAudio();
+  audioChanged();
   sfx.ui();
 });
+sfxOpt.addEventListener('click', e => {
+  e.stopPropagation();
+  soundOn = !soundOn;
+  store.write('dm-sound', soundOn);
+  audioChanged();
+  sfx.ui();
+});
+document.addEventListener('click', e => { if (!audioPanel.hidden && !e.target.closest('#audio-menu')) audioMenu(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !audioPanel.hidden) audioMenu(false); });
 paintSound();
 
 const journal = $('#journal');

@@ -26,7 +26,13 @@
     </a>
     <nav class="hud-actions" aria-label="Page">
       <a href="resume.html" class="px-btn px">Classic résumé</a>
-      <button type="button" class="px-btn px" id="sound-toggle" aria-pressed="false">Sound: off</button>
+      <div class="audio-menu" id="audio-menu">
+        <button type="button" class="px-btn px" id="sound-toggle" aria-expanded="false" aria-controls="audio-panel">Audio: off</button>
+        <div class="audio-panel px" id="audio-panel" hidden>
+          <button type="button" class="audio-opt" id="audio-music" aria-pressed="false">Music <b>off</b></button>
+          <button type="button" class="audio-opt" id="audio-sfx" aria-pressed="false">Sounds <b>off</b></button>
+        </div>
+      </div>
       <a href="index.html" class="px-btn px hide-sm">Exit</a>
     </nav>
   </header>

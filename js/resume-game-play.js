@@ -2856,7 +2856,22 @@ const midiHz = m => 440 * 2 ** ((m - 69) / 12);
 
 // a tiny synth on the shared audio context. everything goes through one bus,
 // a lowpass for the warm lo-fi top end, and a compressor so nothing clips.
-let musicAC = null, musicBus = null, musicWarm = null, noiseBuf = null;
+let musicAC = null, musicBus = null, musicWarm = null, noiseBuf = null, musicDuck = null;
+// with sound effects on too, the music sits a bit lower, and it dips for a
+// moment under every effect so the effects always come through on top of it
+// (alex). duckHook is called by tone and noiseBurst.
+const duckBase = () => (soundOn ? 0.62 : 1);
+let duckedAt = 0;
+duckHook = () => {
+  const now = performance.now();
+  if (now - duckedAt < 60) return;
+  duckedAt = now;
+  if (!musicAC || !musicDuck) return;
+  const t0 = musicAC.currentTime;
+  musicDuck.gain.cancelScheduledValues(t0);
+  musicDuck.gain.setTargetAtTime(duckBase() * 0.55, t0, 0.02);
+  musicDuck.gain.setTargetAtTime(duckBase(), t0 + 0.15, 0.18);
+};
 function musicSetup(ac) {
   musicAC = ac;
   const comp = ac.createDynamicsCompressor(), warm = ac.createBiquadFilter();
@@ -2865,7 +2880,9 @@ function musicSetup(ac) {
   musicWarm = warm;
   musicBus = ac.createGain();
   musicBus.gain.value = 0;
-  musicBus.connect(warm).connect(comp).connect(ac.destination);
+  musicDuck = ac.createGain();
+  musicDuck.gain.value = duckBase();
+  musicBus.connect(warm).connect(comp).connect(musicDuck).connect(ac.destination);
   noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -3005,10 +3022,14 @@ let musicOn = false, musicTune = MOE_TUNE;
 function bossMusic(on, tune = MOE_TUNE) {
   musicOn = on;
   musicTune = tune;
-  if (on && soundOn) songStart(tune);
+  if (on && musicPref) songStart(tune);
   else songStop();
 }
-soundBtn.addEventListener('click', () => bossMusic(musicOn, musicTune));
+// the music switch starts or stops whatever should be playing
+document.addEventListener('dm-audio', () => {
+  bossMusic(musicOn, musicTune);
+  if (musicDuck) musicDuck.gain.setTargetAtTime(duckBase(), musicAC.currentTime, 0.1);
+});
 
 // the cave music (from desperate measures itself) plays underground: out in
 // the mines, down the mole holes, in the grizzly's cave, and in moe's den once
@@ -3030,10 +3051,13 @@ function victoryJingle() {
 }
 function tickMusic(dt) {
   const under = room ? room === caveRoom || room === denRoom || room.burrow !== undefined || !!room.underground : amb.mines > 0.5;
-  const want = soundOn && started && under && !musicOn && performance.now() > musicQuietUntil;
+  const want = musicPref && started && under && !musicOn && performance.now() > musicQuietUntil;
+  // (lower with effects on, and dipped for a moment under each one, like the
+  // synth music)
+  const vol = CAVE_VOL * duckBase() * (performance.now() - duckedAt < 220 ? 0.55 : 1);
   if (want) {
     if (caveMusic.paused) { caveMusic.volume = 0; caveMusic.play().catch(() => { /* no audio, carry on */ }); }
-    caveMusic.volume = Math.min(CAVE_VOL, caveMusic.volume + dt * 0.4);
+    caveMusic.volume = caveMusic.volume > vol ? Math.max(vol, caveMusic.volume - dt * 2) : Math.min(vol, caveMusic.volume + dt * 0.8);
   } else if (!caveMusic.paused) {
     const v = caveMusic.volume - dt * 0.6;
     if (v > 0) caveMusic.volume = v;
@@ -5175,6 +5199,7 @@ function renderQuest() {
 
 function noiseBurst(dur, freq, peak) {
   if (!soundOn) return;
+  duckHook();
   try {
     const a = getAudio();
     const len = Math.floor(a.sampleRate * dur);
@@ -5214,7 +5239,15 @@ Object.assign(sfx, {
   rumble: () => { noiseBurst(0.45, 200, 0.1); tone(48, 0.4, 'triangle', 0.04); },
   rev:    () => { tone(90, 0.2, 'sawtooth', 0.03); tone(140, 0.25, 'sawtooth', 0.03, 0.15); tone(210, 0.3, 'sawtooth', 0.03, 0.35); },
   clang:  () => { tone(880, 0.06, 'square', 0.04); tone(1320, 0.1, 'triangle', 0.03, 0.02); noiseBurst(0.05, 4000, 0.06); },
-  drill:  () => { tone(70 + Math.random() * 30, 0.1, 'sawtooth', 0.018); if (mining) noiseBurst(0.06, 3000, 0.035); }
+  drill:  () => { tone(70 + Math.random() * 30, 0.1, 'sawtooth', 0.018); if (mining) noiseBurst(0.06, 3000, 0.035); },
+  // moe's voice as his lines type out, undertale style like darryl's: a
+  // bouncy squeak that slides up when he's cheerful, a low gravelly buzz when
+  // he's angry
+  moeVoice: mood => {
+    const f = (mood === 'angry' ? 130 : 290) * (0.95 + Math.random() * 0.1);
+    if (mood === 'angry') { tone(f, 0.05, 'sawtooth', 0.025); noiseBurst(0.03, 900, 0.03); }
+    else { tone(f, 0.04, 'triangle', 0.04); tone(f * 1.26, 0.03, 'triangle', 0.025, 0.03); }
+  }
 });
 
 // the in-game sprite sheet has its dagger erased (img/player-swing.png), so

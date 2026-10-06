@@ -1911,7 +1911,9 @@ function makeMoe(frame, pose) {
   } else {
     [[36, 16], [37, 16], [38, 15], [39, 15], [40, 14], [41, 14]].forEach(([x, y]) => G.set(x, y + oy, '#1a1018'));
     [[38, 17, '#120c18'], [39, 17, '#7a6a8a'], [40, 17, '#120c18'], [38, 18, '#120c18'], [39, 18, '#120c18'], [40, 18, '#120c18']].forEach(([x, y, c]) => G.set(x, y + oy, c));
-    [[39, 19 + frame], [39, 20 + frame], [40, 21 + frame], [38, 23 - frame]].forEach(([x, y]) => G.set(x, y + oy, '#8fd0ff'));
+    // a stream of tears down his cheek, flickering between the two frames
+    [[39, 19], [39, 20], [40, 21], [40, 22], [41, 23], [41, 24]].forEach(([x, y], i) => G.set(x, y + oy, (i + frame) % 2 ? '#bfe6ff' : '#5fb8ff'));
+    G.set(38, 19 + oy, '#5fb8ff');
   }
   // mining helmet: a yellow dome lit from the top left, the brim, and the lamp
   for (let y = 3; y <= 13; y++) for (let x = 20; x <= 47; x++) {
@@ -1932,11 +1934,12 @@ function makeMoe(frame, pose) {
     pxLine(G, 31, 29 + oy, 37, 34 + oy, F.mid);
     pxBlob(G, 39, 33 + oy, 2.6, 2.4, (dx, dy) => (dy < 0 ? '#e8a6ba' : '#c47890'));
   } else if (arm === 'wave') {
-    const px = frame ? 44 : 40;
-    pxLine(G, 31, 27 + oy, px - 1, 16 + oy, F.base, 2);
-    pxLine(G, 32, 29 + oy, px, 17 + oy, F.mid);
-    pxBlob(G, px, 14 + oy, 2.8, 2.6, (dx, dy) => (dy < 0 ? '#e8a6ba' : '#c47890'));
-    [-2, 0, 2].forEach(o => { G.set(px + o, 11 + oy, '#ece4d4'); G.set(px + o, 10 + oy, '#ffffff'); });
+    // (held up high and out in front of his face, so it reads as a wave)
+    const px = frame ? 51 : 47, py = frame ? 9 : 6;
+    pxLine(G, 33, 26 + oy, px - 1, py + 3 + oy, F.base, 2);
+    pxLine(G, 34, 28 + oy, px, py + 4 + oy, F.mid);
+    pxBlob(G, px, py + oy, 2.8, 2.6, (dx, dy) => (dy < 0 ? '#e8a6ba' : '#c47890'));
+    [-2, 0, 2].forEach(o => { G.set(px + o, py - 3 + oy, '#ece4d4'); G.set(px + o, py - 4 + oy, '#ffffff'); });
   } else {
     pxLine(G, 31, 27 + oy, 34, 36 + oy, F.base, 2);
     pxLine(G, 32, 29 + oy, 35, 37 + oy, F.mid);
@@ -2558,6 +2561,8 @@ function moeFrame(c, t) {
   return MOE_FRAMES.idle[Math.floor(t / 500) % 2];
 }
 const moeMad = c => c.hp < c.def.hp * MOE.mad;
+// the angle his drill hangs at on his back: down and behind him
+const moeSlung = c => (c.flip ? 0.95 : 2.2);
 
 function dirtSpray(x, y, n) {
   for (let i = 0; i < n; i++) {
@@ -2615,7 +2620,7 @@ function updateMoe(c, dt) {
     case 'stow':
       // turned to you, he pulls the drill out of the wall and slings it on his back
       c.flip = player.x < c.x;
-      turn(Math.PI / 2, 5);
+      turn(moeSlung(c), 5);
       c.holster = Math.min(1, (c.holster || 0) + dt / 0.8);
       break;
     case 'wave':
@@ -2623,7 +2628,7 @@ function updateMoe(c, dt) {
     case 'angry':
       c.flip = player.x < c.x;
       c.holster = 1;
-      c.aim = Math.PI / 2;
+      c.aim = moeSlung(c);
       break;
     case 'brandish':
       // the drill comes back off his back and round at you, revving
@@ -2634,7 +2639,7 @@ function updateMoe(c, dt) {
     case 'sad':
       // beaten: slumped, drill on his back, tears dripping
       c.holster = 1;
-      c.aim = Math.PI / 2;
+      c.aim = moeSlung(c);
       if (Math.random() < dt * 3) { const e = moePoint(c, { x: 39, y: 20 }, img); particles.push({ x: e.x, y: e.y, vx: 0, vy: 10, g: 120, life: 0.6, t: 0, col: '#8fd0ff', size: 1 }); }
       break;
     case 'face':
@@ -2763,7 +2768,7 @@ function updateMoe(c, dt) {
       if (Math.random() < dt * 24) burst(hand.x + (Math.random() - 0.5) * 30, hand.y - Math.random() * 30, Math.random() < 0.5 ? '255,220,140' : '106,91,130', 2);
       // then he slumps and says his piece before he goes (alex)
       if (c.t >= 1.4) {
-        Object.assign(c, { state: 'sad', t: 0, sink: 0, under: false, hurtT: 0, holster: 1 });
+        Object.assign(c, { state: 'sad', t: 0, sink: 0, under: false, hurtT: 0, holster: 1, aim: moeSlung(c) });
         startTalk([{ d: 'I was just looking for some bling...', mood: 'sad' }], () => finishMoe(c), MOE_WHO);
       }
       break;
@@ -2785,7 +2790,8 @@ function updateMoe(c, dt) {
   }
   if (c.moving) c.anim += dt;
   // the lamp follows his helmet, and the beam goes the way the drill points
-  const lampOn = !c.under && c.sink < 0.8 && c.state !== 'wait';
+  // (his lamp goes out when he's beaten)
+  const lampOn = !c.under && c.sink < 0.8 && c.state !== 'wait' && c.state !== 'sad';
   const lamp = moePoint(c, MOE_LAMP, img);
   Object.assign(moeLamp, { x: lamp.x, y: lamp.y, off: !lampOn });
   Object.assign(moeBeam, { x: lamp.x + Math.cos(c.state === 'stuck' ? (c.flip ? Math.PI : 0) : c.aim) * 34, y: lamp.y + 18 + Math.sin(c.aim) * 20, off: !lampOn });
@@ -3300,7 +3306,7 @@ function drawMoe(c, toX, toY, t) {
   // put away, the drill hangs on his back pointing down (holster 0 is in his
   // hand, 1 is on his back, in between it's on its way)
   if (c.holster > 0) {
-    const back = moePoint(c, { x: 16, y: 22 }, base);
+    const back = moePoint(c, { x: 13, y: 15 }, base);
     hand.x += (back.x - hand.x) * c.holster;
     hand.y += (back.y - hand.y) * c.holster;
   }

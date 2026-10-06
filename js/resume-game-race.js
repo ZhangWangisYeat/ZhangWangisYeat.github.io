@@ -725,6 +725,22 @@ function syncShaft() {
 }
 syncShaft();
 
+// the bottom of the hoist is built into the side of the corridor near the
+// start (alex: not stood in the middle of the end of the tunnel): an alcove
+// three tiles wide and two deep cut into the corridor's left wall, open to
+// the corridor on its right, with the wall above it as its back. and the
+// corridor below the start is walled off now (it used to run off the bottom
+// of the map, which was the way out before the hoist).
+const ALCOVE = (() => {
+  const ty = RACE_ROWS - 5;
+  let tx = Math.floor(track.xs[0] / TILE);
+  while (rtAt(tx, ty) !== T.FLOOR && tx < RACE_COLS - 1) tx++;
+  while (rtAt(tx - 1, ty) === T.FLOOR) tx--;
+  const x0 = tx - 3, x1 = tx - 1;
+  for (let y = ty - 1; y <= ty; y++) for (let x = x0; x <= x1; x++) RT[rti(x, y)] = T.FLOOR;
+  return { x0, x1, ty };
+})();
+for (let y = RACE_ROWS - 2; y < RACE_ROWS; y++) for (let x = 0; x < RACE_COLS; x++) RT[rti(x, y)] = T.WALL;
 const raceRoom = {
   id: 'race', w: RACE_W, h: RACE_H, dust: '#6e6a64', shade: 0.62, underground: true, fight: false,
   canvas: paintRaceRoom(),
@@ -919,6 +935,8 @@ obstacles.forEach(o => {
   spots.forEach(([tx, ty]) => {
     const x = tx * TILE + 8, y = ty * TILE + 15;
     if (Math.abs(x - DOOR_X) < 48 && y < DOOR_Y + 30) return;
+    // (none on the hoist's alcove: its back wall is the shaft)
+    if (tx >= ALCOVE.x0 - 1 && tx <= ALCOVE.x1 + 1 && Math.abs(ty - (ALCOVE.ty - 2)) <= 1) return;
     if (lit.some(([lx, ly]) => Math.hypot(lx - x, ly - y) < 120)) return;
     lit.push([x, y]);
     raceRoom.things.push({ x, y, frames: TORCH, fps: 7, phase: tx % 3 });
@@ -1610,9 +1628,8 @@ function walkDarryl(x, y, speed, then) { Object.assign(darryl, { state: 'walk', 
 function raceTick(dt) {
   syncShaft();
   tickLift(dt);
-  // stepping down onto the cage at the bottom of the track takes you back up
-  if (room === raceRoom && !lift.dir && !race.riding && !player.dead && Math.abs(player.x - CAGE.x) < 12 && player.y > RACE_H - 22
-    && (keys.has('KeyS') || keys.has('ArrowDown'))) startCage('depart');
+  // walking back onto the hoist's platform takes you up
+  if (room === raceRoom && !lift.dir && !race.riding && !player.dead && player.moving && Math.abs(player.x - CAGE.x) < 14 && Math.abs(player.y - CAGE.y) < 10) startCage('depart');
   tickWhistle(dt);
   // the "shift | hop out" chip in the hud (with the map and controls chips,
   // alex: it used to be a label stuck under the cart) while you can hop out
@@ -1902,8 +1919,8 @@ function raceEnter(r) {
   if (r === raceRoom) {
     if (DQ.won) resetFree(); else resetRace();
     showRemains();
-    player.x = CAGE.x;
-    player.y = CAGE.y - 14;
+    player.x = CAGE.x + CAGE_OUT;
+    player.y = CAGE.y;
     if (!DQ.seen) {
       DQ.seen = true;
       toast('Underground', 'An old mine shaft', 'Someone is whistling down here...');
@@ -2536,53 +2553,70 @@ function drawLift(toX, toY, t) {
   if (fade > 0) { ctx.fillStyle = `rgba(0,0,0,${Math.min(1, fade)})`; ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height); }
 }
 
-// the bottom of the hoist, at the foot of the track (alex: you shouldn't just
-// appear in front of darryl): a timber cage against the bottom of the tunnel,
-// the shaft rising out of it into the dark, ropes coming down to a plank
-// platform. you come down in it ('arrive': the platform drops into view from
-// above with you on it, and you step off), and going back you step onto it
-// facing down ('depart': up it goes out of sight, then you're coming up out of
-// the hole outside). drawn flat so you stand in front of it.
-const CAGE_W = 40, CAGE_H = 64;
-const CAGE = { x: Math.floor(track.xs[0] / TILE) * TILE + 8, y: RACE_H - 12 };
-function makeCage() {
-  const w = CAGE_W, h = CAGE_H, G = pixelGrid(w, h);
-  // the shaft going up into the dark, cribbed with timber
-  for (let y = 0; y < h - 8; y++) for (let x = 5; x <= w - 6; x++) {
-    const crib = y % 8 === 3, dark = y / (h - 8);
-    G.set(x, y, crib ? (dark < 0.4 ? '#3a2614' : '#6b4422') : dark < 0.3 ? '#050404' : dark < 0.6 ? '#0b0807' : '#140f0b');
+// the bottom of the hoist, in its alcove in the corridor wall (see ALCOVE):
+// the shaft rising out of the alcove's back wall into the dark, timber posts
+// at its back corners and along its far side, ropes coming down to a plank
+// platform that fills the alcove's floor, and a folding gate pushed open on
+// the side facing the corridor. you come down in it ('arrive': the platform
+// drops into view out of the shaft with you on it) and walk out of its open
+// side into the corridor; walking back onto the platform takes you up
+// ('depart'). drawn flat, so you stand on it. lift false is without the
+// platform (it's on its way, drawn by drawCage).
+const CAGE_W = 48, CAGE_H = 50;
+const CAGE = { x: ALCOVE.x0 * TILE + 24, y: (ALCOVE.ty - 1) * TILE + 24, left: ALCOVE.x0 * TILE, bottom: (ALCOVE.ty + 1) * TILE - 1 };
+const CAGE_PLAT = { x0: 6, x1: 41, y0: 21, y1: 45 };
+function makeCage(lift) {
+  const w = CAGE_W, h = CAGE_H, G = pixelGrid(w, h), Pl = CAGE_PLAT;
+  // the shaft in the back wall, going up into the dark, with a lintel over it
+  for (let y = 0; y <= 18; y++) for (let x = 5; x <= w - 6; x++) {
+    const crib = y % 6 === 4;
+    G.set(x, y, y <= 1 ? (y === 0 ? '#c48a4f' : '#8a5a32') : crib ? '#3a2614' : y < 8 ? '#050404' : y < 14 ? '#0b0807' : '#140f0b');
   }
-  // the posts either side, and a beam across the bottom
-  [[2, 4], [w - 5, w - 3]].forEach(([a, b]) => { for (let y = 0; y < h; y++) for (let x = a; x <= b; x++) G.set(x, y, x === a ? '#c48a4f' : x === b ? '#6b4422' : '#9a6233'); });
-  [[3, 14], [w - 4, 14], [3, 40], [w - 4, 40]].forEach(([x, y]) => G.set(x, y, '#5a5a62'));
-  // the platform at the bottom, where you stand
-  for (let y = h - 9; y <= h - 3; y++) for (let x = 5; x <= w - 6; x++) G.set(x, y, y === h - 9 ? '#d29a5c' : y === h - 3 ? '#5e3a1e' : (x - 5) % 5 === 0 ? '#6b4422' : y === h - 6 ? '#7a7a84' : '#a8703f');
-  // the ropes, down out of the dark to the yoke
-  for (let x = 10; x <= w - 11; x++) G.set(x, h - 13, '#5a5a62');
-  [[10], [w - 11]].forEach(([x]) => { for (let y = h - 13; y <= h - 9; y++) G.set(x, y, '#5a5a62'); });
-  [14, w - 15].forEach(x => { for (let y = 0; y <= h - 13; y++) G.set(x, y, y % 3 ? '#c9b78f' : '#a8946a'); });
+  // the platform: planks across the alcove floor with an iron edge
+  if (lift) {
+    for (let y = Pl.y0; y <= Pl.y1; y++) for (let x = Pl.x0; x <= Pl.x1; x++) {
+      G.set(x, y, y === Pl.y0 ? '#d29a5c' : y === Pl.y1 ? '#5e3a1e' : (x - Pl.x0) % 6 === 0 ? '#6b4422' : (y - Pl.y0) % 8 === 7 ? '#7a7a84' : '#a8703f');
+    }
+    // the yoke and ropes from the shaft down to the platform's back edge
+    for (let x = 14; x <= 33; x++) G.set(x, Pl.y0 - 2, '#5a5a62');
+    [14, 33].forEach(x => { for (let y = Pl.y0 - 2; y <= Pl.y0; y++) G.set(x, y, '#5a5a62'); });
+  } else for (let y = Pl.y0; y <= Pl.y1; y++) for (let x = Pl.x0; x <= Pl.x1; x++) G.set(x, y, y < Pl.y0 + 3 ? '#0b0807' : '#140f0b');
+  [18, 29].forEach(x => { for (let y = 2; y <= (lift ? Pl.y0 - 2 : 18); y++) G.set(x, y, y % 3 ? '#c9b78f' : '#a8946a'); });
+  // posts: the two back corners up the wall, and along the far (left) side
+  [[2, 4, 0, 22], [43, 45, 0, 22], [2, 4, 22, h - 3]].forEach(([a, b, y0, y1]) => {
+    for (let y = y0; y <= y1; y++) for (let x = a; x <= b; x++) G.set(x, y, x === a ? '#c48a4f' : x === b ? '#6b4422' : '#9a6233');
+  });
+  for (let x = 2; x <= 4; x++) G.set(x, h - 2, '#5e3a1e');
+  // the folding gate, pushed open on the corridor side
+  for (let k = 0; k < 4; k++) {
+    const gx = 41 + k * 1.5, gy = 23 + k * 6;
+    for (let s2 = 0; s2 < 7; s2++) { G.set(Math.round(gx + s2 * 0.3), gy + s2, '#8a8a94'); G.set(Math.round(gx + 2 - s2 * 0.3), gy + s2, '#5a5a62'); }
+  }
   return G.outline(() => '#14110e').canvas();
 }
-const CAGE_ART = makeCage();
-const cageThing = { flat: true, x: CAGE.x, y: CAGE.y + 8, frames: [CAGE_ART] };
+const CAGE_ART = [makeCage(true), makeCage(false)];
+const cageThing = { flat: true, x: CAGE.left + CAGE_W / 2, y: CAGE.bottom, frames: [CAGE_ART[0]] };
 raceRoom.things.push(cageThing);
-raceRoom.glows.push({ x: CAGE.x, y: CAGE.y - 20, rgb: '255,220,160', rad: 2.2, flicker: true, strength: 0.18 });
-const CAGE_TIME = 1.5, CAGE_DROP = 54;
+raceRoom.glows.push({ x: CAGE.x, y: CAGE.y - 16, rgb: '255,220,160', rad: 2.4, flicker: true, strength: 0.2 });
+const CAGE_TIME = 1.5, CAGE_DROP = 54, CAGE_OUT = 38;
 function startCage(dir) {
   Object.assign(lift, { dir, t: 0 });
   Object.assign(player, { x: CAGE.x, y: CAGE.y, face: 'down', moving: false, path: null });
+  cageThing.frames = [CAGE_ART[1]];
   sfx.creak();
 }
 function tickCage() {
-  player.x = CAGE.x;
+  player.y = CAGE.y;
   if (lift.dir === 'arrive') {
-    // down it comes, then you step off it up the track
-    player.y = CAGE.y - Math.max(0, Math.min(14, (lift.t - CAGE_TIME) * 60));
-    if (lift.t >= CAGE_TIME + 0.25) lift.dir = null;
+    // down it comes, then you walk out of its open side into the corridor
+    const out = Math.max(0, lift.t - CAGE_TIME);
+    if (out > 0) { cageThing.frames = [CAGE_ART[0]]; Object.assign(player, { face: 'side', flip: false, moving: true }); player.anim += 1 / 60; }
+    player.x = CAGE.x + Math.min(CAGE_OUT, out * 80);
+    if (out * 80 >= CAGE_OUT) { lift.dir = null; player.moving = false; }
     return;
   }
-  player.y = CAGE.y;
-  if (lift.t >= CAGE_TIME) { lift.dir = null; playLeaveRoom(); }
+  player.x = CAGE.x;
+  if (lift.t >= CAGE_TIME) { lift.dir = null; cageThing.frames = [CAGE_ART[0]]; playLeaveRoom(); }
 }
 // how far above the floor the platform is
 const cageLift = () => {
@@ -2590,16 +2624,28 @@ const cageLift = () => {
   return lift.dir === 'arrive' ? CAGE_DROP * (1 - u) ** 2 : CAGE_DROP * u * u;
 };
 function drawCage(toX, toY, t) {
-  const top = cageThing.y - CAGE_H + 1, left = CAGE.x - CAGE_W / 2, up = cageLift(), py = CAGE.y - 4 - up;
+  if (lift.dir === 'arrive' && lift.t >= CAGE_TIME) return;
+  const top = CAGE.bottom - CAGE_H + 1, Pl = CAGE_PLAT, up = cageLift();
+  const px0 = CAGE.left + Pl.x0, pw = Pl.x1 - Pl.x0 + 1, py = top + Pl.y0 - up;
   ctx.save();
-  // anything above the top of the cage is up the shaft, out of sight
+  // anything above the bottom of the shaft opening is up the shaft, out of sight
   ctx.beginPath();
-  ctx.rect(0, toY(top), ctx.canvas.width, ctx.canvas.height);
+  ctx.rect(0, toY(top + 2), ctx.canvas.width, ctx.canvas.height);
   ctx.clip();
+  // the ropes, down the shaft to the yoke
+  ctx.fillStyle = '#c9b78f';
+  [18, 29].forEach(x => ctx.fillRect(toX(CAGE.left + x), toY(top + 2), S, (py - 2 - (top + 2)) * S));
+  ctx.fillStyle = '#5a5a62';
+  ctx.fillRect(toX(CAGE.left + 14), toY(py - 2), 20 * S, S);
+  // the platform
   ctx.fillStyle = '#a8703f';
-  ctx.fillRect(toX(left + 5), toY(py), (CAGE_W - 10) * S, 5 * S);
+  ctx.fillRect(toX(px0), toY(py), pw * S, (Pl.y1 - Pl.y0 + 1) * S);
   ctx.fillStyle = '#d29a5c';
-  ctx.fillRect(toX(left + 5), toY(py), (CAGE_W - 10) * S, S);
+  ctx.fillRect(toX(px0), toY(py), pw * S, S);
+  ctx.fillStyle = '#6b4422';
+  for (let x = 0; x < pw; x += 6) ctx.fillRect(toX(px0 + x), toY(py + 1), S, (Pl.y1 - Pl.y0) * S);
+  ctx.fillStyle = '#5e3a1e';
+  ctx.fillRect(toX(px0), toY(py + Pl.y1 - Pl.y0), pw * S, S);
   lift.drawing = true;
   const y0 = player.y;
   player.y = y0 - up;

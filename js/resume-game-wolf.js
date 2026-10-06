@@ -1124,6 +1124,9 @@ function clearAttacks() {
 function finishWolf(c) {
   c.dead = true;
   c.gone = true;
+  // (out of 'shatter', or wolfHolds kept you frozen for as long as you stayed
+  // in her room afterwards)
+  c.state = 'gone';
   WQ.dead = true;
   quest.killed.orewolf = true;
   for (let i = 0; i < 60; i++) {
@@ -1177,7 +1180,7 @@ function wolfEnter(r) {
 }
 function wolfLeave(r) { if (r === wolfRoom) resetWolf(); }
 function wolfHolds() {
-  return room === wolfRoom && (!!meet || !!card || tipOpen || wolfTalking() || wolf.state === 'dying' || wolf.state === 'shatter');
+  return room === wolfRoom && (!!meet || !!card || tipOpen || wolfTalking() || (!wolf.dead && (wolf.state === 'dying' || wolf.state === 'shatter')));
 }
 // while she's talking the camera sits between the two of you
 function wolfCam() {
@@ -1236,18 +1239,6 @@ function pxDisc(toX, toY, x, y, r, col) {
     ctx.fillRect(toX(cx - h), toY(cy + dy), (2 * h + 1) * S, S);
   }
 }
-// one tail as a chain of beads, outline first, then the ore, lit on top, with a
-// crystal point on the end
-function drawChain(toX, toY, pts, ore, glow) {
-  const P = ORE_PAL[ore], n = pts.length;
-  const rad = i => { const u = i / Math.max(1, n - 1); return 1.9 + 1.9 * Math.sin(Math.PI * u * 0.85) - 2 * u * u; };
-  pts.forEach(([x, y], i) => pxDisc(toX, toY, x, y, rad(i) + 1, P.out));
-  pts.forEach(([x, y], i) => pxDisc(toX, toY, x, y, rad(i), glow ? P.lt : P.dk));
-  pts.forEach(([x, y], i) => pxDisc(toX, toY, x - rad(i) * 0.2, y - rad(i) * 0.25, rad(i) * 0.7, glow ? P.hi : P.md));
-  pts.forEach(([x, y], i) => pxDisc(toX, toY, x - rad(i) * 0.35, y - rad(i) * 0.5, rad(i) * 0.3, glow ? '#ffffff' : P.lt));
-  const [tx, ty] = pts[n - 1], [px, py] = pts[Math.max(0, n - 2)], a = Math.atan2(ty - py, tx - px);
-  for (let s = 0; s < 5; s++) pxDisc(toX, toY, tx + Math.cos(a) * s, ty + Math.sin(a) * s, 1.8 - s * 0.35, s < 2 ? P.lt : P.hi);
-}
 // a tail that's out after you, drawn smooth rather than as a chain of pixel
 // beads (alex found those jagged): the path it's flown, rounded off (two
 // passes of corner cutting), with a gentle wave running down it so it
@@ -1267,25 +1258,37 @@ function smoothPath(pts) {
   }
   return p;
 }
-function drawSmoothTail(toX, toY, raw, ore, glow, t) {
+function drawSmoothTail(toX, toY, raw, ore, glow, t, wave = true) {
   const P = ORE_PAL[ore], pts = smoothPath(raw), n = pts.length;
   if (n < 2) return;
-  const rad = u => Math.max(0.6, 1.9 + 1.9 * Math.sin(Math.PI * u * 0.85) - 2 * u * u);
-  // the wave, sideways to the tail, strongest in the middle and still at both ends
-  const at = i => {
-    const u = i / (n - 1), [x, y] = pts[i], [px, py] = pts[Math.max(0, i - 1)], [nx, ny] = pts[Math.min(n - 1, i + 1)];
-    const dx = nx - px, dy = ny - py, l = Math.hypot(dx, dy) || 1, w = reduceMotion ? 0 : Math.sin(i * 0.18 - t / 70) * 1.6 * Math.sin(Math.PI * u);
-    return [toX(x - (dy / l) * w), toY(y + (dx / l) * w), u];
+  // how thick it is depends on how far along it you are, not on how long it
+  // is, so a tail stretched out after you is the same tail as one at rest:
+  // thinner where it leaves her, full a few pixels out, and over its last
+  // stretch it narrows to a fine point (alex: sharp, but a tail, not a
+  // spearhead stuck on the end)
+  const len = [0];
+  for (let i = 1; i < n; i++) len.push(len[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const L = len[n - 1], taper = Math.min(20, L * 0.6);
+  const rad = i => {
+    const s0 = len[i], left = L - s0;
+    return Math.max(0.35, (2 + 1.6 * Math.min(1, s0 / 10)) * (left >= taper ? 1 : (left / taper) ** 0.8));
   };
-  const P2 = pts.map((_, i) => at(i));
+  // the wave (on a tail that's out after you), sideways to it, strongest in
+  // the middle and still at both ends
+  const at = i => {
+    const u = L ? len[i] / L : 0, [x, y] = pts[i], [px, py] = pts[Math.max(0, i - 1)], [nx, ny] = pts[Math.min(n - 1, i + 1)];
+    const dx = nx - px, dy = ny - py, l = Math.hypot(dx, dy) || 1, w = !wave || reduceMotion ? 0 : Math.sin(i * 0.18 - t / 70) * 1.6 * Math.sin(Math.PI * u);
+    return [toX(x - (dy / l) * w), toY(y + (dx / l) * w)];
+  };
+  const P2 = pts.map((_, i) => at(i)), R = pts.map((_, i) => rad(i));
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const pass = (col, widthOf, dy = 0) => {
     ctx.strokeStyle = col;
     for (let i = 0; i < n - 1; i++) {
-      const [ax, ay, u] = P2[i], [bx, by] = P2[i + 1];
-      ctx.lineWidth = Math.max(1, widthOf(u) * S);
+      const [ax, ay] = P2[i], [bx, by] = P2[i + 1];
+      ctx.lineWidth = Math.max(1, widthOf((R[i] + R[i + 1]) / 2) * S);
       ctx.beginPath();
       ctx.moveTo(ax, ay + dy * S);
       ctx.lineTo(bx, by + dy * S);
@@ -1293,19 +1296,11 @@ function drawSmoothTail(toX, toY, raw, ore, glow, t) {
     }
   };
   if (glow) { ctx.shadowColor = `rgba(${P.rgb},0.9)`; ctx.shadowBlur = 10 * S; }
-  pass(P.out, u => rad(u) * 2 + 2);
+  pass(P.out, r => r * 2 + 2);
   ctx.shadowBlur = 0;
-  pass(glow ? P.lt : P.md, u => rad(u) * 2);
-  pass(glow ? P.hi : P.lt, u => rad(u) * 0.8, -0.6);
-  // the crystal point on the end
-  const [tx, ty] = P2[n - 1], [qx, qy] = P2[Math.max(0, n - 4)], a = Math.atan2(ty - qy, tx - qx);
-  ctx.fillStyle = P.hi;
-  ctx.beginPath();
-  ctx.moveTo(tx + Math.cos(a) * 5 * S, ty + Math.sin(a) * 5 * S);
-  ctx.lineTo(tx + Math.cos(a + 2.2) * 2 * S, ty + Math.sin(a + 2.2) * 2 * S);
-  ctx.lineTo(tx + Math.cos(a - 2.2) * 2 * S, ty + Math.sin(a - 2.2) * 2 * S);
-  ctx.closePath();
-  ctx.fill();
+  pass(glow ? P.lt : P.md, r => r * 2);
+  pass(glow ? P.hi : P.lt, r => r * 0.9, -0.6);
+  pass(glow ? '#ffffff' : P.hi, r => r * 0.3, -1);
   ctx.restore();
 }
 // her seven tails fanned out behind her, curling up and swaying, minus any
@@ -1331,7 +1326,8 @@ function drawRestTails(c, toX, toY, t, pose) {
     }
     c.tips[i] = [x, y];
     const ore = c.shell > 0.6 ? 'diamond' : ORES[i];
-    drawChain(toX, toY, pts, ore, (c.state === 'tails' && i === c.k && c.tailT < 0.35) || ease > 0.5);
+    // (drawn the same way as one that's out after you, so they match)
+    drawSmoothTail(toX, toY, pts, ore, (c.state === 'tails' && i === c.k && c.tailT < 0.35) || ease > 0.5, t, false);
   }
 }
 function drawWolf(c, toX, toY, t) {

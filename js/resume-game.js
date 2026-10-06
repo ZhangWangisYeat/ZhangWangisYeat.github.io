@@ -142,7 +142,7 @@ const REGIONS = [
             // each project's landmark is where its boss lives. mailsisi's is moe
             // the mole's den, the big hole you walk down into. the other four are
             // boarded up lairs until their bosses are built.
-            poi: { id: 'mailsisi', kind: 'den', at: [84, 49], label: 'MailSISI' }
+            poi: { id: 'mailsisi', kind: 'den', at: [86, 66], label: 'MailSISI' }
           },
           {
             title: 'MailSISIBox',
@@ -219,8 +219,10 @@ const CAMP = { x: 60, y: 42, r: 9 };
 const HOUSE = { x: 60, y: 35 };     // the tile the tent's flap is on
 const HYENA_HOME = { x: 33, y: 62 };
 // the mole holes in the early mines, close to camp: burrows full of moles.
-// moe's own den is a landmark (mailsisi's), not one of these.
-const MOLE_HOLES = [[69, 48], [71, 61], [86, 66]];
+// moe's own den is a landmark (mailsisi's), not one of these. the third hole
+// and moe's den swapped places (2026-10-05), so the den is further in and you
+// don't see it the moment you walk into the mines.
+const MOLE_HOLES = [[69, 48], [71, 61], [84, 49]];
 const SPAWN = { x: 60, y: 45 };
 const QUADS = ['dunes', 'tundra', 'meadows', 'mines'];
 
@@ -640,31 +642,104 @@ function rockMound(G, w, ground, mossy) {
   }
 }
 
-// a boss's lair in the mines that isn't open yet: a mound of rock with an old
-// mine shaft in it, a timber frame round the opening and planks nailed across
-// it. three tiles wide and solid, like the cave. each boss gets its own lair
-// art once it's built.
-function makeLair() {
-  const w = 48, h = 40, cx = 23.5, ground = h - 2;
-  const G = pixelGrid(w, h);
-  rockMound(G, w, ground, false);
-  for (let y = ground - 15; y <= ground; y++) for (let x = Math.round(cx - 7); x <= Math.round(cx + 7); x++) G.set(x, y, y > ground - 3 ? '#1a1410' : '#0d0a08');
-  // the frame: two posts and a beam across the top
-  for (let y = ground - 17; y <= ground; y++) [[cx - 9, cx - 8], [cx + 8, cx + 9]].forEach(([a, b]) => { G.set(a, y, '#a8703f'); G.set(b, y, '#6b4422'); });
-  for (let x = Math.round(cx - 10); x <= Math.round(cx + 10); x++) { G.set(x, ground - 18, '#c48a4f'); G.set(x, ground - 17, '#8a5a32'); }
-  // planks nailed across the opening
-  [[ground - 12, 0], [ground - 6, 1]].forEach(([py, k]) => {
-    for (let x = Math.round(cx - 8); x <= Math.round(cx + 8); x++) {
-      const y = py + Math.round((x - cx) * (k ? 0.12 : -0.1));
-      G.set(x, y, '#b98049'); G.set(x, y + 1, '#8a5a32');
-    }
-    G.set(Math.round(cx - 6), py, '#cfcfcf'); G.set(Math.round(cx + 6), py + (k ? 1 : -1), '#cfcfcf');
-  });
-  for (let k = 0; k <= 13; k++) {
-    const x = Math.round(cx - 6 + k), y = ground - 15 + k;
-    G.set(x, y, '#a8703f'); G.set(x + 1, y, '#74491f');
+// a lair in the mines that isn't open yet, built into the cave wall (alex
+// wanted proper entrances in the side of the cave, not mounds of rock out on
+// the floor; the world puts a face of rock behind each one, see generate): a
+// dressed stone archway set into the rock, with timber posts and a lintel
+// inside it, planks nailed across the dark, a dead lantern on a hook and a
+// little rubble at its feet. the rock round it is the mine wall's own colours
+// so it runs into the wall tiles above. 56 x 54, the doorway in the middle of
+// the bottom; three tiles of it are solid like the cave.
+const LAIR_W = 56, LAIR_H = 54;
+// the face of rock the entrances sit in: full width up top (where it meets the
+// wall tiles), and only a buttress either side of the doorway down on the
+// floor row, so the floor shows round it
+function wallFace(G, w, h, seed) {
+  const cx = (w - 1) / 2, ground = h - 2;
+  for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
+    const low = y > ground - 15;
+    const half = low ? w / 2 - 6 - (y - (ground - 15)) * 0.35 + (hash2(x, y >> 2, seed) - 0.5) * 1.5 : w / 2;
+    if (Math.abs(x - cx) > half) continue;
+    const n = hash2(x, y, seed + 1), v = vnoise(x / 5, y / 5, seed + 2);
+    G.set(x, y, n < 0.06 ? '#1e1b18' : n < 0.14 ? '#3b352f' : v > 0.62 ? '#332e29' : '#2a2622');
   }
-  return G.outline(() => '#262626').canvas();
+  // the bottom of the rock catches the floor's light a little
+  for (let x = 0; x < w; x++) if (G.get(x, ground)) G.set(x, ground, '#3b352f');
+}
+// a stone arch: dressed blocks round a half circle and down two jambs, with
+// mortar lines between them, lit from the top left, and a keystone
+function stoneArch(G, cx, top, ground, ri, ro, pal = ['#b3a892', '#8f8573', '#6c6456', '#3a342c']) {
+  const cy = top + ro;
+  for (let y = top; y <= ground; y++) for (let x = Math.floor(cx - ro); x <= Math.ceil(cx + ro); x++) {
+    const dx = x - cx, dy = y - cy;
+    let inArch = false, joint = false, lit = 0;
+    if (y <= cy) {
+      const r = Math.hypot(dx, dy);
+      if (r < ri || r > ro) continue;
+      inArch = true;
+      const a = Math.atan2(dy, dx), seg = ((a + Math.PI) / Math.PI) * 9;
+      joint = Math.abs(seg - Math.round(seg)) < 0.09;
+      lit = -(dx / ro) * 0.5 - (dy / ro) * 0.5 + (r - ri) / (ro - ri) * 0.3;
+    } else {
+      if (Math.abs(dx) < ri || Math.abs(dx) > ro) continue;
+      inArch = true;
+      joint = (y - cy) % 6 === 0 || (Math.abs(Math.abs(dx) - (ri + ro) / 2) < 0.5 && Math.floor((y - cy) / 6) % 2 === 0);
+      lit = (dx < 0 ? 0.25 : -0.2) + (Math.abs(dx) - ri) / (ro - ri) * 0.2;
+    }
+    if (!inArch) continue;
+    lit += (hash2(x >> 1, y >> 1, 77) - 0.5) * 0.25;
+    G.set(x, y, joint ? pal[3] : lit > 0.3 ? pal[0] : lit > -0.05 ? pal[1] : pal[2]);
+  }
+  // the keystone, a little proud of the rest
+  for (let y = top - 1; y <= top + (ro - ri) + 1; y++) for (let x = Math.round(cx - 2.5); x <= Math.round(cx + 2.5); x++) {
+    G.set(x, y, x <= Math.round(cx - 2.5) || y === top - 1 ? pal[0] : x >= Math.round(cx + 2.5) ? pal[2] : pal[1]);
+  }
+  G.set(Math.round(cx), top + 2, pal[3]); G.set(Math.round(cx), top + 3, pal[3]);
+}
+// the dark inside a doorway: an arch topped opening, black at the back and a
+// little lighter round its edges
+function doorway(G, cx, top, ground, r, inner) {
+  const cy = top + r;
+  for (let y = top; y <= ground; y++) for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) {
+    const dx = x - cx, dy = y - cy;
+    if (y <= cy ? Math.hypot(dx, dy) > r : Math.abs(dx) > r) continue;
+    const edge = y <= cy ? r - Math.hypot(dx, dy) : r - Math.abs(dx);
+    G.set(x, y, inner ? inner(x, y, edge) : edge < 1.5 ? '#1a1410' : '#0b0807');
+  }
+}
+// a few loose stones, lit on top
+function rubbleStones(G, stones) {
+  stones.forEach(([sx, sy, r]) => {
+    for (let y = Math.floor(sy - r); y <= Math.ceil(sy + r); y++) for (let x = Math.floor(sx - r); x <= Math.ceil(sx + r); x++) {
+      const dx = (x - sx) / r, dy = (y - sy) / (r * 0.8);
+      if (dx * dx + dy * dy <= 1) G.set(x, y, dx + dy < -0.3 ? '#9a9286' : '#6a645a');
+    }
+  });
+}
+function makeLair() {
+  const w = LAIR_W, h = LAIR_H, cx = (w - 1) / 2, ground = h - 2;
+  const G = pixelGrid(w, h);
+  wallFace(G, w, h, 640);
+  doorway(G, cx, 18, ground, 11);
+  stoneArch(G, cx, 12, ground, 11, 17);
+  // timber posts and a lintel just inside the arch
+  for (let y = 24; y <= ground; y++) { G.set(cx - 9, y, '#a8703f'); G.set(cx - 8, y, '#6b4422'); G.set(cx + 8, y, '#a8703f'); G.set(cx + 9, y, '#6b4422'); }
+  for (let x = Math.round(cx - 10); x <= Math.round(cx + 10); x++) { G.set(x, 23, '#c48a4f'); G.set(x, 24, '#8a5a32'); }
+  // planks nailed across, one level and one on a slant
+  [[33, 0], [41, 0.14]].forEach(([py, k]) => {
+    for (let x = Math.round(cx - 9); x <= Math.round(cx + 9); x++) {
+      const y = Math.round(py + (x - cx) * k);
+      G.set(x, y, '#c48a4f'); G.set(x, y + 1, '#9a6233'); G.set(x, y + 2, '#6b4020');
+    }
+    [-7, 7].forEach(o => G.set(Math.round(cx + o), Math.round(py + o * k) + 1, '#d0d0d0'));
+  });
+  // a dead lantern hanging off the left jamb
+  const lx = Math.round(cx - 19), ly = 22;
+  G.set(lx, ly - 3, '#5a5a62'); G.set(lx + 1, ly - 3, '#5a5a62');
+  for (let y = ly - 2; y <= ly + 3; y++) for (let x = lx - 1; x <= lx + 2; x++) G.set(x, y, y === ly - 2 || y === ly + 3 ? '#3a3a42' : x === lx - 1 || x === lx + 2 ? '#4a4a52' : '#5e5446');
+  // rubble at its feet
+  rubbleStones(G, [[cx - 15, ground - 1, 2.2], [cx - 12, ground, 1.4], [cx + 14, ground - 1, 2], [cx + 17, ground, 1.3]]);
+  return G.outline(c => (c === '#2a2622' || c === '#3b352f' || c === '#1e1b18' || c === '#332e29' ? null : '#14110e')).canvas();
 }
 
 // moe the mole's den, mailsisi's landmark: a big crater in the mine floor,
@@ -880,6 +955,34 @@ function generate() {
   clear(HYENA_HOME.x, HYENA_HOME.y, 6, true);
   POIS.forEach(p => clear(p.at[0], p.at[1] + 1, 3.2, true));
   MOLE_HOLES.forEach(([x, y]) => clear(x, y, 2.3, true));
+  // the lairs are built into the cave wall (alex): a face of rock behind each
+  // one, seven tiles across and four deep, with the entrance at its foot. if
+  // that cuts a trail off (one that came in from behind), a way round both
+  // ends and over the top of it is cut back in, until everything can be reached.
+  const lairs = POIS.filter(p => p.kind === 'lair');
+  lairs.forEach(p => {
+    const [cx, cy] = p.at;
+    for (let y = cy - 4; y <= cy - 1; y++) for (let x = cx - 3; x <= cx + 3; x++) if (inside(x, y)) tiles[idx(x, y)] = T.WALL;
+  });
+  const cutOff = () => {
+    const seen = new Uint8Array(W * H), q = [idx(SPAWN.x, SPAWN.y)];
+    seen[q[0]] = 1;
+    while (q.length) {
+      const i = q.pop(), x = i % W, y = (i / W) | 0;
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => {
+        const nx = x + dx, ny = y + dy;
+        if (!inside(nx, ny) || SOLID[tiles[idx(nx, ny)]] || seen[idx(nx, ny)]) return;
+        seen[idx(nx, ny)] = 1; q.push(idx(nx, ny));
+      });
+    }
+    return [...POIS.map(p => [p.at[0], p.at[1] + 1]), ...MOLE_HOLES].some(([x, y]) => !seen[idx(x, y)]);
+  };
+  lairs.forEach(p => {
+    if (!cutOff()) return;
+    const [cx, cy] = p.at;
+    for (let y = cy - 5; y <= cy + 1; y++) [cx - 4, cx + 4].forEach(x => { if (inside(x, y)) tiles[idx(x, y)] = baseOf(idx(x, y)); });
+    for (let x = cx - 4; x <= cx + 4; x++) if (inside(x, cy - 5)) tiles[idx(x, cy - 5)] = baseOf(idx(x, cy - 5));
+  });
   // camp sits on a clearing of packed earth, so it reads as one tidy place
   // instead of a patchwork of all four biomes' ground
   for (let y = CAMP.y - 8; y <= CAMP.y + 8; y++) for (let x = CAMP.x - 8; x <= CAMP.x + 8; x++) {
@@ -949,6 +1052,20 @@ function generate() {
   // the other, because the few high rolls clump together.)
   [[T.DIAMOND, 2], [T.EMERALD, 1]].forEach(([t, n]) => {
     for (let k = 0; k < n && deep.length; k++) tiles[deep.splice((r() * deep.length) | 0, 1)[0]] = t;
+  });
+  // round the ore wolf's entrance (bruinpop's) the walls get thicker and
+  // thicker with ore the closer you come to it (alex). iron, gold and ruby
+  // only: diamonds and emeralds stay rationed.
+  POIS.filter(p => p.id === 'bruinpop').forEach(p => {
+    const rr = mulberry32(SEED + 808), [cx, cy] = p.at;
+    for (let y = cy - 10; y <= cy + 10; y++) for (let x = cx - 10; x <= cx + 10; x++) {
+      if (!inside(x, y) || tiles[idx(x, y)] !== T.WALL) continue;
+      const d = Math.hypot(x - cx, (y - (cy - 2)) * 1.2), roll = rr(), kind = rr();
+      // (the rock face her entrance is cut into is solid ore, to match it)
+      const face = Math.abs(x - cx) <= 3 && y >= cy - 4 && y <= cy - 1;
+      if (!face && (d > 9.5 || roll > 0.92 * (1 - d / 9.5))) continue;
+      tiles[idx(x, y)] = kind < 0.45 ? T.IRON : kind < 0.78 ? T.GOLD : T.RUBY;
+    }
   });
 }
 

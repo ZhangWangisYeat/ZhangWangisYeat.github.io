@@ -265,46 +265,69 @@ function makeSeal() {
   }
   return G.outline(() => '#120f18').canvas();
 }
-// her cave mouth out in the mines, its own thing and not the other lairs' rock
-// (alex): an angular mound of dark violet slate cut into facets, studded all
-// over with ore, a crown of big crystals of all seven ores growing out of it,
-// and an arched mouth lit from inside in prism colours
+// her entrance out in the mines, built straight into the cave wall (alex): a
+// rough arch in a face of ore rock (the same stone and veins as the ore tiles
+// round it, which get thicker the closer they are, see generate, so it all
+// reads as one wall), a rim of dark stone round the opening, a crown of seven
+// crystal clusters along the top of the arch (one of each ore), a cluster
+// either side at its feet, and inside a deep violet dark with a soft glow at
+// the bottom. 64 x 58.
+const ORE_VEIN = { gold: ['#e6c541', '#9a7616'], ruby: ['#e0473a', '#7d1a14'], iron: ['#e2ddd6', '#8f8a84'], emerald: ['#5fe08a', '#1f7a43'], diamond: ['#86f2e2', '#2b9c90'] };
 function makeOreCave() {
-  const w = 48, h = 48, cx = 23.5, ground = h - 2, G = pixelGrid(w, h), r = mulberry32(1402);
-  const ROCK = ['#7a7390', '#5e5874', '#47415a', '#322d40'];
-  const top = x => ground - 30 * Math.sqrt(Math.max(0, 1 - ((x - cx) / 23) ** 2));
+  const w = 64, h = 58, cx = 31.5, ground = h - 2, G = pixelGrid(w, h), r = mulberry32(1402);
+  const ar = 11, acy = ground - 11;
+  const dist = (x, y) => (y <= acy ? Math.hypot(x - cx, y - acy) : Math.abs(x - cx)) - ar;
+  // the ore rock face: full width up top, narrowing to a buttress either side
+  // of the doorway on the floor row, like the other entrances
   for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
-    const dx = (x - cx) / 23, dy = (y - ground) / 30, edge = (hash2(x >> 2, y >> 2, 1403) - 0.5) * 0.16;
-    if (dx * dx + dy * dy > 1 + edge) continue;
-    const facet = hash2(Math.floor((x + y * 0.6) / 6), Math.floor((x - y * 0.6 + 40) / 6), 1404);
-    const lit = -(dx * 0.6 + dy * 0.7) * 0.8 + (facet - 0.5) * 0.8;
-    G.set(x, y, ROCK[lit > 0.45 ? 0 : lit > 0.05 ? 1 : lit > -0.35 ? 2 : 3]);
+    const low = y > ground - 15, half = low ? w / 2 - 7 - (y - (ground - 15)) * 0.35 : w / 2;
+    if (Math.abs(x - cx) > half) continue;
+    const n = hash2(x, y, 1460);
+    G.set(x, y, n < 0.08 ? '#747474' : n < 0.16 ? '#959595' : '#858585');
   }
-  // ore studded through it, little clusters like the ore in the mine walls
-  const studs = ['gold', 'ruby', 'emerald', 'diamond', 'iron', 'marble'];
-  for (let k = 0; k < 22; k++) {
-    const ox = Math.round(5 + r() * 38), oy = Math.round(top(ox) + 4 + r() * (ground - top(ox) - 6)), P = ORE_PAL[studs[k % studs.length]];
-    [[0, 0], [1, 0], [0, 1], [1, 1], [-1, 1]].slice(0, 2 + (k % 3)).forEach(([ddx, ddy], j) => { if (G.get(ox + ddx, oy + ddy)) G.set(ox + ddx, oy + ddy, j === 0 ? P.hi : P.md); });
+  // veins of ore through it, short strokes like the ore tiles have, more of
+  // them the closer to the opening
+  const veins = Object.keys(ORE_VEIN);
+  for (let k = 0; k < 70; k++) {
+    const x = Math.round(2 + r() * (w - 4)), y = Math.round(2 + r() * (ground - 6)), d = dist(x, y);
+    if (d < 2 || !G.get(x, y) || r() > 1.15 - d / 22) continue;
+    const [hi, lo] = ORE_VEIN[veins[(r() * veins.length) | 0]];
+    [[0, 0, hi], [1, 0, hi], [1, 1, lo], [2, 1, hi]].forEach(([dx, dy, c]) => { if (G.get(x + dx, y + dy)) G.set(x + dx, y + dy, c); });
   }
-  // the mouth: an arch lit from inside, violet up top and the seven colours
-  // glowing along its floor
+  // the opening: a dark stone rim, then the violet dark, with a soft glow low down
   for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
-    const mx = (x - cx) / 7.5, my = (y - ground) / 15, d = mx * mx + my * my;
-    if (d > 1.2 || y > ground) continue;
-    if (d > 1) { if (G.get(x, y)) G.set(x, y, '#9a92b2'); continue; }
-    const glow = y > ground - 2 && d < 0.8 ? ORE_PAL[ORES[Math.min(6, Math.floor(((x - cx + 7.5) / 15) * 7))]].dk : null;
-    G.set(x, y, glow || (d > 0.72 ? '#221a30' : d > 0.35 ? '#140e20' : '#2a1e48'));
+    const d = dist(x, y);
+    if (d > 2) continue;
+    if (d > 0) { G.set(x, y, d > 1 ? '#5e5a54' : '#3e3a36'); continue; }
+    const glow = Math.max(0, 1 - Math.hypot((x - cx) / 9, (y - ground) / 6));
+    G.set(x, y, glow > 0.6 ? '#5a3f8a' : glow > 0.3 ? '#3a2a5a' : d > -1.5 ? '#2a1e3a' : d > -4 ? '#1a1228' : '#0c0814');
   }
-  // and the crown: a crystal of each ore growing up and out of the top
-  [[cx - 16, -0.8, 6], [cx - 11, -0.5, 8], [cx - 5, -0.2, 10], [cx + 1, 0.05, 11], [cx + 7, 0.3, 9], [cx + 12, 0.55, 8], [cx + 17, 0.85, 6]].forEach(([bx, lean, len], k) => {
-    const P = ORE_PAL[ORES[k]], by = top(bx) + 3;
-    for (let s = 0; s <= len; s++) {
-      const half = 2.2 * (1 - s / (len + 1)) ** 0.7;
-      for (let ww = -half; ww <= half; ww += 0.5) G.set(bx + ww + s * lean, by - s, ww < -half * 0.35 ? P.hi : ww < half * 0.35 ? P.lt : P.md);
+  // a crystal: lit on its left, darker on its right with a dark edge, bright tip
+  const shard = (bx, by, ang, len, wid, ore) => {
+    const P = ORE_PAL[ore], ux = Math.cos(ang), uy = Math.sin(ang), vx = -uy, vy = ux;
+    for (let s = 0; s <= len; s += 0.4) {
+      const half = wid * (1 - s / (len + 0.4));
+      for (let t = -half; t <= half; t += 0.4) {
+        const side = t / (half || 1);
+        G.set(bx + ux * s + vx * t, by + uy * s + vy * t, side > 0.75 ? P.dk : side < -0.3 ? P.hi : side < 0.3 ? P.lt : P.md);
+      }
     }
-    G.set(bx + len * lean, by - len, '#ffffff');
+    G.set(bx + ux * len, by + uy * len, '#ffffff');
+  };
+  const cluster = (bx, by, ang, size, ore) => {
+    shard(bx, by, ang - 0.42, size * 0.55, size * 0.16, ore);
+    shard(bx, by, ang + 0.42, size * 0.55, size * 0.16, ore);
+    shard(bx, by, ang, size, size * 0.22, ore);
+  };
+  // the crown, one cluster of each ore along the top of the arch, biggest in the middle
+  ORES.forEach((ore, k) => {
+    const u = k / 6, a = Math.PI * (1.08 + u * 0.84), big = 1 - Math.abs(u - 0.5) * 1.1;
+    cluster(cx + Math.cos(a) * (ar + 1.5), acy + Math.sin(a) * (ar + 1.5), a, 6 + big * 6, ore);
   });
-  return G.outline(() => '#1a1622').canvas();
+  // and a cluster at each foot of the doorway
+  cluster(cx - ar - 4, ground - 1, Math.PI * 1.32, 7, 'emerald');
+  cluster(cx + ar + 4, ground - 1, Math.PI * 1.68, 7, 'ruby');
+  return G.outline(c => (c === '#858585' || c === '#747474' || c === '#959595' ? null : '#120f18')).canvas();
 }
 
 // the arena as tiles (WT), so its walls can be dug like the mines': wall all

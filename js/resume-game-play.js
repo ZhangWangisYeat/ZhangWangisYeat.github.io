@@ -3743,6 +3743,18 @@ function updateCreature(c, dt) {
     case 'burrowed':
       if (alive && d < def.aggro * TILE) aggro(c);
       break;
+    case 'dig':
+      // one of moe's crew, scratching at its wall with dirt flying, until it
+      // notices you
+      if (c.wall) {
+        c.flip = c.wall[0] * TILE + 8 < c.x;
+        if (Math.random() < dt * 5 && d < 22 * TILE) {
+          const wx = c.wall[0] * TILE + 8, wy = c.wall[1] * TILE + 10;
+          particles.push({ x: c.x + (wx - c.x) * 0.6, y: c.y - 6 + (wy - c.y) * 0.3, vx: (Math.random() - 0.5) * 50, vy: -30 - Math.random() * 30, g: 220, life: 0.4, t: 0, col: Math.random() < 0.5 ? '#8a6a4c' : '#6b5038', size: 1 });
+        }
+      }
+      if (alive && d < DIGGER_SIGHT * TILE) aggro(c);
+      break;
     case 'prowl':
       c.wanderT -= dt;
       if (!c.wander || c.wanderT <= 0) {
@@ -3754,7 +3766,7 @@ function updateCreature(c, dt) {
       if (alive && d < def.aggro * TILE) aggro(c);
       break;
     case 'chase':
-      if (!alive || homeD > def.leash * TILE) { c.state = 'return'; break; }
+      if (!alive || homeD > (c.leash || def.leash) * TILE) { c.state = 'return'; break; }
       if (def.shooter) { shooterChase(c, dt, d, dx, dy, steer, walk); break; }
       if (d <= def.range * TILE && c.cd <= 0) { c.state = 'windup'; c.t = 0; c.flip = dx < 0; break; }
       // close in, but stop just short of touching you. contact still hurts,
@@ -3790,7 +3802,7 @@ function updateCreature(c, dt) {
       // walking home doesn't heal it any more. it gets its health back slowly
       // through regen, so backing off for a breather doesn't reset the fight.
       steer(c.hx, c.hy, def.speed * 0.8);
-      if (homeD < 6) c.state = def.rest;
+      if (homeD < 6) c.state = c.digger ? 'dig' : def.rest;
       // come back within range while it's heading home and it turns round
       else if (alive && d < def.aggro * TILE * 1.4 && homeD < def.leash * TILE * 0.8) c.state = 'chase';
       break;
@@ -3873,6 +3885,140 @@ function updateNightSpawns(dt) {
     // (two in three of the meadows' night spawns are forest guardians, it was
     // two in five; alex wanted more of them about)
     spawnHostile(where === 'meadows' && Math.random() < 0.65 ? 'guardian' : 'zombie', tx, ty);
+    return;
+  }
+}
+// moe's digging crew (alex: to show he's tearing the cave apart): ten of the
+// little moles from the holes, spread round the mines, each one at a wall
+// scratching away at it. they're the same moles: get close and they come for
+// you (and give up if you lead them a long way from their wall). while you're
+// out in the mines the crew really does dig, two blocks a minute between them
+// (one block every half minute, by one of them at random, which then carries
+// on into the hole it made), but only plain rock, never ore, never near a
+// landmark, a mole hole, the hatch or camp, and never more than DIG_CAP blocks
+// altogether, so the map doesn't get torn up. kill any of them and the
+// digging stops until they've all come back (each comes back DIGGER_BACK
+// seconds after it died, somewhere you're not looking). when moe dies the
+// crew is gone for good, and from then on a stray mole turns up in the mines
+// now and then instead (STRAY_*), waiting under the floor like the ones in the
+// holes.
+const DIGGERS = 10, DIG_EVERY = 30, DIG_CAP = 30, DIGGER_BACK = 120, DIGGER_SIGHT = 5, DIGGER_LEASH = 14;
+const STRAY_EVERY = [90, 180], STRAY_CAP = 2;
+quest.moleDug = Array.isArray(quest.moleDug) ? quest.moleDug.filter(n => Number.isInteger(n)) : [];
+const diggers = [], diggerGraves = [], strays = [];
+let digT = DIG_EVERY, strayT = 60, diggersUp = false;
+const inMines = (x, y) => inside(x, y) && QUADS[quad[idx(x, y)]] === 'mines';
+function diggable(x, y) {
+  if (x < 3 || y < 3 || x > W - 4 || y > H - 4 || !inMines(x, y) || tiles[idx(x, y)] !== T.WALL) return false;
+  if (POIS.some(p => Math.hypot(p.at[0] - x, p.at[1] - y) < 6) || MOLE_HOLES.some(([hx, hy]) => Math.hypot(hx - x, hy - y) < 4)) return false;
+  if (typeof HATCH_AT !== 'undefined' && HATCH_AT && Math.hypot(HATCH_AT[0] - x, HATCH_AT[1] - y) < 4) return false;
+  return Math.hypot(x - CAMP.x, y - CAMP.y) > CAMP.r + 6;
+}
+// a wall to dig at from the floor tile fx, fy, if there is one
+function digSpot(fx, fy) {
+  const dirs = [[1, 0], [-1, 0], [0, -1], [0, 1]].sort(() => Math.random() - 0.5);
+  for (const [dx, dy] of dirs) if (diggable(fx + dx, fy + dy)) return [fx + dx, fy + dy];
+  return null;
+}
+function makeDigger(x, y, wall) {
+  const c = spawnCreature('mole', x, y);
+  Object.assign(c, { state: 'dig', digger: true, wall, leash: DIGGER_LEASH, flip: wall[0] < x });
+  c.onDeath = () => {
+    diggers.splice(diggers.indexOf(c), 1);
+    diggerGraves.push({ x: Math.floor(c.hx / TILE), y: Math.floor(c.hy / TILE), t: DIGGER_BACK });
+  };
+  diggers.push(c);
+  return c;
+}
+function placeDiggers() {
+  const spots = [];
+  for (let tries = 0; tries < 6000 && spots.length < DIGGERS; tries++) {
+    const x = 62 + ((Math.random() * (W - 64)) | 0), y = 44 + ((Math.random() * (H - 46)) | 0), i = idx(x, y);
+    if (!inMines(x, y) || solidTile(x, y) || !reach[i] || tiles[i] === T.WATER) continue;
+    if (spots.some(sp => Math.hypot(sp[0] - x, sp[1] - y) < 8) || Math.hypot(x - CAMP.x, y - CAMP.y) < CAMP.r + 6) continue;
+    const wall = digSpot(x, y);
+    if (wall) spots.push([x, y, wall]);
+  }
+  spots.forEach(([x, y, wall]) => makeDigger(x, y, wall));
+}
+function dropCreature(c) {
+  const i = creatures.indexOf(c);
+  if (i >= 0) creatures.splice(i, 1);
+  const j = things.indexOf(c);
+  if (j >= 0) things.splice(j, 1);
+}
+// one block dug through: the mole moves into the hole and starts on the next
+// block along (or any block next to it)
+function digThrough(c) {
+  const [wx, wy] = c.wall, i = idx(wx, wy), fx = Math.floor(c.hx / TILE), fy = Math.floor(c.hy / TILE);
+  if (!diggable(wx, wy)) { c.wall = digSpot(fx, fy); return; }
+  tiles[i] = baseOf(i);
+  reach[i] = 1;
+  quest.mined.push(i);
+  quest.moleDug.push(i);
+  repaintAround(wx, wy);
+  paintMinimap();
+  if (Math.hypot(wx * TILE - player.x, wy * TILE - player.y) < 20 * TILE) { burst(wx * TILE + 8, wy * TILE + 8, '138,106,76', 14); sfx.crunch(); }
+  const ahead = [wx + (wx - fx), wy + (wy - fy)];
+  Object.assign(c, { hx: wx * TILE + 8, hy: wy * TILE + 12, state: 'return', wall: diggable(...ahead) ? ahead : digSpot(wx, wy) });
+  markDirty();
+}
+function tickDiggers(dt) {
+  if (quest.moe.dead) {
+    // moe's gone: so is his crew, for good
+    if (diggers.length || diggerGraves.length) {
+      diggers.slice().forEach(c => { burst(c.x, c.y - 6, '138,106,76', 10); dropCreature(c); });
+      diggers.length = 0;
+      diggerGraves.length = 0;
+    }
+    tickStrays(dt);
+    return;
+  }
+  if (!diggersUp) {
+    if (!meadowsComplete()) return;
+    diggersUp = true;
+    placeDiggers();
+  }
+  // (a fresh start after you've died puts them back under the floor; they go
+  // straight back to work)
+  diggers.forEach(c => { if (c.state === 'burrowed') c.state = 'dig'; if (!c.wall) c.wall = digSpot(Math.floor(c.hx / TILE), Math.floor(c.hy / TILE)); });
+  for (let k = diggerGraves.length - 1; k >= 0; k--) {
+    const g = diggerGraves[k];
+    g.t -= dt;
+    if (g.t > 0 || Math.hypot(g.x * TILE - player.x, g.y * TILE - player.y) < 14 * TILE) continue;
+    const wall = digSpot(g.x, g.y);
+    if (!wall) { g.t = 10; continue; }
+    diggerGraves.splice(k, 1);
+    makeDigger(g.x, g.y, wall);
+  }
+  const outInMines = !room && !player.dead && regionAt(player.x / TILE, player.y / TILE) === 'mines';
+  if (!outInMines || diggerGraves.length || quest.moleDug.length >= DIG_CAP) return;
+  digT -= dt;
+  if (digT > 0) return;
+  digT = DIG_EVERY;
+  const working = diggers.filter(c => c.state === 'dig' && c.wall);
+  if (working.length) digThrough(working[(Math.random() * working.length) | 0]);
+}
+function tickStrays(dt) {
+  for (let k = strays.length - 1; k >= 0; k--) {
+    const c = strays[k];
+    if (c.dead) { strays.splice(k, 1); continue; }
+    // wandered off a long way from you and not after you: it digs back down and goes
+    if (c.state === 'burrowed' && Math.hypot(c.x - player.x, c.y - player.y) > 34 * TILE) { dropCreature(c); strays.splice(k, 1); }
+  }
+  if (room || player.dead || regionAt(player.x / TILE, player.y / TILE) !== 'mines') return;
+  strayT -= dt;
+  if (strayT > 0) return;
+  strayT = STRAY_EVERY[0] + Math.random() * (STRAY_EVERY[1] - STRAY_EVERY[0]);
+  if (strays.length >= STRAY_CAP) return;
+  const px = player.x / TILE, py = player.y / TILE;
+  for (let tries = 0; tries < 60; tries++) {
+    const a = Math.random() * Math.PI * 2, d = 12 + Math.random() * 8;
+    const x = Math.floor(px + Math.cos(a) * d), y = Math.floor(py + Math.sin(a) * d);
+    if (!inMines(x, y) || solidTile(x, y) || !reach[idx(x, y)] || tiles[idx(x, y)] === T.WATER) continue;
+    const c = spawnCreature('mole', x, y);
+    c.leash = DIGGER_LEASH;
+    strays.push(c);
     return;
   }
 }
@@ -4252,7 +4398,8 @@ function drawCreature(c, toX, toY, t) {
     return;
   }
   let img = F.walk[0];
-  if (c.state === 'sleep') img = F.sleep;
+  if (c.state === 'dig') img = Math.floor(t / 150 + c.hx) % 2 ? F.crouch : F.walk[1];
+  else if (c.state === 'sleep') img = F.sleep;
   else if (c.state === 'windup') img = F.crouch;
   else if (c.state === 'lunge' || c.aimT > 0) img = F.lunge;
   else if (c.moving) img = F.walk[Math.floor(c.anim * (c.kind === 'hyena' ? 10 : c.def.passive ? 7 : 9)) % 4];
@@ -5536,7 +5683,7 @@ function enterRoom(r, quiet, at) {
 function playLeaveRoom(quiet) {
   const r = room;
   if (r === denRoom) resetMoe();
-  if (typeof raceLeave === 'function') raceLeave(r);
+  if (typeof raceLeave === 'function') raceLeave(r, quiet);
   if (typeof wolfLeave === 'function') wolfLeave(r);
   // anything down there goes back to where it started (moles back under their
   // mounds), so walking back in doesn't drop you straight into their teeth
@@ -5568,7 +5715,7 @@ function checkDoors() {
       const pit = b.pit || { x: b.thing.x, y: b.thing.y - 9, w: 9 };
       if (!player.moving || Math.abs(player.x - pit.x) > pit.w || Math.abs(player.y - pit.y) > 5) continue;
       if (!buildingOpen(b)) lockedToast(regionAt(b.tile[0] + 0.5, b.tile[1] + 0.5));
-      else if (b.open()) enterRoom(b.room, false, b.arrive);
+      else if (b.open()) (b.enter ? b.enter(b) : enterRoom(b.room, false, b.arrive));
       // a shut hole: say so once in a while, not every frame you walk over it
       else if (performance.now() > (b.shutAt || 0)) { b.shutAt = performance.now() + 4000; toast(...b.shut()); sfx.deny(); }
       return;
@@ -5579,12 +5726,13 @@ function checkDoors() {
     // hidden behind the canvas, and still be outside.
     const doorX = b.tile[0] * TILE + 8, doorY = b.tile[1] * TILE;
     const inDoor = Math.abs(player.x - doorX) < 8 && player.y > doorY - 4 && player.y < b.thing.y;
-    if (inDoor && (player.moving || pushing) && b.open() && buildingOpen(b)) { enterRoom(b.room, false, b.arrive); return; }
+    // (a building can have its own way in, like the hoist down to darryl's track)
+    if (inDoor && (player.moving || pushing) && b.open() && buildingOpen(b)) { if (b.enter) b.enter(b); else enterRoom(b.room, false, b.arrive); return; }
   }
 }
 function useBuilding(b) {
   if (!buildingOpen(b)) { lockedToast(regionAt(b.tile[0] + 0.5, b.tile[1] + 0.5)); return; }
-  if (b.open()) { enterRoom(b.room, false, b.arrive); return; }
+  if (b.open()) { if (b.enter) b.enter(b); else enterRoom(b.room, false, b.arrive); return; }
   toast(...(typeof b.shut === 'function' ? b.shut() : b.shut));
   sfx.deny();
 }
@@ -5795,6 +5943,7 @@ function playUpdate(dt, t) {
     }
     updateSpawning(dt);
     updateNightSpawns(dt);
+    tickDiggers(dt);
     checkDoors();
   } else if (!room.sealed && player.y > room.h - 3) {
     // a room can lead somewhere other than outside (the statue room's way down

@@ -579,22 +579,63 @@ function makeLavaLord() {
   return G.outline(() => '#0c0a0e').canvas();
 }
 
-// the open shaft that replaces mailsisibox's boarded lair once moe is beaten:
-// the same rock mound and timber frame, planks gone, and a pair of rails
-// running out of the dark
-function makeShaft() {
-  const w = 48, h = 40, cx = 23.5, ground = h - 2;
+// the shaft once moe's beaten: a makeshift hoist built against the cave wall
+// (alex: a non electric elevator going down, built into one of the walls). a
+// shaft cut up into the rock and cribbed with timber, a timber headframe in
+// front of it (two posts, a beam across the top, braces), a pulley wheel hung
+// off the beam with its rope running down to a plank platform over a hole in
+// the floor, and a winch with a crank on the right post. lift false draws it
+// with the platform gone down the hole (the ride draws it, see drawLift).
+const SHAFT_W = 60, SHAFT_H = 62;
+// where the hole and the platform are, in the sprite
+const LIFT_HOLE = { x0: 18, x1: 41, y0: 50, y1: 60 }, LIFT_TOP = 51, LIFT_PULLEY = { x: 29.5, y: 12 };
+function makeShaft(lift) {
+  const w = SHAFT_W, h = SHAFT_H, cx = (w - 1) / 2, ground = h - 2, H0 = LIFT_HOLE;
   const G = pixelGrid(w, h);
-  rockMound(G, w, ground, false);
-  for (let y = ground - 15; y <= ground; y++) for (let x = Math.round(cx - 7); x <= Math.round(cx + 7); x++) G.set(x, y, y > ground - 3 ? '#1a1410' : '#0d0a08');
-  for (let y = ground - 17; y <= ground; y++) [[cx - 9, cx - 8], [cx + 8, cx + 9]].forEach(([a, b]) => { G.set(a, y, '#a8703f'); G.set(b, y, '#6b4422'); });
-  for (let x = Math.round(cx - 10); x <= Math.round(cx + 10); x++) { G.set(x, ground - 18, '#c48a4f'); G.set(x, ground - 17, '#8a5a32'); }
-  for (let y = ground - 6; y <= ground; y++) {
-    const spread = 3 + (y - (ground - 6)) * 0.5;
-    G.set(Math.round(cx - spread), y, '#8a8a94'); G.set(Math.round(cx + spread), y, '#8a8a94');
-    if (y % 2 === 0) for (let x = Math.round(cx - spread); x <= Math.round(cx + spread); x++) if (!(x === Math.round(cx - spread) || x === Math.round(cx + spread))) G.set(x, y, '#5e3a1e');
+  wallFace(G, w, h, 701);
+  // the shaft cut into the rock, cribbed with timber every few rows
+  for (let y = 16; y < H0.y0; y++) for (let x = H0.x0 + 1; x <= H0.x1 - 1; x++) {
+    const crib = (y - 16) % 7 === 0;
+    G.set(x, y, crib ? (x < cx ? '#6b4422' : '#5e3a1e') : x === H0.x0 + 1 || x === H0.x1 - 1 ? '#2a1e14' : '#120e0b');
   }
-  return G.outline(() => '#262626').canvas();
+  // the hole in the floor, black at the bottom, with a timber rim
+  for (let y = H0.y0; y <= H0.y1; y++) for (let x = H0.x0; x <= H0.x1; x++) {
+    const rim = x === H0.x0 || x === H0.x1 || y === H0.y0;
+    G.set(x, y, rim ? (y === H0.y0 ? '#a8703f' : '#6b4422') : y > H0.y1 - 3 ? '#050404' : '#0b0807');
+  }
+  for (let x = H0.x0; x <= H0.x1; x++) G.set(x, H0.y1, '#8a5a32');
+  // the headframe: posts, a beam across the top, braces
+  [[13, 15], [44, 46]].forEach(([a, b]) => { for (let y = 4; y <= ground; y++) for (let x = a; x <= b; x++) G.set(x, y, x === a ? '#c48a4f' : x === b ? '#6b4422' : '#9a6233'); });
+  for (let y = 4; y <= 7; y++) for (let x = 11; x <= 48; x++) G.set(x, y, y === 4 ? '#d29a5c' : y === 7 ? '#6b4422' : '#a8703f');
+  for (let k = 0; k <= 7; k++) { G.set(16 + k, 8 + k, '#8a5a32'); G.set(43 - k, 8 + k, '#8a5a32'); }
+  [[14, 6], [45, 6], [14, 30], [45, 30]].forEach(([x, y]) => G.set(x, y, '#5a5a62'));
+  // the pulley wheel hanging off the beam
+  const P = LIFT_PULLEY;
+  for (let y = P.y - 5; y <= P.y + 5; y++) for (let x = Math.floor(P.x - 5); x <= Math.ceil(P.x + 5); x++) {
+    const r = Math.hypot(x - P.x, y - P.y);
+    if (r > 4.9) continue;
+    const col = r > 3.6 ? (x < P.x ? '#9a9aa4' : '#5a5a62') : r < 1.2 ? '#3a3a42' : Math.abs(x - P.x) < 0.6 || Math.abs(y - P.y) < 0.6 ? '#6a6a72' : null;
+    if (col) G.set(x, y, col);
+  }
+  G.set(Math.round(P.x), 8, '#5a5a62');
+  // the rope: down to the platform's yoke when it's up, down the hole when it's not
+  const ropeEnd = lift ? LIFT_TOP - 4 : H0.y1;
+  [P.x - 4, P.x + 4].forEach(x => { for (let y = P.y + 1; y <= ropeEnd; y++) G.set(Math.round(x), y, y % 3 ? '#c9b78f' : '#a8946a'); });
+  if (lift) {
+    // the yoke and the platform: planks over the hole, with an iron band
+    for (let x = H0.x0 + 4; x <= H0.x1 - 4; x++) G.set(x, LIFT_TOP - 4, '#5a5a62');
+    [H0.x0 + 4, H0.x1 - 4].forEach(x => { for (let y = LIFT_TOP - 4; y <= LIFT_TOP; y++) G.set(x, y, '#5a5a62'); });
+    for (let y = LIFT_TOP; y <= LIFT_TOP + 5; y++) for (let x = H0.x0 + 1; x <= H0.x1 - 1; x++) {
+      G.set(x, y, y === LIFT_TOP ? '#d29a5c' : y === LIFT_TOP + 5 ? '#5e3a1e' : (x - H0.x0) % 5 === 0 ? '#6b4422' : y === LIFT_TOP + 3 ? '#7a7a84' : '#a8703f');
+    }
+  }
+  // the winch on the right post: a drum of rope and a crank
+  for (let y = 26; y <= 34; y++) for (let x = 47; x <= 52; x++) G.set(x, y, y === 26 || y === 34 ? '#5a5a62' : (y % 2 ? '#c9b78f' : '#a8946a'));
+  for (let y = 29; y <= 31; y++) G.set(53, y, '#3a3a42');
+  for (let x = 53; x <= 56; x++) G.set(x, 36, '#5a5a62');
+  G.set(56, 35, '#8a5a32'); G.set(56, 34, '#8a5a32');
+  rubbleStones(G, [[8, ground - 1, 2], [51, ground, 1.6]]);
+  return G.outline(c => (c === '#2a2622' || c === '#3b352f' || c === '#1e1b18' || c === '#332e29' ? null : '#14110e')).canvas();
 }
 
 // painting the race room, tile by tile with the mines' own textures and the
@@ -670,7 +711,7 @@ function paintVault() {
 // other lairs until moe is beaten, then the planks come off and you can walk in.
 const shaftPoi = POIS.find(p => p.id === 'mailsisibox');
 const shaftThing = shaftPoi.thing;
-const SHAFT = makeShaft();
+const SHAFT_ART = [makeShaft(true), makeShaft(false)];
 const shaftMouth = idx(shaftPoi.at[0], shaftPoi.at[1]);
 const shaftOpen = () => found.has('mailsisi');
 let shaftWasOpen = null;
@@ -678,7 +719,7 @@ function syncShaft() {
   const open = shaftOpen();
   if (open === shaftWasOpen) return;
   shaftWasOpen = open;
-  shaftThing.frames = open ? [SHAFT] : SPRITE.lair;
+  shaftThing.frames = open ? [SHAFT_ART[0]] : SPRITE.lair;
   if (open) extraSolid.delete(shaftMouth);
   else extraSolid.add(shaftMouth);
 }
@@ -728,6 +769,8 @@ const vaultRoom = {
 EXTRA_ROOMS.push(raceRoom, vaultRoom);
 BUILDINGS.push({
   thing: shaftThing, tile: shaftPoi.at, room: raceRoom, get name() { return DQ.won ? 'Darryl\'s Raceway' : 'Mine Shaft'; }, open: shaftOpen,
+  // (you don't just walk in: you ride the hoist down, see startLift)
+  enter: () => { if (!lift.dir) startLift('down'); },
   shut: ['Sealed', '? ? ?', 'Beat the bosses before it first.'], hint: () => shaftOpen() && !DQ.seen
 });
 
@@ -1560,6 +1603,7 @@ function walkDarryl(x, y, speed, then) { Object.assign(darryl, { state: 'walk', 
 // the race itself, every frame
 function raceTick(dt) {
   syncShaft();
+  tickLift(dt);
   tickWhistle(dt);
   // the "shift | hop out" chip in the hud (with the map and controls chips,
   // alex: it used to be a label stuck under the cart) while you can hop out
@@ -1867,14 +1911,17 @@ function raceEnter(r) {
     }
   }
 }
-function raceLeave(r) {
+function raceLeave(r, quiet) {
   if (r !== raceRoom) return;
+  // walking out the bottom of the track, the hoist brings you back up (not
+  // when you're whisked out by dying or fast travel)
+  if (!quiet) startLift('up');
   if (talk) endTalk(true);
   if (musicOn && musicTune === RACE_TUNE) bossMusic(false);
   race.riding = false;
   if (DQ.won) resetFree(); else resetRace();
 }
-function raceHolds() { return !!talk || race.riding || !!race.judge || !!race.poof || !!door.seq || helpOpen || (room === raceRoom && darryl.state === 'walk' && race.phase === 'over'); }
+function raceHolds() { return !!lift.dir || !!talk || race.riding || !!race.judge || !!race.poof || !!door.seq || helpOpen || (room === raceRoom && darryl.state === 'walk' && race.phase === 'over'); }
 function raceKey(e) {
   if (helpOpen) {
     if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') { e.preventDefault(); closeHelp(); }
@@ -2019,6 +2066,8 @@ function drawRider(c, toX, toY, dy) {
 // the engine asks before drawing you: in a cart you're drawn by the cart, and
 // turned to bones you're a skeleton (rattling, then a heap)
 function playDrawPlayer(toX, toY, t) {
+  // riding the hoist you're drawn on the platform, see drawLift
+  if (lift.dir && !lift.drawing && !room) return true;
   if (race.riding && room === raceRoom) return true;
   if (!player.skeleton) return false;
   const pile = player.skeleton === 'pile';
@@ -2035,6 +2084,7 @@ function playDrawPlayer(toX, toY, t) {
 // on top of everything: how the race is going, the button mashing, his finger
 // zapping you, and your loot floating up into his hand
 function raceOverlay(toX, toY, t) {
+  if (lift.dir && !room) { drawLift(toX, toY, t); return; }
   if (room !== raceRoom) return;
   const fs = Math.max(16, 8 * Math.round((S * 5.3) / 8));
   ctx.font = `${fs}px Silkscreen, monospace`;
@@ -2406,4 +2456,70 @@ function tickWhistle(dt) {
   // (stopped once it's been silent a moment, and it starts from the top next time)
   whistle.quietT = want > 0 ? 0 : whistle.quietT + dt;
   if (whistle.timer && whistle.quietT > 1) { clearInterval(whistle.timer); whistle.timer = null; }
+}
+
+// the ride: step into the hoist and you're on its platform; the winch creaks
+// and down you go, the rope paying out, the platform sinking into the hole
+// and the dark closing over you, and at the bottom it's the race track.
+// walking back out of the track, it brings you up again and you step off.
+const lift = { dir: null, t: 0, drawing: false };
+const LIFT_DOWN = 1.7, LIFT_UP = 1.4, LIFT_DEPTH = 46;
+function liftSpot() {
+  const left = shaftThing.x - Math.floor(SHAFT_W / 2), top = shaftThing.y - SHAFT_H + 1;
+  return { left, top, x: left + (LIFT_HOLE.x0 + LIFT_HOLE.x1) / 2, y: top + LIFT_TOP + 4 };
+}
+function startLift(dir) {
+  Object.assign(lift, { dir, t: 0 });
+  const sp = liftSpot();
+  Object.assign(player, { x: sp.x, y: sp.y, face: 'down', moving: false, path: null });
+  shaftThing.frames = [SHAFT_ART[1]];
+  sfx.creak();
+}
+const liftDepth = () => {
+  const u = lift.t / (lift.dir === 'down' ? LIFT_DOWN : LIFT_UP);
+  return lift.dir === 'down' ? LIFT_DEPTH * Math.min(1, u) ** 2 : LIFT_DEPTH * (1 - Math.min(1, u)) ** 2;
+};
+function tickLift(dt) {
+  if (!lift.dir) return;
+  lift.t += dt;
+  const sp = liftSpot();
+  player.x = sp.x;
+  if (Math.random() < dt * 10) burst(sp.x + (Math.random() - 0.5) * 20, sp.y + 4, '120,100,80', 1);
+  if (lift.dir === 'down') {
+    player.y = sp.y;
+    if (lift.t >= LIFT_DOWN) { lift.dir = null; shaftThing.frames = [SHAFT_ART[0]]; enterRoom(raceRoom); }
+    return;
+  }
+  // coming up: the platform rises, then you step off it towards the camera
+  player.y = sp.y + Math.max(0, Math.min(14, (lift.t - LIFT_UP) * 60));
+  if (lift.t >= LIFT_UP + 0.25) { lift.dir = null; shaftThing.frames = [SHAFT_ART[0]]; }
+}
+function drawLift(toX, toY, t) {
+  const sp = liftSpot(), H0 = LIFT_HOLE, d = lift.t < (lift.dir === 'down' ? LIFT_DOWN : LIFT_UP) ? liftDepth() : 0;
+  const x0 = sp.left + H0.x0 + 1, x1 = sp.left + H0.x1, lip = sp.top + H0.y1, py = sp.top + LIFT_TOP + d;
+  const px = (x, y, col) => { ctx.fillStyle = col; ctx.fillRect(toX(x), toY(y), S, S); };
+  // the rope from the pulley down to the platform's yoke
+  [LIFT_PULLEY.x - 4, LIFT_PULLEY.x + 4].forEach(rx => { for (let y = sp.top + LIFT_PULLEY.y + 1; y <= py - 4; y++) px(Math.round(sp.left + rx), y, y % 3 ? '#c9b78f' : '#a8946a'); });
+  ctx.save();
+  // everything below the front lip of the hole is out of sight
+  ctx.beginPath();
+  ctx.rect(0, 0, ctx.canvas.width, toY(lip));
+  ctx.clip();
+  for (let x = Math.round(x0 + 3); x <= Math.round(x1 - 4); x++) px(x, py - 4, '#5a5a62');
+  ctx.fillStyle = '#a8703f';
+  ctx.fillRect(toX(x0), toY(py), (x1 - x0) * S, 5 * S);
+  ctx.fillStyle = '#d29a5c';
+  ctx.fillRect(toX(x0), toY(py), (x1 - x0) * S, S);
+  ctx.fillStyle = '#5e3a1e';
+  ctx.fillRect(toX(x0), toY(py + 5), (x1 - x0) * S, S);
+  lift.drawing = true;
+  const y0 = player.y;
+  player.y = y0 + d;
+  drawPlayer(toX, toY, t);
+  player.y = y0;
+  lift.drawing = false;
+  ctx.restore();
+  // and the screen goes black at the bottom (and comes back on the way up)
+  const fade = lift.dir === 'down' ? (lift.t - (LIFT_DOWN - 0.45)) / 0.45 : 1 - lift.t / 0.4;
+  if (fade > 0) { ctx.fillStyle = `rgba(0,0,0,${Math.min(1, fade)})`; ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height); }
 }

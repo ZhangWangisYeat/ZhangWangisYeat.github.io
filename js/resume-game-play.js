@@ -187,8 +187,8 @@ Object.keys(ARMORS).forEach(m => Object.entries(ARMOR_SHAPES).forEach(([piece, s
   RECIPES.push({ out: `prismasteel-${k}`, shape: ['PXP'], key: { P: 'prismasteel', X: `diamond-${k}` } }));
 RECIPES.push({ out: 'bed', shape: ['WWW', 'PPP'], key: { W: 'wool', P: 'wood' } });
 RECIPES.push({ out: 'stick', n: 4, shape: ['W'], key: { W: 'wood' } });
-// two arrows a craft: the material on the tip, a stick, a feather
-TIER_ORDER.forEach(m => RECIPES.push({ out: `${m}-arrow`, n: 2, shape: ['M', 'S', 'F'], key: { M: m, S: 'stick', F: 'feather' } }));
+// four arrows a craft (it was two, alex): the material on the tip, a stick, a feather
+TIER_ORDER.forEach(m => RECIPES.push({ out: `${m}-arrow`, n: 4, shape: ['M', 'S', 'F'], key: { M: m, S: 'stick', F: 'feather' } }));
 // pulling a bit of wool apart on the table gives string, and string on a
 // curve of wood makes the bow
 RECIPES.push({ out: 'string', n: 3, shape: ['W'], key: { W: 'wool' } });
@@ -262,7 +262,7 @@ const CREATURES = {
   },
   chicken: {
     name: 'Chicken', passive: true, hp: 1, speed: 24, flee: 76, h: 15, box: { w: 12, h: 8 },
-    knock: 110, regen: 0.05, chip: '251,250,246', count: 3, drops: [['raw-chicken', 1, 1], ['feather', 0, 2]]
+    knock: 110, regen: 0.05, chip: '251,250,246', count: 3, drops: [['raw-chicken', 1, 1], ['feather', 1, 4]]
   }
 };
 
@@ -1538,12 +1538,42 @@ function mineSealReason(p) {
 loadSave();
 fixFoundIds();
 
+// snow blocks grow back (alex wanted snowballs to be renewable): a dug out
+// snow block fills in again SNOW_REGROW seconds later, once you're not
+// standing in the way. quest.snowGrow is [tile, seconds left] for each one.
+const SNOW_REGROW = 120;
+quest.snowGrow = Array.isArray(quest.snowGrow) ? quest.snowGrow.filter(e => Array.isArray(e) && Number.isInteger(e[0])) : [];
 // replay the saved world edits: mined blocks and chopped trees
 if (quest.mined.length) {
   quest.mined.forEach(i => {
-    if (i >= 0 && i < W * H && SOLID[tiles[i]]) { tiles[i] = baseOf(i); reach[i] = 1; }
+    if (i < 0 || i >= W * H || !SOLID[tiles[i]]) return;
+    // (snow dug before it grew back has no timer yet, so it gets one)
+    if (tiles[i] === T.SNOWBLOCK && !quest.snowGrow.some(e => e[0] === i)) quest.snowGrow.push([i, 30 + Math.random() * 90]);
+    tiles[i] = baseOf(i);
+    reach[i] = 1;
   });
   paintWorld();
+}
+function tickSnow(dt) {
+  for (let k = quest.snowGrow.length - 1; k >= 0; k--) {
+    const e = quest.snowGrow[k];
+    e[1] -= dt;
+    if (e[1] > 0) continue;
+    const i = e[0], tx = i % W, ty = Math.floor(i / W), cx = tx * TILE + 8, cy = ty * TILE + 8;
+    // not on top of you or anything alive (it waits until the spot is clear)
+    const inTheWay = (x, y) => Math.abs(x - cx) < 14 && y > cy - 10 && y < cy + 14;
+    if (!room && inTheWay(player.x, player.y)) continue;
+    if (creatures.some(c => !c.room && !c.dead && !c.gone && inTheWay(c.x, c.y))) continue;
+    quest.snowGrow.splice(k, 1);
+    if (tiles[i] !== baseOf(i)) continue;
+    tiles[i] = T.SNOWBLOCK;
+    const m = quest.mined.indexOf(i);
+    if (m >= 0) quest.mined.splice(m, 1);
+    repaintAround(tx, ty);
+    paintMinimap();
+    if (!room && Math.hypot(cx - player.x, cy - player.y) < 20 * TILE) burst(cx, cy, '240,244,252', 8);
+    markDirty();
+  }
 }
 for (let i = things.length - 1; i >= 0; i--) {
   if (things[i].tree && quest.chopped.includes(things[i].id)) things.splice(i, 1);
@@ -4296,6 +4326,7 @@ function breakTarget(tgt, info) {
     tiles[i] = baseOf(i);
     reach[i] = 1;
     quest.mined.push(i);
+    if (tgt.cls === 'snow') quest.snowGrow.push([i, SNOW_REGROW]);
     repaintAround(tgt.tx, tgt.ty);
     paintMinimap();
     burst(tgt.cx, tgt.cy, tgt.cls === 'snow' ? '240,244,252' : '140,140,140', 12);
@@ -5605,6 +5636,7 @@ function playUpdate(dt, t) {
   }
   shakeAmp = Math.max(0, shakeAmp - dt * 10);
   tickGround(dt);
+  tickSnow(dt);
   if (typeof raceTick === 'function') raceTick(dt);
   if (typeof wolfTick === 'function') wolfTick(dt);
   tickCine(dt);

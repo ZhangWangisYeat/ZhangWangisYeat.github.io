@@ -149,7 +149,7 @@ const REGIONS = [
             date: 'Jun 2026 – Aug 2026',
             desc: "PowerShell tool that transfers files up to 100 GB between remote desktops. Picks the fastest available TCP connection, verifies every transfer end to end with SHA-256, and lets you copy and paste files through a remote desktop connection's clipboard.",
             loot: ['PowerShell', 'TCP Sockets', 'SHA-256', '.NET', 'Clipboard IPC'],
-            poi: { id: 'mailsisibox', kind: 'lair', at: [78, 55], label: 'MailSISIBox' }
+            poi: { id: 'mailsisibox', kind: 'lair', at: [94, 70], label: 'MailSISIBox' }
           },
           {
             title: 'BruinPop',
@@ -1094,17 +1094,18 @@ function generate() {
   [[T.DIAMOND, 2], [T.EMERALD, 1]].forEach(([t, n]) => {
     for (let k = 0; k < n && deep.length; k++) tiles[deep.splice((r() * deep.length) | 0, 1)[0]] = t;
   });
-  // round the ore wolf's entrance (bruinpop's) the walls get thicker and
-  // thicker with ore the closer you come to it (alex). iron, gold and ruby
-  // only: diamonds and emeralds stay rationed.
+  // round the ore wolf's entrance (bruinpop's) the walls are far richer in ore
+  // than anywhere else (alex: an abnormal amount): solid ore close in, still
+  // mostly ore a good way out, thinning off by about 13 tiles. iron, gold and
+  // ruby only: diamonds and emeralds stay rationed.
   POIS.filter(p => p.id === 'bruinpop').forEach(p => {
     const rr = mulberry32(SEED + 808), [cx, cy] = p.at;
-    for (let y = cy - 10; y <= cy + 10; y++) for (let x = cx - 10; x <= cx + 10; x++) {
+    for (let y = cy - 14; y <= cy + 14; y++) for (let x = cx - 14; x <= cx + 14; x++) {
       if (!inside(x, y) || tiles[idx(x, y)] !== T.WALL) continue;
       const d = Math.hypot(x - cx, (y - (cy - 2)) * 1.2), roll = rr(), kind = rr();
       // (the rock face her entrance is cut into is solid ore, to match it)
       const face = Math.abs(x - cx) <= 3 && y >= cy - 4 && y <= cy - 1;
-      if (!face && (d > 9.5 || roll > 0.92 * (1 - d / 9.5))) continue;
+      if (!face && roll > Math.min(1, 1.6 * (1 - d / 13))) continue;
       tiles[idx(x, y)] = kind < 0.45 ? T.IRON : kind < 0.78 ? T.GOLD : T.RUBY;
     }
   });

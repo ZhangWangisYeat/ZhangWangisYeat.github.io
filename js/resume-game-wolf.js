@@ -44,7 +44,14 @@ const WOLF = {
   windup: 0.62, windupOpen: 0.48, lunge: 340, lungeTime: 0.36, lungeDmg: 5, touchDmg: 1,
   shellFirst: 20, shell: 30, lattice: 60,
   fling: { min: 4, max: 7, rx: 15, ry: 9, drop: 0.06 },
-  tails: { gap: 1, speed: 235, turn: 2.5, life: 1.5 }
+  // a tail chases you loosely (turn), then once it's within strikeAt it
+  // strikes: one straight lunge at where you are right then, faster, and no
+  // more steering. it used to steer all the way in, and at two and a half
+  // times your speed it caught you whatever you did (alex). now, measured
+  // with a bot (scratchpad tailsim2.js): standing still or slowing to half
+  // speed is a hit every time, stopping as it closes in nearly always, but
+  // running across its path or round her gets away nearly every time.
+  tails: { gap: 1, speed: 235, turn: 1.8, life: 1.6, strikeAt: 76, strikeSpeed: 360, strikeLife: 0.3 }
 };
 
 // her sprite, facing right like every other creature: a slim, long legged wolf
@@ -856,7 +863,7 @@ function tailRoot(c) {
 }
 function launchTail(c, k) {
   const r = tailRoot(c);
-  tails.push({ ore: ORES[k], k, x: r.x, y: r.y, a: Math.atan2(player.y - 10 - r.y, player.x - r.x), age: 0, path: [[r.x, r.y]], back: false });
+  tails.push({ ore: ORES[k], k, x: r.x, y: r.y, a: Math.atan2(player.y - 10 - r.y, player.x - r.x), age: 0, path: [[r.x, r.y]], back: false, strike: null });
   whoosh();
   sfx.chime(k);
 }
@@ -871,12 +878,20 @@ function updateTails(dt) {
       continue;
     }
     T.age += dt;
-    if (!player.dead) {
-      const want = Math.atan2(player.y - 10 - T.y, player.x - T.x), d = Math.atan2(Math.sin(want - T.a), Math.cos(want - T.a));
-      T.a += clamp(d, -WOLF.tails.turn * dt, WOLF.tails.turn * dt);
-    }
-    T.x += Math.cos(T.a) * WOLF.tails.speed * dt;
-    T.y += Math.sin(T.a) * WOLF.tails.speed * dt;
+    const want = Math.atan2(player.y - 10 - T.y, player.x - T.x);
+    if (T.strike === null) {
+      if (!player.dead) T.a += clamp(Math.atan2(Math.sin(want - T.a), Math.cos(want - T.a)), -WOLF.tails.turn * dt, WOLF.tails.turn * dt);
+      if (!player.dead && Math.hypot(player.x - T.x, player.y - 10 - T.y) < WOLF.tails.strikeAt) {
+        // the strike: it snaps straight at you, flashing, with a crack
+        T.strike = 0;
+        T.a = want;
+        burst(T.x, T.y, ORE_PAL[T.ore].rgb, 6);
+        sfx.snap();
+      }
+    } else if ((T.strike += dt) > WOLF.tails.strikeLife) { T.back = true; continue; }
+    const sp = T.strike === null ? WOLF.tails.speed : WOLF.tails.strikeSpeed;
+    T.x += Math.cos(T.a) * sp * dt;
+    T.y += Math.sin(T.a) * sp * dt;
     const last = T.path[T.path.length - 1];
     if (Math.hypot(T.x - last[0], T.y - last[1]) >= 3) T.path.push([T.x, T.y]);
     if (wolfRoom.blocked(T.x, T.y + 8)) { T.back = true; burst(T.x, T.y, ORE_PAL[T.ore].rgb, 8); sfx.clang(); continue; }
@@ -887,7 +902,8 @@ function updateTails(dt) {
       T.back = true;
       continue;
     }
-    if (T.age > WOLF.tails.life || player.dead) T.back = true;
+    // (a strike that's already on its way finishes)
+    if ((T.strike === null && T.age > WOLF.tails.life) || player.dead) T.back = true;
   }
 }
 
@@ -1403,7 +1419,7 @@ function wolfOverlay(toX, toY, t) {
   });
   tails.forEach(T => {
     const r = tailRoot(c), pts = [[r.x, r.y], ...T.path.slice(1)];
-    if (pts.length > 1) drawChain(toX, toY, pts, T.ore, false);
+    if (pts.length > 1) drawChain(toX, toY, pts, T.ore, T.strike !== null && !T.back);
   });
   const ripple = (x, y) => {
     for (let k = 0; k < 3; k++) {

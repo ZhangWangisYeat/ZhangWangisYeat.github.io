@@ -1560,6 +1560,7 @@ function walkDarryl(x, y, speed, then) { Object.assign(darryl, { state: 'walk', 
 // the race itself, every frame
 function raceTick(dt) {
   syncShaft();
+  tickWhistle(dt);
   // the "shift | hop out" chip in the hud (with the map and controls chips,
   // alex: it used to be a label stuck under the cart) while you can hop out
   const canHop = room === raceRoom && race.riding && (race.phase === 'free' || carts.you.fin);
@@ -2326,3 +2327,83 @@ function raceStep(bar, step, t) {
   }
 }
 const RACE_TUNE = { bpm: 176, bars: RACE_BARS.length, loopFrom: 0, bright: true, step: raceStep };
+
+// darryl whistles while he waits at the start line, and you can hear it
+// faintly from outside the shaft before you've met him ("someone is
+// whistling down there"). alex asked for flo rida's "whistle"; copying that
+// hook would be copying the song, so like the other tunes this borrows the
+// feel (a breezy, bouncy whistled hook at a laid back tempo, in a major key,
+// with a breath between phrases) and the melody is its own. a little synth
+// does the whistling: a sine that slides up into each note, a touch of
+// vibrato, and a breath of noise round it. it counts as music, so the music
+// switch turns it off, and it gets quieter the further you are from him.
+const WHISTLE_BPM = 102, WHISTLE_STEPS = 64;
+// [16th note, midi note, length in 16ths]: four bars, the last one ending on a rest
+const WHISTLE_TUNE = [
+  [0, 79, 2], [2, 76, 1], [3, 79, 1], [4, 84, 3], [7, 83, 1], [8, 81, 2], [10, 79, 2], [12, 76, 4],
+  [16, 77, 2], [18, 76, 1], [19, 77, 1], [20, 81, 2], [22, 79, 2], [24, 74, 6],
+  [32, 79, 2], [34, 76, 1], [35, 79, 1], [36, 84, 2], [38, 86, 2], [40, 84, 2], [42, 81, 2], [44, 79, 4],
+  [48, 81, 1], [49, 79, 1], [50, 76, 2], [52, 74, 2], [54, 72, 6]
+];
+const whistle = { timer: null, next: 0, step: 0, out: null, breath: null, quietT: 0 };
+function whistleNote(ac, midi, t, len) {
+  const f = midiHz(midi), end = t + len;
+  const o = ac.createOscillator(), g = ac.createGain(), lfo = ac.createOscillator(), vib = ac.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(f * 0.94, t);
+  o.frequency.exponentialRampToValueAtTime(f, t + 0.04);
+  lfo.frequency.value = 5.5;
+  vib.gain.setValueAtTime(0, t);
+  vib.gain.linearRampToValueAtTime(f * 0.012, t + Math.min(len, 0.15));
+  lfo.connect(vib).connect(o.frequency);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.22, t + 0.025);
+  g.gain.setValueAtTime(0.22, Math.max(t + 0.03, end - 0.05));
+  g.gain.exponentialRampToValueAtTime(0.0001, end);
+  o.connect(g).connect(whistle.out);
+  // the breath: a little noise filtered right round the note
+  const n = ac.createBufferSource(), bp = ac.createBiquadFilter(), ng = ac.createGain();
+  n.buffer = whistle.breath;
+  bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 6;
+  ng.gain.setValueAtTime(0.0001, t);
+  ng.gain.exponentialRampToValueAtTime(0.05, t + 0.02);
+  ng.gain.exponentialRampToValueAtTime(0.0001, end);
+  n.connect(bp).connect(ng).connect(whistle.out);
+  [o, lfo, n].forEach(src => { src.start(t); src.stop(end + 0.05); });
+}
+function whistleTick() {
+  const ac = getAudio(), st = 60 / WHISTLE_BPM / 4;
+  while (whistle.next < ac.currentTime + 0.2) {
+    WHISTLE_TUNE.forEach(([s, m, l]) => { if (s === whistle.step) whistleNote(ac, m, whistle.next, l * st * 0.95); });
+    whistle.next += st;
+    whistle.step = (whistle.step + 1) % WHISTLE_STEPS;
+  }
+}
+function tickWhistle(dt) {
+  let want = 0;
+  if (room === raceRoom && !darryl.gone && !talk && !race.riding && darryl.state === 'wait' && (race.phase === 'pre' || race.phase === 'free')) {
+    want = clamp(1 - Math.hypot(darryl.x - player.x, darryl.y - player.y) / 380, 0.15, 1);
+  } else if (!room && shaftOpen() && !DQ.met) {
+    const d = Math.hypot(shaftThing.x - player.x, shaftThing.y - player.y);
+    if (d < 8 * TILE) want = 0.3 * (1 - d / (8 * TILE));
+  }
+  if (!musicPref || !started || player.dead) want = 0;
+  if (want > 0 && !whistle.timer) {
+    const ac = getAudio();
+    if (!whistle.out) {
+      whistle.out = ac.createGain();
+      whistle.out.gain.value = 0;
+      whistle.out.connect(ac.destination);
+      whistle.breath = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+      const d = whistle.breath.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    whistle.next = ac.currentTime + 0.1;
+    whistle.step = 0;
+    whistle.timer = setInterval(whistleTick, 50);
+  }
+  if (whistle.out) whistle.out.gain.setTargetAtTime(want * 0.5 * duckBase(), getAudio().currentTime, 0.15);
+  // (stopped once it's been silent a moment, and it starts from the top next time)
+  whistle.quietT = want > 0 ? 0 : whistle.quietT + dt;
+  if (whistle.timer && whistle.quietT > 1) { clearInterval(whistle.timer); whistle.timer = null; }
+}

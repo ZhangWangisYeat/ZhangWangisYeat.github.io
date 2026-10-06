@@ -265,57 +265,43 @@ function makeSeal() {
   }
   return G.outline(() => '#120f18').canvas();
 }
-// her entrance out in the mines, cut into the cave wall like darryl's hoist
-// (alex): a face of ore rock (the same grey and veins as the ore tiles round
-// it, packed with far more ore than any normal wall, more and more of it
-// towards the opening), a thick lip of rock standing out round a rough,
-// uneven mouth, lit on top and shadowed underneath so it reads as sticking
-// out of the wall, and the inside going back into a violet dark with a glow
-// at the bottom. crystals of every ore burst out of the lip all the way round
-// and hang down into the mouth, raw nuggets are stuck in the rock round it,
-// and two big clusters stand at its feet. 80 x 66.
+// her entrance out in the mines, cut straight into the black cave wall like
+// darryl's hoist (alex: no rock mound round it, the whole of it is the
+// opening): the mine wall's own dark face, glinting with far more ore than any
+// normal wall, more and more of it towards the mouth, and a big rough mouth
+// going back into a violet dark with a glow at the bottom. crystals of every
+// ore burst out round its edge and hang down into it, raw nuggets are stuck in
+// the rock round it, and clusters stand at its feet. 80 x 66.
 const ORE_VEIN = { gold: ['#e6c541', '#9a7616'], ruby: ['#e0473a', '#7d1a14'], iron: ['#e2ddd6', '#8f8a84'], emerald: ['#5fe08a', '#1f7a43'], diamond: ['#86f2e2', '#2b9c90'] };
 function makeOreCave() {
   const w = 80, h = 66, cx = 39.5, ground = h - 2, G = pixelGrid(w, h), r = mulberry32(1402);
-  const ar = 15, acy = ground - 15;
+  const ar = 18, acy = ground - 17;
   // the mouth's edge wobbles, so it's a cave and not a doorway
   const edge = (x, y) => (y <= acy
-    ? Math.hypot(x - cx, (y - acy) * 1.08) - ar - (vnoise(Math.atan2(y - acy, x - cx) * 3, 0.5, 1471) - 0.5) * 4
-    : Math.abs(x - cx) - ar - (vnoise(0.5, y / 3, 1472) - 0.5) * 2.5 + (y - acy) * 0.12);
-  const FACE = ['#858585', '#747474', '#959595'];
-  // the ore rock face: full width up top, narrowing to a buttress either side
-  // of the mouth on the floor row, like the other entrances
-  for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
-    const low = y > ground - 16, half = low ? w / 2 - 6 - (y - (ground - 16)) * 0.45 + (hash2(x, y >> 2, 1459) - 0.5) * 1.5 : w / 2;
-    if (Math.abs(x - cx) > half) continue;
-    const n = hash2(x, y, 1460);
-    G.set(x, y, n < 0.08 ? FACE[1] : n < 0.16 ? FACE[2] : FACE[0]);
-  }
-  // ore all through it: the ore tiles' little veins, crowded together, and
-  // thicker still close to the mouth
-  const veins = Object.keys(ORE_VEIN);
-  for (let k = 0; k < 260; k++) {
+    ? Math.hypot(x - cx, (y - acy) * 1.12) - ar - (vnoise(Math.atan2(y - acy, x - cx) * 3, 0.5, 1471) - 0.5) * 4
+    : Math.abs(x - cx) - ar - (vnoise(0.5, y / 3, 1472) - 0.5) * 2.5 + (y - acy) * 0.1);
+  const FACE = ['#2a2622', '#3b352f', '#1e1b18', '#332e29'];
+  wallFace(G, w, h, 1460);
+  // ore all through it: the ore tiles' little veins glinting out of the black,
+  // crowded together, and thicker still close to the mouth
+  const veins = Object.keys(ORE_VEIN), isVein = c => veins.some(v => ORE_VEIN[v].includes(c));
+  for (let k = 0; k < 150; k++) {
     const x = Math.round(1 + r() * (w - 3)), y = Math.round(1 + r() * (ground - 3)), d = edge(x, y);
-    if (d < 4 || !G.get(x, y) || r() > 1.25 - d / 30) continue;
+    if (d < 4 || !G.get(x, y) || r() > 1.1 - d / 22) continue;
     const [hi, lo] = ORE_VEIN[veins[(r() * veins.length) | 0]];
-    [[0, 1, lo], [1, 1, lo], [1, 2, lo], [0, 0, hi], [1, 0, hi], [2, 1, hi]].forEach(([dx, dy, c]) => { if (FACE.includes(G.get(x + dx, y + dy)) || veins.some(v => ORE_VEIN[v].includes(G.get(x + dx, y + dy)))) G.set(x + dx, y + dy, c); });
+    [[0, 1, lo], [1, 1, lo], [1, 2, lo], [0, 0, hi], [1, 0, hi], [2, 1, hi]].forEach(([dx, dy, c]) => { const was = G.get(x + dx, y + dy); if (FACE.includes(was) || isVein(was)) G.set(x + dx, y + dy, c); });
   }
-  // the lip standing out round the mouth (lit along its top, in shadow down
-  // its underside and outer edge), then the inside: the rock going back in
-  // and dark, with violet light coming up off the floor
+  // the mouth: a ragged edge of broken rock, then the inside going back into
+  // the dark, with violet light coming up off the floor
   for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
     const d = edge(x, y);
-    if (d > 5) continue;
-    if (d > 0) {
-      const up = y < acy ? -(y - acy) / ar : 0, lit = up * 0.8 - (x - cx) / ar * 0.25 + (hash2(x >> 1, y >> 1, 1473) - 0.5) * 0.35;
-      G.set(x, y, d > 4 ? '#4e4e52' : lit > 0.55 ? '#b9b9bd' : lit > 0.15 ? '#a2a2a6' : lit > -0.25 ? '#8a8a8e' : '#6c6c70');
-      continue;
-    }
-    const glow = Math.max(0, 1 - Math.hypot((x - cx) / 11, (y - ground) / 7));
-    G.set(x, y, d > -1.2 ? '#2c2834' : glow > 0.65 ? '#6c4ca4' : glow > 0.4 ? '#48326e' : glow > 0.18 ? '#30224c' : d > -3.5 ? '#221a30' : d > -6 ? '#170f22' : '#0b0712');
+    if (d > 1.6) continue;
+    if (d > 0) { if (G.get(x, y)) G.set(x, y, y < acy - ar * 0.4 || hash2(x, y, 1473) < 0.5 ? '#4a423a' : '#3b352f'); continue; }
+    const glow = Math.max(0, 1 - Math.hypot((x - cx) / 14, (y - ground) / 9));
+    G.set(x, y, d > -1.5 ? '#16121c' : glow > 0.65 ? '#6c4ca4' : glow > 0.4 ? '#48326e' : glow > 0.18 ? '#30224c' : d > -4 ? '#1e1628' : d > -8 ? '#140d1e' : '#0a0610');
   }
   // the floor running in through the mouth, catching the glow
-  for (let y = ground - 2; y <= ground; y++) for (let x = 0; x < w; x++) if (edge(x, y) < -1.2) G.set(x, y, y === ground ? '#7e6aa8' : '#5e4a8a');
+  for (let y = ground - 2; y <= ground; y++) for (let x = 0; x < w; x++) if (edge(x, y) < -1.5) G.set(x, y, y === ground ? '#7e6aa8' : '#5e4a8a');
   // a crystal: a long prism with a pointed end, its own dark outline, a lit
   // face towards the top left and a shaded one away from it, a glint up the lit
   // face and a white point
@@ -347,37 +333,34 @@ function makeOreCave() {
     for (let dy = -1; dy <= 2; dy++) for (let dx = -1; dx <= 3; dx++) G.set(x + dx, y + dy, P.out);
     [[0, 0, P.lt], [1, 0, P.md], [2, 0, P.md], [0, 1, P.md], [1, 1, P.md], [2, 1, P.dk], [0, 0, P.hi]].forEach(([dx, dy, c]) => G.set(x + dx, y + dy, c));
   };
-  // nuggets round the lip and down the jambs
-  for (let k = 0; k < 16; k++) {
-    const a = Math.PI * (0.95 + r() * 1.1), rr = ar + 6 + r() * 7;
+  // nuggets round the mouth and down its sides
+  for (let k = 0; k < 10; k++) {
+    const a = Math.PI * (0.95 + r() * 1.1), rr = ar + 5 + r() * 6;
     const x = cx + Math.cos(a) * rr, y = Math.min(ground - 3, acy + Math.sin(a) * rr * 0.95 + (a < Math.PI || a > Math.PI * 2 ? 6 : 0));
     if (G.get(Math.round(x), Math.round(y))) nugget(Math.round(x), Math.round(y), ['gold', 'iron', 'ruby', 'gold', 'emerald'][k % 5]);
   }
   // crystals hanging down into the mouth from the inside of the lip
-  [[-8, 'diamond', 4], [-2, 'emerald', 5], [6, 'ruby', 3.5]].forEach(([dx, ore, len]) => {
+  [[-11, 'diamond', 4], [-4, 'emerald', 6], [3, 'ruby', 4], [10, 'diamond', 5]].forEach(([dx, ore, len]) => {
     const x = cx + dx, a = Math.PI / 2 + dx * 0.03;
     let y = acy - ar; while (edge(x, y) > -0.5 && y < acy) y++;
     shard(x, y - 1, a, len, 0.9, ore);
   });
-  // bursting out of the lip all the way round, one of each ore, biggest at the top
+  // bursting out of the rock round the mouth's edge, one of each ore,
+  // biggest at the top, growing out of the edge itself so the mouth keeps its
+  // full size
   ORES.forEach((ore, k) => {
-    const u = k / 6, a = Math.PI * (1.02 + u * 0.96), big = 1 - Math.abs(u - 0.5) * 1.2;
+    const u = k / 6, a = Math.PI * (1.04 + u * 0.92), big = 1 - Math.abs(u - 0.5) * 1.2;
     const ux = Math.cos(a), uy = Math.sin(a);
-    cluster(cx + ux * (ar + 5), acy + uy * (ar + 5) * 1.02, a, 6 + big * 6, ore);
+    cluster(cx + ux * (ar + 1), acy + uy * (ar + 1) / 1.12, a, 6 + big * 6, ore);
   });
-  // and a few smaller ones between them
-  ['diamond', 'emerald', 'ruby', 'gold', 'diamond', 'ruby'].forEach((ore, k) => {
-    const a = Math.PI * (1.1 + k * 0.155);
-    shard(cx + Math.cos(a) * (ar + 5), acy + Math.sin(a) * (ar + 5), a + 0.2, 4.5, 0.9, ore);
-  });
-  // sticking out sideways from the jambs, and the clusters at its feet
-  cluster(cx - ar - 5, acy + 6, Math.PI * 1.06, 8, 'emerald');
-  cluster(cx + ar + 5, acy + 5, Math.PI * 1.94, 8, 'diamond');
-  cluster(cx - ar - 7, ground - 1, Math.PI * 1.32, 10, 'ruby');
-  cluster(cx + ar + 7, ground - 1, Math.PI * 1.68, 10, 'gold');
-  shard(cx - ar - 14, ground, Math.PI * 1.15, 5, 1, 'diamond');
-  shard(cx + ar + 14, ground, Math.PI * 1.85, 5, 1, 'emerald');
-  return G.outline(c => (FACE.includes(c) || veins.some(v => ORE_VEIN[v].includes(c)) ? null : '#120f18')).canvas();
+  // sticking out of its sides, and the clusters at its feet
+  cluster(cx - ar - 1, acy + 7, Math.PI * 1.06, 8, 'emerald');
+  cluster(cx + ar + 1, acy + 6, Math.PI * 1.94, 8, 'diamond');
+  cluster(cx - ar - 3, ground - 1, Math.PI * 1.32, 10, 'ruby');
+  cluster(cx + ar + 3, ground - 1, Math.PI * 1.68, 10, 'gold');
+  shard(cx - ar - 9, ground, Math.PI * 1.15, 6, 1, 'diamond');
+  shard(cx + ar + 9, ground, Math.PI * 1.85, 5, 1, 'emerald');
+  return G.outline(c => (FACE.includes(c) || isVein(c) ? null : '#120f18')).canvas();
 }
 
 // the arena as tiles (WT), so its walls can be dug like the mines': wall all

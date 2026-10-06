@@ -149,14 +149,14 @@ const REGIONS = [
             date: 'Jun 2026 – Aug 2026',
             desc: "PowerShell tool that transfers files up to 100 GB between remote desktops. Picks the fastest available TCP connection, verifies every transfer end to end with SHA-256, and lets you copy and paste files through a remote desktop connection's clipboard.",
             loot: ['PowerShell', 'TCP Sockets', 'SHA-256', '.NET', 'Clipboard IPC'],
-            poi: { id: 'mailsisibox', kind: 'lair', at: [94, 70], label: 'MailSISIBox' }
+            poi: { id: 'mailsisibox', kind: 'lair', at: [97, 71], label: 'MailSISIBox' }
           },
           {
             title: 'BruinPop',
             date: 'Mar 2026 – Jun 2026',
             desc: 'Full-stack social platform for pop-ups around UCLA. Built an interactive, location-aware posting interface. Secured with NextAuth JWTs and bcrypt encryption. 100+ campus users.',
             loot: ['React', 'Next.js', 'Tailwind CSS', 'Leaflet', 'NextAuth'],
-            poi: { id: 'bruinpop', kind: 'lair', at: [108, 76], label: 'BruinPop' }
+            poi: { id: 'bruinpop', kind: 'lair', at: [110, 68], label: 'BruinPop' }
           },
           {
             title: 'Desperate Measures',
@@ -1095,17 +1095,18 @@ function generate() {
     for (let k = 0; k < n && deep.length; k++) tiles[deep.splice((r() * deep.length) | 0, 1)[0]] = t;
   });
   // round the ore wolf's entrance (bruinpop's) the walls are far richer in ore
-  // than anywhere else (alex: an abnormal amount): solid ore close in, still
-  // mostly ore a good way out, thinning off by about 13 tiles. iron, gold and
-  // ruby only: diamonds and emeralds stay rationed.
+  // than anywhere else (alex: an abnormal amount), thinning off by about 12
+  // tiles. the rock her cave is cut into, and a tile round it, stays plain
+  // black wall (alex: the cave should be part of the black wall, like the
+  // hoist). iron, gold and ruby only: diamonds and emeralds stay rationed.
   POIS.filter(p => p.id === 'bruinpop').forEach(p => {
     const rr = mulberry32(SEED + 808), [cx, cy] = p.at;
-    for (let y = cy - 14; y <= cy + 14; y++) for (let x = cx - 14; x <= cx + 14; x++) {
+    for (let y = cy - 12; y <= cy + 12; y++) for (let x = cx - 12; x <= cx + 12; x++) {
       if (!inside(x, y) || tiles[idx(x, y)] !== T.WALL) continue;
       const d = Math.hypot(x - cx, (y - (cy - 2)) * 1.2), roll = rr(), kind = rr();
-      // (the rock face her entrance is cut into is solid ore, to match it)
-      const face = Math.abs(x - cx) <= 3 && y >= cy - 4 && y <= cy - 1;
-      if (!face && roll > Math.min(1, 1.6 * (1 - d / 13))) continue;
+      if (Math.abs(x - cx) <= 4 && y >= cy - 5 && y <= cy) continue;
+      if (POIS.some(q => q !== p && Math.hypot(q.at[0] - x, q.at[1] - y) < 6)) continue;
+      if (roll > 1.2 * (1 - d / 12)) continue;
       tiles[idx(x, y)] = kind < 0.45 ? T.IRON : kind < 0.78 ? T.GOLD : T.RUBY;
     }
   });

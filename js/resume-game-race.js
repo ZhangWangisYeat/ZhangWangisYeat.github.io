@@ -587,8 +587,23 @@ function makeLavaLord() {
 // the floor, and a winch with a crank on the right post. lift false draws it
 // with the platform gone down the hole (the ride draws it, see drawLift).
 const SHAFT_W = 60, SHAFT_H = 62;
-// where the hole and the platform are, in the sprite
-const LIFT_HOLE = { x0: 18, x1: 41, y0: 50, y1: 60 }, LIFT_TOP = 51, LIFT_PULLEY = { x: 29.5, y: 12 };
+// the hoist's platform, the same one at the top and at the bottom (alex: it
+// was narrower up top than down in the cage, so it looked like it grew on the
+// way down). planks running front to back with an iron band across them, and
+// the yoke the ropes hang from, four rows above it. paintPlatform puts it into
+// a sprite and PLAT_ART is the same thing on its own for while it's moving.
+const PLAT = { w: 26, d: 12 }, PLAT_ROPES = [9, 17];
+function paintPlatform(set, x0, y0) {
+  for (let x = 3; x <= PLAT.w - 4; x++) set(x0 + x, y0 - 4, '#5a5a62');
+  [3, PLAT.w - 4].forEach(x => { for (let y = y0 - 4; y < y0; y++) set(x0 + x, y, '#5a5a62'); });
+  for (let y = 0; y < PLAT.d; y++) for (let x = 0; x < PLAT.w; x++) {
+    set(x0 + x, y0 + y, y === 0 ? '#d29a5c' : y === PLAT.d - 1 ? '#5e3a1e' : x % 5 === 0 ? '#6b4422' : y === PLAT.d >> 1 ? '#7a7a84' : '#a8703f');
+  }
+}
+const PLAT_ART = (() => { const G = pixelGrid(PLAT.w, PLAT.d + 4); paintPlatform(G.set, 0, 4); return G.canvas(); })();
+// where the hole and the platform are, in the sprite (the hole is exactly the
+// platform's width inside its rim)
+const LIFT_HOLE = { x0: 16, x1: 16 + PLAT.w + 1, y0: 46, y1: 60 }, LIFT_TOP = 47, LIFT_PULLEY = { x: 29.5, y: 12 };
 function makeShaft(lift) {
   const w = SHAFT_W, h = SHAFT_H, cx = (w - 1) / 2, ground = h - 2, H0 = LIFT_HOLE;
   const G = pixelGrid(w, h);
@@ -621,14 +636,8 @@ function makeShaft(lift) {
   // the rope: down to the platform's yoke when it's up, down the hole when it's not
   const ropeEnd = lift ? LIFT_TOP - 4 : H0.y1;
   [P.x - 4, P.x + 4].forEach(x => { for (let y = P.y + 1; y <= ropeEnd; y++) G.set(Math.round(x), y, y % 3 ? '#c9b78f' : '#a8946a'); });
-  if (lift) {
-    // the yoke and the platform: planks over the hole, with an iron band
-    for (let x = H0.x0 + 4; x <= H0.x1 - 4; x++) G.set(x, LIFT_TOP - 4, '#5a5a62');
-    [H0.x0 + 4, H0.x1 - 4].forEach(x => { for (let y = LIFT_TOP - 4; y <= LIFT_TOP; y++) G.set(x, y, '#5a5a62'); });
-    for (let y = LIFT_TOP; y <= LIFT_TOP + 5; y++) for (let x = H0.x0 + 1; x <= H0.x1 - 1; x++) {
-      G.set(x, y, y === LIFT_TOP ? '#d29a5c' : y === LIFT_TOP + 5 ? '#5e3a1e' : (x - H0.x0) % 5 === 0 ? '#6b4422' : y === LIFT_TOP + 3 ? '#7a7a84' : '#a8703f');
-    }
-  }
+  // the platform sitting in the hole, level with the floor
+  if (lift) paintPlatform(G.set, H0.x0 + 1, LIFT_TOP);
   // the winch on the right post: a drum of rope and a crank
   for (let y = 26; y <= 34; y++) for (let x = 47; x <= 52; x++) G.set(x, y, y === 26 || y === 34 ? '#5a5a62' : (y % 2 ? '#c9b78f' : '#a8946a'));
   for (let y = 29; y <= 31; y++) G.set(53, y, '#3a3a42');
@@ -2493,7 +2502,7 @@ const lift = { dir: null, t: 0, drawing: false };
 const LIFT_DOWN = 1.7, LIFT_UP = 1.4, LIFT_DEPTH = 46;
 function liftSpot() {
   const left = shaftThing.x - Math.floor(SHAFT_W / 2), top = shaftThing.y - SHAFT_H + 1;
-  return { left, top, x: left + (LIFT_HOLE.x0 + LIFT_HOLE.x1) / 2, y: top + LIFT_TOP + 4 };
+  return { left, top, x: left + (LIFT_HOLE.x0 + LIFT_HOLE.x1) / 2, y: top + LIFT_TOP + 7 };
 }
 function startLift(dir) {
   Object.assign(lift, { dir, t: 0 });
@@ -2519,12 +2528,27 @@ function tickLift(dt) {
     return;
   }
   // coming up: the platform rises, then you step off it towards the camera
-  player.y = sp.y + Math.max(0, Math.min(14, (lift.t - LIFT_UP) * 60));
-  if (lift.t >= LIFT_UP + 0.25) { lift.dir = null; shaftThing.frames = [SHAFT_ART[0]]; }
+  // (far enough to be in front of the headframe once the ride's over)
+  if (lift.t >= LIFT_UP) shaftThing.frames = [SHAFT_ART[0]];
+  player.y = sp.y + Math.max(0, Math.min(16, (lift.t - LIFT_UP) * 64));
+  if (lift.t >= LIFT_UP + 0.25) lift.dir = null;
+}
+// you stand on the platform (drawn here) while it's moving; once it's stopped
+// and you're stepping off, you're drawn plainly over the top
+function liftMoving() {
+  return lift.dir === 'down' ? lift.t < LIFT_DOWN : lift.dir === 'up' ? lift.t < LIFT_UP : lift.dir === 'arrive' ? lift.t < CAGE_TIME : !!lift.dir;
+}
+function drawPlain(toX, toY, t) {
+  lift.drawing = true;
+  drawPlayer(toX, toY, t);
+  lift.drawing = false;
 }
 function drawLift(toX, toY, t) {
-  const sp = liftSpot(), H0 = LIFT_HOLE, d = lift.t < (lift.dir === 'down' ? LIFT_DOWN : LIFT_UP) ? liftDepth() : 0;
-  const x0 = sp.left + H0.x0 + 1, x1 = sp.left + H0.x1, lip = sp.top + H0.y1, py = sp.top + LIFT_TOP + d;
+  // stepping off at the top: just you, unclipped (the clip used to cut your
+  // legs off at the hole's lip as you walked forward off it)
+  if (!liftMoving()) { drawPlain(toX, toY, t); return; }
+  const sp = liftSpot(), H0 = LIFT_HOLE, d = liftDepth();
+  const x0 = sp.left + H0.x0 + 1, lip = sp.top + H0.y1, py = sp.top + LIFT_TOP + d;
   const px = (x, y, col) => { ctx.fillStyle = col; ctx.fillRect(toX(x), toY(y), S, S); };
   // the rope from the pulley down to the platform's yoke
   // (only as far as the hole's front lip: below that it's under the floor)
@@ -2534,13 +2558,7 @@ function drawLift(toX, toY, t) {
   ctx.beginPath();
   ctx.rect(0, 0, ctx.canvas.width, toY(lip));
   ctx.clip();
-  for (let x = Math.round(x0 + 3); x <= Math.round(x1 - 4); x++) px(x, py - 4, '#5a5a62');
-  ctx.fillStyle = '#a8703f';
-  ctx.fillRect(toX(x0), toY(py), (x1 - x0) * S, 5 * S);
-  ctx.fillStyle = '#d29a5c';
-  ctx.fillRect(toX(x0), toY(py), (x1 - x0) * S, S);
-  ctx.fillStyle = '#5e3a1e';
-  ctx.fillRect(toX(x0), toY(py + 5), (x1 - x0) * S, S);
+  ctx.drawImage(PLAT_ART, toX(x0), toY(py - 4), PLAT.w * S, (PLAT.d + 4) * S);
   lift.drawing = true;
   const y0 = player.y;
   player.y = y0 + d;
@@ -2563,33 +2581,30 @@ function drawLift(toX, toY, t) {
 // ('depart'). drawn flat, so you stand on it. lift false is without the
 // platform (it's on its way, drawn by drawCage).
 const CAGE_W = 48, CAGE_H = 50;
-const CAGE = { x: ALCOVE.x0 * TILE + 24, y: (ALCOVE.ty - 1) * TILE + 24, left: ALCOVE.x0 * TILE, bottom: (ALCOVE.ty + 1) * TILE - 1 };
-const CAGE_PLAT = { x0: 6, x1: 41, y0: 21, y1: 45 };
+const CAGE_PLAT = { x0: 11, y0: 22 };
+const CAGE = { x: ALCOVE.x0 * TILE + CAGE_PLAT.x0 + PLAT.w / 2, y: (ALCOVE.ty + 1) * TILE - CAGE_H + CAGE_PLAT.y0 + 7, left: ALCOVE.x0 * TILE, bottom: (ALCOVE.ty + 1) * TILE - 1 };
 function makeCage(lift) {
   const w = CAGE_W, h = CAGE_H, G = pixelGrid(w, h), Pl = CAGE_PLAT;
+  const sx0 = Pl.x0 - 1, sx1 = Pl.x0 + PLAT.w;
   // the shaft in the back wall, going up into the dark, with a lintel over it
-  for (let y = 0; y <= 18; y++) for (let x = 5; x <= w - 6; x++) {
+  // (as wide as the hole up top, so the platform fits it the same)
+  for (let y = 0; y < Pl.y0; y++) for (let x = sx0; x <= sx1; x++) {
     const crib = y % 6 === 4;
-    G.set(x, y, y <= 1 ? (y === 0 ? '#c48a4f' : '#8a5a32') : crib ? '#3a2614' : y < 8 ? '#050404' : y < 14 ? '#0b0807' : '#140f0b');
+    G.set(x, y, y <= 1 ? (y === 0 ? '#c48a4f' : '#8a5a32') : x === sx0 || x === sx1 ? '#2a1e14' : crib ? '#3a2614' : y < 8 ? '#050404' : y < 14 ? '#0b0807' : '#140f0b');
   }
-  // the platform: planks across the alcove floor with an iron edge
-  if (lift) {
-    for (let y = Pl.y0; y <= Pl.y1; y++) for (let x = Pl.x0; x <= Pl.x1; x++) {
-      G.set(x, y, y === Pl.y0 ? '#d29a5c' : y === Pl.y1 ? '#5e3a1e' : (x - Pl.x0) % 6 === 0 ? '#6b4422' : (y - Pl.y0) % 8 === 7 ? '#7a7a84' : '#a8703f');
-    }
-    // the yoke and ropes from the shaft down to the platform's back edge
-    for (let x = 14; x <= 33; x++) G.set(x, Pl.y0 - 2, '#5a5a62');
-    [14, 33].forEach(x => { for (let y = Pl.y0 - 2; y <= Pl.y0; y++) G.set(x, y, '#5a5a62'); });
-  } else for (let y = Pl.y0; y <= Pl.y1; y++) for (let x = Pl.x0; x <= Pl.x1; x++) G.set(x, y, y < Pl.y0 + 3 ? '#0b0807' : '#140f0b');
-  [18, 29].forEach(x => { for (let y = 2; y <= (lift ? Pl.y0 - 2 : 18); y++) G.set(x, y, y % 3 ? '#c9b78f' : '#a8946a'); });
-  // posts: the two back corners up the wall, and along the far (left) side
-  [[2, 4, 0, 22], [43, 45, 0, 22], [2, 4, 22, h - 3]].forEach(([a, b, y0, y1]) => {
-    for (let y = y0; y <= y1; y++) for (let x = a; x <= b; x++) G.set(x, y, x === a ? '#c48a4f' : x === b ? '#6b4422' : '#9a6233');
+  // the platform, or with it gone, a timber sill round where it lands
+  if (lift) paintPlatform(G.set, Pl.x0, Pl.y0);
+  else for (let y = Pl.y0; y < Pl.y0 + PLAT.d; y++) for (let x = Pl.x0; x < Pl.x0 + PLAT.w; x++) {
+    if (y === Pl.y0 || y === Pl.y0 + PLAT.d - 1 || x === Pl.x0 || x === Pl.x0 + PLAT.w - 1) G.set(x, y, y === Pl.y0 ? '#8a5a32' : '#5e3a1e');
+  }
+  PLAT_ROPES.forEach(x => { for (let y = 2; y <= (lift ? Pl.y0 - 4 : Pl.y0 - 1); y++) G.set(Pl.x0 + x, y, y % 3 ? '#c9b78f' : '#a8946a'); });
+  // posts either side of the shaft standing down past the platform
+  [[sx0 - 3, sx0 - 1], [sx1 + 1, sx1 + 3]].forEach(([a, b]) => {
+    for (let y = 0; y <= Pl.y0 + PLAT.d + 1; y++) for (let x = a; x <= b; x++) G.set(x, y, x === a ? '#c48a4f' : x === b ? '#6b4422' : '#9a6233');
   });
-  for (let x = 2; x <= 4; x++) G.set(x, h - 2, '#5e3a1e');
   // the folding gate, pushed open on the corridor side
   for (let k = 0; k < 4; k++) {
-    const gx = 41 + k * 1.5, gy = 23 + k * 6;
+    const gx = 41 + k * 1.2, gy = 23 + k * 6;
     for (let s2 = 0; s2 < 7; s2++) { G.set(Math.round(gx + s2 * 0.3), gy + s2, '#8a8a94'); G.set(Math.round(gx + 2 - s2 * 0.3), gy + s2, '#5a5a62'); }
   }
   return G.outline(() => '#14110e').canvas();
@@ -2624,28 +2639,20 @@ const cageLift = () => {
   return lift.dir === 'arrive' ? CAGE_DROP * (1 - u) ** 2 : CAGE_DROP * u * u;
 };
 function drawCage(toX, toY, t) {
-  if (lift.dir === 'arrive' && lift.t >= CAGE_TIME) return;
+  // walking out of it: you're drawn plainly (it used to draw nothing at all
+  // here, so you vanished for half a second as you stepped out)
+  if (!liftMoving()) { drawPlain(toX, toY, t); return; }
   const top = CAGE.bottom - CAGE_H + 1, Pl = CAGE_PLAT, up = cageLift();
-  const px0 = CAGE.left + Pl.x0, pw = Pl.x1 - Pl.x0 + 1, py = top + Pl.y0 - up;
+  const px0 = CAGE.left + Pl.x0, py = top + Pl.y0 - up;
   ctx.save();
   // anything above the bottom of the shaft opening is up the shaft, out of sight
   ctx.beginPath();
   ctx.rect(0, toY(top + 2), ctx.canvas.width, ctx.canvas.height);
   ctx.clip();
-  // the ropes, down the shaft to the yoke
+  // the ropes, down the shaft to the yoke, then the platform
   ctx.fillStyle = '#c9b78f';
-  [18, 29].forEach(x => ctx.fillRect(toX(CAGE.left + x), toY(top + 2), S, (py - 2 - (top + 2)) * S));
-  ctx.fillStyle = '#5a5a62';
-  ctx.fillRect(toX(CAGE.left + 14), toY(py - 2), 20 * S, S);
-  // the platform
-  ctx.fillStyle = '#a8703f';
-  ctx.fillRect(toX(px0), toY(py), pw * S, (Pl.y1 - Pl.y0 + 1) * S);
-  ctx.fillStyle = '#d29a5c';
-  ctx.fillRect(toX(px0), toY(py), pw * S, S);
-  ctx.fillStyle = '#6b4422';
-  for (let x = 0; x < pw; x += 6) ctx.fillRect(toX(px0 + x), toY(py + 1), S, (Pl.y1 - Pl.y0) * S);
-  ctx.fillStyle = '#5e3a1e';
-  ctx.fillRect(toX(px0), toY(py + Pl.y1 - Pl.y0), pw * S, S);
+  PLAT_ROPES.forEach(x => ctx.fillRect(toX(px0 + x), toY(top + 2), S, Math.max(0, py - 4 - (top + 2)) * S));
+  ctx.drawImage(PLAT_ART, toX(px0), toY(py - 4), PLAT.w * S, (PLAT.d + 4) * S);
   lift.drawing = true;
   const y0 = player.y;
   player.y = y0 - up;

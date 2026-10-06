@@ -3836,10 +3836,8 @@ function updateCreature(c, dt) {
       // notices you
       if (c.wall) {
         c.flip = c.wall[0] * TILE + 8 < c.x;
-        if (Math.random() < dt * 5 && d < 22 * TILE) {
-          const wx = c.wall[0] * TILE + 8, wy = c.wall[1] * TILE + 10;
-          particles.push({ x: c.x + (wx - c.x) * 0.6, y: c.y - 6 + (wy - c.y) * 0.3, vx: (Math.random() - 0.5) * 50, vy: -30 - Math.random() * 30, g: 220, life: 0.4, t: 0, col: Math.random() < 0.5 ? '#8a6a4c' : '#6b5038', size: 1 });
-        }
+        c.digAge = (c.digAge || 0) + dt;
+        if (d < 22 * TILE) digSpray(c, dt);
       }
       if (alive && d < DIGGER_SIGHT * TILE) aggro(c);
       break;
@@ -3990,7 +3988,7 @@ function updateNightSpawns(dt) {
 // crew is gone for good, and from then on a stray mole turns up in the mines
 // now and then instead (STRAY_*), waiting under the floor like the ones in the
 // holes.
-const DIGGERS = 10, DIG_EVERY = 30, DIG_CAP = 30, DIGGER_BACK = 120, DIGGER_SIGHT = 5, DIGGER_LEASH = 14;
+const DIGGERS = 10, DIG_EVERY = 30, DIG_CAP = 30, DIGGER_BACK = 120, DIGGER_SIGHT = 5, DIGGER_LEASH = 14, DIG_HEAR = 15;
 const STRAY_EVERY = [90, 180], STRAY_CAP = 2;
 quest.moleDug = Array.isArray(quest.moleDug) ? quest.moleDug.filter(n => Number.isInteger(n)) : [];
 const diggers = [], diggerGraves = [], strays = [];
@@ -4008,10 +4006,57 @@ function digSpot(fx, fy) {
   for (const [dx, dy] of dirs) if (diggable(fx + dx, fy + dy)) return [fx + dx, fy + dy];
   return null;
 }
+// what a digger at work throws about (alex: the digging should be obvious):
+// dirt and grit kicked back over its shoulder off the wall, a chip of rock now
+// and then, and puffs of dust off the face it's scratching at
+function digSpray(c, dt) {
+  const wx = c.wall[0] * TILE + 8, wy = c.wall[1] * TILE + 10;
+  const fx = c.x + (wx - c.x) * 0.55, fy = c.y - 6 + (wy - c.y) * 0.3, back = Math.sign(c.x - wx) || (Math.random() < 0.5 ? 1 : -1);
+  // sparks where its claws hit the rock, and their light (the mines are pitch
+  // dark, so without it you'd only ever hear them)
+  c.spark.x = fx; c.spark.y = fy;
+  c.spark.rad = 1.1 + Math.random() * 0.6;
+  if (Math.random() < dt * 7) for (let k = 0; k < 2; k++) particles.push({ x: fx, y: fy, vx: (Math.random() - 0.5) * 90, vy: -30 - Math.random() * 50, g: 300, life: 0.18 + Math.random() * 0.15, t: 0, col: Math.random() < 0.5 ? '#ffd27a' : '#fff3c4', size: 1 });
+  if (Math.random() < dt * 16) {
+    const rock = Math.random() < 0.25;
+    particles.push({ x: fx, y: fy, vx: back * (25 + Math.random() * 55), vy: -45 - Math.random() * 45, g: 260, life: 0.45 + Math.random() * 0.2, t: 0, col: rock ? '#8e8e8e' : Math.random() < 0.5 ? '#8a6a4c' : '#6b5038', size: Math.random() < 0.35 ? 2 : 1 });
+  }
+  c.puffT = (c.puffT || 0) - dt;
+  if (c.puffT > 0) return;
+  c.puffT = 0.5 + Math.random() * 0.5;
+  for (let k = 0; k < 4; k++) particles.push({ x: wx + (Math.random() - 0.5) * 10, y: wy + (Math.random() - 0.5) * 6, vx: (Math.random() - 0.5) * 16, vy: -8 - Math.random() * 10, g: -6, life: 0.8 + Math.random() * 0.5, t: 0, col: '#a39a8c', size: 2 });
+}
+// the wall it's working at: a hollow where its claws hit, ringed with freshly
+// broken rock, and cracks spreading out from it, more of them the longer it's
+// been at that block
+function drawDigCracks(c, toX, toY) {
+  const [wx, wy] = c.wall, x0 = wx * TILE, y0 = wy * TILE;
+  const cx = Math.round(Math.max(x0 + 3, Math.min(x0 + 12, c.x))), cy = Math.round(Math.max(y0 + 3, Math.min(y0 + 12, c.y - 6)));
+  const n = Math.min(4, 1 + Math.floor((c.digAge || 0) / 6));
+  const px = (x, y, col) => { if (x < x0 || y < y0 || x >= x0 + TILE || y >= y0 + TILE) return; ctx.fillStyle = col; ctx.fillRect(toX(x), toY(y), S, S); };
+  for (let k = 0; k < n + 2; k++) {
+    const a = hash2(wx, wy * 7 + k, 4411) * Math.PI * 2, len = 3 + n * 1.5 + hash2(wx, k, 4412) * 3;
+    let x = cx, y = cy;
+    for (let s2 = 0; s2 < len; s2++) {
+      x += Math.cos(a + Math.sin(s2 * 1.7 + k) * 0.5); y += Math.sin(a + Math.sin(s2 * 1.7 + k) * 0.5);
+      px(Math.round(x), Math.round(y), '#0c0907');
+      if (s2 < 2) px(Math.round(x) + 1, Math.round(y), '#6e5a46');
+    }
+  }
+  const r = 1 + n * 0.6;
+  for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++) for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++) {
+    const d = Math.hypot(x - cx, (y - cy) * 1.2);
+    if (d <= r) px(x, y, '#0c0907');
+    else if (d <= r + 1.2 && hash2(x, y, 4413) < 0.7) px(x, y, (x + y) % 2 ? '#7d6650' : '#5e4c3c');
+  }
+}
 function makeDigger(x, y, wall) {
   const c = spawnCreature('mole', x, y);
   Object.assign(c, { state: 'dig', digger: true, wall, leash: DIGGER_LEASH, flip: wall[0] < x });
+  c.spark = { x: c.x, y: c.y, rgb: '255,196,120', rad: 1.3, flicker: true, mine: true, off: true };
+  glows.push(c.spark);
   c.onDeath = () => {
+    unSpark(c);
     diggers.splice(diggers.indexOf(c), 1);
     diggerGraves.push({ x: Math.floor(c.hx / TILE), y: Math.floor(c.hy / TILE), t: DIGGER_BACK });
   };
@@ -4029,7 +4074,12 @@ function placeDiggers() {
   }
   spots.forEach(([x, y, wall]) => makeDigger(x, y, wall));
 }
+function unSpark(c) {
+  const i = glows.indexOf(c.spark);
+  if (i >= 0) glows.splice(i, 1);
+}
 function dropCreature(c) {
+  if (c.spark) unSpark(c);
   const i = creatures.indexOf(c);
   if (i >= 0) creatures.splice(i, 1);
   const j = things.indexOf(c);
@@ -4046,9 +4096,17 @@ function digThrough(c) {
   quest.moleDug.push(i);
   repaintAround(wx, wy);
   paintMinimap();
-  if (Math.hypot(wx * TILE - player.x, wy * TILE - player.y) < 20 * TILE) { burst(wx * TILE + 8, wy * TILE + 8, '138,106,76', 14); sfx.crunch(); }
+  // the block giving way: a burst of dirt and rock, a cloud of dust, a crash
+  // and, close by, the ground shaking
+  const near = Math.hypot(wx * TILE - player.x, wy * TILE - player.y) / TILE;
+  if (near < 20) {
+    burst(wx * TILE + 8, wy * TILE + 8, '138,106,76', 22); burst(wx * TILE + 8, wy * TILE + 8, '142,142,142', 10);
+    for (let k = 0; k < 10; k++) particles.push({ x: wx * TILE + 2 + Math.random() * 12, y: wy * TILE + 4 + Math.random() * 10, vx: (Math.random() - 0.5) * 30, vy: -6 - Math.random() * 14, g: -5, life: 1 + Math.random() * 0.8, t: 0, col: '#a39a8c', size: 2 });
+    if (near < DIG_HEAR) { sfx.crunch(); sfx.rumble(); }
+    if (near < 8) addShake(2);
+  }
   const ahead = [wx + (wx - fx), wy + (wy - fy)];
-  Object.assign(c, { hx: wx * TILE + 8, hy: wy * TILE + 12, state: 'return', wall: diggable(...ahead) ? ahead : digSpot(wx, wy) });
+  Object.assign(c, { hx: wx * TILE + 8, hy: wy * TILE + 12, state: 'return', digAge: 0, wall: diggable(...ahead) ? ahead : digSpot(wx, wy) });
   markDirty();
 }
 function tickDiggers(dt) {
@@ -4069,7 +4127,11 @@ function tickDiggers(dt) {
   }
   // (a fresh start after you've died puts them back under the floor; they go
   // straight back to work)
-  diggers.forEach(c => { if (c.state === 'burrowed') c.state = 'dig'; if (!c.wall) c.wall = digSpot(Math.floor(c.hx / TILE), Math.floor(c.hy / TILE)); });
+  diggers.forEach(c => {
+    if (c.state === 'burrowed') c.state = 'dig';
+    if (!c.wall) c.wall = digSpot(Math.floor(c.hx / TILE), Math.floor(c.hy / TILE));
+    c.spark.off = c.state !== 'dig' || !c.wall || Math.hypot(c.x - player.x, c.y - player.y) > 22 * TILE;
+  });
   for (let k = diggerGraves.length - 1; k >= 0; k--) {
     const g = diggerGraves[k];
     g.t -= dt;
@@ -4078,6 +4140,19 @@ function tickDiggers(dt) {
     if (!wall) { g.t = 10; continue; }
     diggerGraves.splice(k, 1);
     makeDigger(g.x, g.y, wall);
+  }
+  // the sound of them at it: scraping, with a thump every few strokes, from
+  // the two nearest (any more and it's just a wall of noise), louder the
+  // closer you are
+  if (!room && !player.dead) {
+    diggers.filter(c => c.state === 'dig' && c.wall).map(c => [c, Math.hypot(c.x - player.x, c.y - player.y)])
+      .filter(([, d]) => d < DIG_HEAR * TILE).sort((a, b) => a[1] - b[1]).slice(0, 2).forEach(([c, d]) => {
+        c.scrT = (c.scrT || 0) - dt;
+        if (c.scrT > 0) return;
+        c.scrT = 0.22 + Math.random() * 0.22;
+        c.strokes = (c.strokes || 0) + 1;
+        sfx.scratch((1 - d / (DIG_HEAR * TILE)) ** 1.5, c.strokes % 4 === 0);
+      });
   }
   const outInMines = !room && !player.dead && regionAt(player.x / TILE, player.y / TILE) === 'mines';
   if (!outInMines || diggerGraves.length || quest.moleDug.length >= DIG_CAP) return;
@@ -4486,7 +4561,10 @@ function drawCreature(c, toX, toY, t) {
     return;
   }
   let img = F.walk[0];
-  if (c.state === 'dig') img = Math.floor(t / 150 + c.hx) % 2 ? F.crouch : F.walk[1];
+  if (c.state === 'dig') {
+    if (c.wall) drawDigCracks(c, toX, toY);
+    img = Math.floor(t / 110 + c.hx) % 2 ? F.crouch : F.walk[1];
+  }
   else if (c.state === 'sleep') img = F.sleep;
   else if (c.state === 'windup') img = F.crouch;
   else if (c.state === 'lunge' || c.aimT > 0) img = F.lunge;
@@ -5474,6 +5552,11 @@ Object.assign(sfx, {
   die:    () => { tone(330, 0.15, 'triangle', 0.05); tone(247, 0.15, 'triangle', 0.05, 0.15); tone(165, 0.35, 'triangle', 0.05, 0.3); },
   boom:   () => { noiseBurst(0.5, 380, 0.22); tone(55, 0.4, 'sawtooth', 0.06); },
   rumble: () => { noiseBurst(0.45, 200, 0.1); tone(48, 0.4, 'triangle', 0.04); },
+  // a mole clawing at rock: a gritty scrape, and now and then a thump
+  scratch: (vol, thud) => {
+    noiseBurst(0.06 + Math.random() * 0.04, 1300 + Math.random() * 1200, 0.11 * vol);
+    if (thud) { noiseBurst(0.12, 380, 0.14 * vol); tone(65 + Math.random() * 15, 0.1, 'triangle', 0.05 * vol); }
+  },
   rev:    () => { tone(90, 0.2, 'sawtooth', 0.03); tone(140, 0.25, 'sawtooth', 0.03, 0.15); tone(210, 0.3, 'sawtooth', 0.03, 0.35); },
   clang:  () => { tone(880, 0.06, 'square', 0.04); tone(1320, 0.1, 'triangle', 0.03, 0.02); noiseBurst(0.05, 4000, 0.06); },
   drill:  () => { tone(70 + Math.random() * 30, 0.1, 'sawtooth', 0.018); if (mining) noiseBurst(0.06, 3000, 0.035); },

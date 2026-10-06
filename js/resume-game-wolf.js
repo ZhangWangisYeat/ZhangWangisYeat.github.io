@@ -655,7 +655,7 @@ function crackShell(c) {
   sfx.shatter();
 }
 function startLattices(c) {
-  crackShell(c);
+  // (she stays diamond: it only breaks off when the ore cores do)
   c.phase = 'lattice';
   c.pt = WOLF.lattice;
   latBroken = 0;
@@ -691,10 +691,10 @@ function retractLattices(c) {
   lattices.forEach(L => { if (L.alive && L.sink === null) L.sink = 0; });
   c.phase = 'armored';
   c.pt = WOLF.shell;
-  sfx.molt();
-  bossHint('wolf-retract', 'Too slow...', 'The lattices sank back in', 'She\'s diamond again. Break all seven next time.');
+  bossHint('wolf-retract', 'Too slow...', 'The ore cores sank back in', 'She stays diamond. Break all seven next time.');
 }
 function openUp(c) {
+  crackShell(c);
   c.phase = 'open';
   lattices.forEach(removeLattice);
   lattices.length = 0;
@@ -946,7 +946,7 @@ function updateWolf(c, dt) {
   c.moving = false;
   // diamond growing over her from her feet up (and the sparkle where it's
   // reached), or snapping off
-  if (c.phase === 'armored' && c.shell < 1) {
+  if (c.phase && c.phase !== 'open' && c.shell < 1) {
     c.shell = Math.min(1, c.shell + dt / 1.1);
     const y = c.y - WOLF_GY + WOLF_H * (1 - c.shell);
     if (Math.random() < dt * 40) particles.push({ x: c.x + (Math.random() - 0.5) * 56, y, vx: 0, vy: -10, g: 0, life: 0.4, t: 0, col: Math.random() < 0.5 ? '#ffffff' : '#9df4e8', size: 1 });
@@ -1075,10 +1075,10 @@ function wolfHit(c, dmg) {
   if (c.phase !== 'open') {
     if (immuneT <= 0) {
       immuneT = 0.4;
-      floatText(c.phase === 'armored' ? 'Immune' : 'Shielded', c.x, c.y - 50, '#bde9ff');
+      floatText('Immune', c.x, c.y - 50, '#bde9ff');
       sfx.clang();
     }
-    burst(c.x + (player.x < c.x ? -20 : 20), c.y - 18, c.phase === 'armored' ? '232,255,252' : '200,180,255', 4);
+    burst(c.x + (player.x < c.x ? -20 : 20), c.y - 18, '232,255,252', 4);
     return { dmg: 0 };
   }
   if (c.state === 'stagger' || c.state === 'dazed') return { dmg: dmg * 1.25, col: '#ffd23f' };
@@ -1189,7 +1189,7 @@ function wolfTick(dt) {
   if (fighting() || wolf.state === 'still') {
     const ph = wolf.phase, secs = Math.max(0, Math.ceil(wolf.pt));
     const text = ph === 'armored' ? `Encased in diamond | ${secs}s`
-      : ph === 'lattice' ? `Lattices ${latBroken} of 7 | ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`
+      : ph === 'lattice' ? `Ore cores ${latBroken} of 7 | ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`
         : 'Vulnerable';
     if (text !== noteText) {
       noteText = text;
@@ -1197,7 +1197,7 @@ function wolfTick(dt) {
       el.textContent = text;
       el.classList.toggle('is-urgent', ph === 'lattice' && secs <= 10);
     }
-    bossBarEl.classList.toggle('is-shell', ph === 'armored');
+    bossBarEl.classList.toggle('is-shell', ph !== 'open');
     bossBarEl.classList.toggle('is-prism', ph === 'open');
   }
 }

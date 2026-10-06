@@ -2499,10 +2499,11 @@ function playShake() { return shakeAmp; }
 function playCamFocus() {
   if (typeof raceCam === 'function') { const f = raceCam(); if (f) return f; }
   if (typeof wolfCam === 'function') { const f = wolfCam(); if (f) return f; }
-  return cine && cine.t < 2.3 * cine.k ? { x: moe.hx, y: moe.hy - 24 } : null;
+  if (room === denRoom && (moeMeet || moeTalking())) return { x: (moe.x + player.x) / 2, y: (moe.y + player.y) / 2 - 20 };
+  return cine && cine.t < 2.3 * cine.k ? (cine.talked ? { x: moe.x, y: moe.y - 24 } : { x: moe.hx, y: moe.hy - 24 }) : null;
 }
 // (any room that's sealed shut for a fight)
-function playTravelBlocked() { return !!room && (!!room.sealed || (room === denRoom && !!cine) || (typeof wolfHolds === 'function' && wolfHolds())); }
+function playTravelBlocked() { return !!room && (!!room.sealed || (room === denRoom && (!!cine || !!moeMeet)) || (typeof wolfHolds === 'function' && wolfHolds())); }
 
 // where his hand (and so the drill's grip) and his lamp are in the world,
 // for whichever frame he's on, sunk however far he is into the floor
@@ -2529,7 +2530,7 @@ function updateMoe(c, dt) {
   c.hurtT = Math.max(0, c.hurtT - dt);
   c.t += dt;
   c.moving = false;
-  c.spin += dt * (['windup', 'lunge', 'dig', 'pop', 'stuck'].includes(c.state) ? 30 : 12);
+  c.spin += dt * (['windup', 'lunge', 'dig', 'pop', 'stuck', 'drillwall', 'brandish'].includes(c.state) ? 30 : c.state === 'chat' ? 0 : 12);
   const img = moeFrame(c, performance.now());
   const hand = moePoint(c, MOE_HAND, img);
   // aimed from the middle of his body, not his hand: the hand moves when he
@@ -2556,6 +2557,25 @@ function updateMoe(c, dt) {
     c.moving = true;
   };
   switch (c.state) {
+    case 'drillwall':
+      // boring into the back wall, the drill shuddering in the rock, sparks and
+      // grit coming off it
+      c.aim = -Math.PI / 2 + Math.sin(c.t * 9) * 0.06;
+      c.flip = false;
+      if (Math.random() < dt * 30) burst(hand.x + Math.cos(c.aim) * 30, hand.y + Math.sin(c.aim) * 30, Math.random() < 0.5 ? '255,220,140' : '150,140,120', 1);
+      if ((c.buzzT = (c.buzzT || 0) - dt) <= 0) { c.buzzT = 0.12; sfx.drill(); }
+      addShake(0.25);
+      break;
+    case 'chat':
+      // turned round to you, drill lowered and switched off
+      turn(Math.PI / 2, 6);
+      c.flip = player.x < c.x;
+      break;
+    case 'brandish':
+      // swung up and round at you, revving
+      turn(toYou, 8);
+      face();
+      break;
     case 'face':
       // above ground the drill never stops pointing at you. he keeps about
       // four and a half tiles off and every couple of seconds he lunges.
@@ -2712,7 +2732,7 @@ function updateMoe(c, dt) {
 // ground he can't turn, so swings land for a quarter again as much (it was
 // half, alex toned it down). underground you can't hit him at all.
 function bossHit(c, dmg, how) {
-  if (c.under || ['wait', 'intro', 'tell', 'dying'].includes(c.state)) return { dmg: 0 };
+  if (c.under || ['wait', 'intro', 'tell', 'dying', 'drillwall', 'chat', 'brandish'].includes(c.state)) return { dmg: 0 };
   if (c.state === 'stuck' || c.state === 'pop') return how === 'arrow' ? { dmg } : { dmg: dmg * 1.25, col: '#ffd23f' };
   if (how === 'arrow' || ['dazed', 'dig', 'climb'].includes(c.state)) return { dmg };
   const img = moeFrame(c, performance.now()), hand = moePoint(c, MOE_HAND, img);
@@ -3026,10 +3046,52 @@ function tickMusic(dt) {
 // revs the drill, his name comes up, and the rocks come down over the way you
 // came in. the first time it plays at full length, after that it's quicker.
 const cineEl = $('#cine');
-function startMoeIntro() {
+// the first time you walk in he isn't under the floor: he's at the back wall
+// with his drill buried in it, and he stops to talk (alex's lines, in the race
+// file's dialogue box). cheerful at first, putting his drill away, then
+// angry, and he swings it round at you. then the title card and the rocks
+// over the door, and the fight. after that (you lost) it's the old intro,
+// bursting up out of the floor.
+const MOE_WALL = { x: 158, y: 54 };
+const MOE_WHO = { name: 'Moe', voice: mood => sfx.moeVoice(mood), at: () => moe, cls: '' };
+let moeMeet = null;
+const moeTalking = () => typeof talk !== 'undefined' && !!talk && talk.who === MOE_WHO;
+function startMoeMeet() {
+  moeMeet = { t: 0, talked: false };
+  Object.assign(moe, { x: MOE_WALL.x, y: MOE_WALL.y, state: 'drillwall', t: 0, under: false, sink: 0, aim: -Math.PI / 2, spot: null, tellK: null, flip: false });
+  mouse.down = false;
+  bowDraw = null;
+  stopDrill();
+  eating = null;
+}
+function tickMoeMeet(dt) {
+  moeMeet.t += dt;
+  if (moeMeet.t < 1 || moeMeet.talked) return;
+  moeMeet.talked = true;
+  quest.moe.talked = true;
+  markDirty();
+  startTalk([
+    { you: 'So you\'re the one who\'s been digging.' },
+    { act: () => { moe.state = 'chat'; moe.t = 0; sfx.ui(); }, wait: 0.7 },
+    { d: 'Hi there buddy! What\'s the matter?', mood: 'happy' },
+    { you: 'You\'re destroying the earth and mines with your drilling.' },
+    { d: 'I\'m just looking for some diamonds. I can\'t look for diamonds?', mood: 'happy' },
+    { you: 'Your moles are gnawing away at the terrain so much the cave is going to collapse!' },
+    { d: 'I\'m sorry buddy, but I don\'t think so.', mood: 'happy' },
+    { d: 'This is my home. Who are you to tell me what I can do with my home?', mood: 'angry' },
+    { you: 'If you can\'t listen to reason, I\'ll have to stop you.' },
+    { act: () => { moe.state = 'brandish'; moe.t = 0; sfx.rev(); addShake(2); }, wait: 0.7 },
+    { d: 'You can\'t beat me anyway.', mood: 'angry' }
+  ], () => { moeMeet = null; startMoeIntro(true); }, MOE_WHO);
+}
+function startMoeIntro(afterTalk) {
+  if (!afterTalk && !quest.moe.talked) { startMoeMeet(); return; }
   const first = !quest.moe.introSeen;
-  cine = { t: 0, prev: 0, k: first ? 1 : 0.6 };
-  Object.assign(moe, { x: moe.hx, y: moe.hy, state: 'intro', t: 0, under: true, sink: 1, aim: Math.PI / 2, spot: { x: moe.hx, y: moe.hy }, tellK: null, flip: false });
+  // (straight after the talk he's already up and facing you, so it skips to
+  // his name coming up)
+  cine = afterTalk ? { t: 1.5, prev: 1.5, k: 1, talked: true } : { t: 0, prev: 0, k: first ? 1 : 0.6 };
+  if (!afterTalk) Object.assign(moe, { x: moe.hx, y: moe.hy, state: 'intro', t: 0, under: true, sink: 1, aim: Math.PI / 2, spot: { x: moe.hx, y: moe.hy }, tellK: null, flip: false });
+  else moe.state = 'intro';
   mouse.down = false;
   bowDraw = null;
   stopDrill();
@@ -3058,7 +3120,11 @@ function tickCine(dt) {
     addShake(5);
     sfx.boom();
   }
-  if (c.t > 1.1 * k) {
+  if (c.talked) {
+    moe.aim = Math.atan2(player.y - moe.y, player.x - moe.x);
+    moe.flip = Math.cos(moe.aim) < 0;
+    moe.spin += dt * 30;
+  } else if (c.t > 1.1 * k) {
     moe.sink = Math.max(0, 1 - (c.t - 1.1 * k) / (0.45 * k));
     moe.aim = -Math.PI / 2 + Math.min(1, Math.max(0, (c.t - 1.5 * k) / (0.3 * k))) * (Math.atan2(player.y - moe.y, player.x - moe.x) + Math.PI / 2);
     moe.flip = Math.cos(moe.aim) < 0;
@@ -3088,6 +3154,8 @@ function endCine(fight) {
 // back to how it was before you walked in, after you die or leave
 function resetMoe() {
   if (cine) endCine(false);
+  if (moeTalking()) endTalk(true);
+  moeMeet = null;
   bossMusic(false);
   clearMoeMoles(false);
   denRoom.sealed = false;
@@ -5584,7 +5652,7 @@ function coreMotes(dt) {
 // race (all in js/resume-game-race.js). the engine leaves you alone then.
 // (and the ore wolf's talking and title card, js/resume-game-wolf.js)
 const raceBusy = () => (typeof raceHolds === 'function' && raceHolds()) || (typeof wolfHolds === 'function' && wolfHolds());
-function playFrozen() { return ui !== null || player.dead || !!sleeping || !!cine || raceBusy(); }
+function playFrozen() { return ui !== null || player.dead || !!sleeping || !!cine || !!moeMeet || raceBusy(); }
 // which layer of img/player-armor.png to paint over you, or -1 for none
 const ARMOR_LAYERS = ['hide', 'wool', 'gold', 'marble', 'iron', 'emerald', 'diamond'];
 // every worn piece is painted on you: the chestplate from img/player-armor.png,
@@ -5704,6 +5772,7 @@ function playUpdate(dt, t) {
   tickSnow(dt);
   if (typeof raceTick === 'function') raceTick(dt);
   if (typeof wolfTick === 'function') wolfTick(dt);
+  if (moeMeet) tickMoeMeet(dt);
   tickCine(dt);
   tickBossBar(dt);
   tickMusic(dt);

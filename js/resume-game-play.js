@@ -2560,8 +2560,8 @@ function updateMoe(c, dt) {
     case 'drillwall':
       // boring into the back wall, the drill shuddering in the rock, sparks and
       // grit coming off it
-      c.aim = -Math.PI / 2 + Math.sin(c.t * 9) * 0.06;
-      c.flip = false;
+      c.aim = Math.PI + Math.sin(c.t * 9) * 0.06;
+      c.flip = true;
       if (Math.random() < dt * 30) burst(hand.x + Math.cos(c.aim) * 30, hand.y + Math.sin(c.aim) * 30, Math.random() < 0.5 ? '255,220,140' : '150,140,120', 1);
       if ((c.buzzT = (c.buzzT || 0) - dt) <= 0) { c.buzzT = 0.12; sfx.drill(); }
       addShake(0.25);
@@ -3076,13 +3076,15 @@ const cineEl = $('#cine');
 // angry, and he swings it round at you. then the title card and the rocks
 // over the door, and the fight. after that (you lost) it's the old intro,
 // bursting up out of the floor.
-const MOE_WALL = { x: 158, y: 54 };
+// (at the left wall, side on, so you can see the drill buried in the rock; at
+// the back wall it was hidden behind him)
+const MOE_WALL = { x: 50, y: 132 };
 const MOE_WHO = { name: 'Moe', voice: mood => sfx.moeVoice(mood), at: () => moe, cls: '' };
 let moeMeet = null;
 const moeTalking = () => typeof talk !== 'undefined' && !!talk && talk.who === MOE_WHO;
 function startMoeMeet() {
   moeMeet = { t: 0, talked: false };
-  Object.assign(moe, { x: MOE_WALL.x, y: MOE_WALL.y, state: 'drillwall', t: 0, under: false, sink: 0, aim: -Math.PI / 2, spot: null, tellK: null, flip: false });
+  Object.assign(moe, { x: MOE_WALL.x, y: MOE_WALL.y, state: 'drillwall', t: 0, under: false, sink: 0, aim: Math.PI, spot: null, tellK: null, flip: true });
   mouse.down = false;
   bowDraw = null;
   stopDrill();

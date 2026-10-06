@@ -770,14 +770,19 @@ function updateLattices(dt, t) {
 // diamonds, and she can send her tails after you one at a time.
 function chooseAttack(c) {
   const open = c.phase === 'open', d = Math.hypot(player.x - c.x, player.y - c.y);
-  // never the same twice running, and the tails come up half as often as the
-  // others (alex wanted them a bit rarer: about a quarter of her attacks once
-  // she's open, down from a third)
-  const weight = { lunge: 1, fling: 1, tails: 0.5 };
-  const opts = (open ? ['lunge', 'fling', 'tails'] : ['lunge', 'fling']).filter(o => o !== c.last);
-  let roll = Math.random() * opts.reduce((n, o) => n + weight[o], 0);
-  let pick = opts.find(o => (roll -= weight[o]) < 0) || opts[0];
-  if (pick === 'lunge' && d > 8.5 * TILE) pick = opts.find(o => o !== 'lunge') || 'fling';
+  // the lunge and the ore pull take turns at random (never the same twice
+  // running). the tails aren't in that mix: once she's open they only come
+  // every few lunges, at random (alex wanted them much rarer): after 2 to 4
+  // lunges (c.tailsIn) the next attack is the tails.
+  if (c.tailsIn === undefined) c.tailsIn = rand(2, 4);
+  let pick;
+  if (open && c.tailsIn <= 0) { pick = 'tails'; c.tailsIn = rand(2, 4); }
+  else {
+    const opts = ['lunge', 'fling'].filter(o => o !== c.last);
+    pick = opts[(Math.random() * opts.length) | 0];
+    if (pick === 'lunge' && d > 8.5 * TILE) pick = 'fling';
+    if (pick === 'lunge' && open) c.tailsIn--;
+  }
   c.last = pick;
   c.t = 0;
   if (pick === 'lunge') { c.state = 'windup'; sfx.snarl(); }
@@ -1121,7 +1126,7 @@ function resetWolf() {
   wolfSeal.gone = true;
   noteText = '';
   if (wolf.dead) return;
-  Object.assign(wolf, { x: wolf.hx, y: wolf.hy, hp: wolf.def.hp, state: 'wait', t: 0, cd: 0, phase: null, pt: 0, shell: 0, hurtT: 0, last: null, flip: false, k: 0, raise: 0 });
+  Object.assign(wolf, { x: wolf.hx, y: wolf.hy, hp: wolf.def.hp, state: 'wait', t: 0, cd: 0, phase: null, pt: 0, shell: 0, hurtT: 0, last: null, flip: false, k: 0, raise: 0, tailsIn: undefined });
   wolfGlow.off = true;
 }
 

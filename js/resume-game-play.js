@@ -3670,11 +3670,18 @@ function afterArmor(dmg) {
 }
 
 function hurtPlayer(raw, fromX, fromY) {
-  if (player.dead || vitals.invuln > 0) return false;
+  // the blink after a hit only shrugs off hits about as heavy as the one that
+  // caused it. a much bigger one still lands and starts the blink over: brushing
+  // against lupus for a heart used to leave you blinking right through the six
+  // heart lunge she was winding up (alex: her attacks sometimes did nothing).
+  // the same size of hit, like the ores in one of her volleys, still can't
+  // stack up on you.
+  if (player.dead || (vitals.invuln > 0 && raw < (vitals.invulnFrom || Infinity) * 2)) return false;
   const dmg = afterArmor(raw);
   wearArmor();
   vitals.hp = Math.max(0, Math.round((vitals.hp - dmg) * 100) / 100);
   vitals.invuln = 0.75;
+  vitals.invulnFrom = raw;
   vitals.sinceHit = 0;
   const a = Math.atan2(player.y - fromY, player.x - fromX);
   vitals.kx = Math.cos(a) * 210;
@@ -3757,6 +3764,7 @@ function respawn() {
   vitals.hunger = HUNGER_MAX;
   vitals.sat = START_SAT;
   vitals.invuln = 1.5;
+  vitals.invulnFrom = Infinity;
   vitals.kx = vitals.ky = 0;
   vitals.slowT = 0;
   // your bed, if you've slept in one, otherwise camp

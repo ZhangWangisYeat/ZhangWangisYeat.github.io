@@ -840,7 +840,12 @@ function chooseAttack(c) {
   else {
     const opts = ['lunge', 'fling'].filter(o => o !== c.last);
     pick = opts[(Math.random() * opts.length) | 0];
-    if (pick === 'lunge' && d > 8.5 * TILE) pick = 'fling';
+    // she only lunges if her dash can reach you from where she is. it used to
+    // be anything up to 8.5 tiles, but the dash only covers about 92px (her
+    // body adds about another 14 at the front), so from further out she sprang
+    // and stopped short with nothing happening. backing off while she's
+    // crouched still gets you out of reach, which is the dodge.
+    if (pick === 'lunge' && d > LUNGE_REACH + 14) pick = 'fling';
     if (pick === 'lunge' && open) c.tailsIn--;
   }
   c.last = pick;

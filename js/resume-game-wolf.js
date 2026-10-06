@@ -40,7 +40,7 @@ const ORE_DROP = { gold: 'gold', stone: 'stone', marble: 'marble', iron: 'iron',
 // (shorter, so you get to the lattices sooner), shell is every time after a
 // lattice phase runs out, lattice is how long you get to break all seven.
 const WOLF = {
-  hp: 200, speed: 66, speedOpen: 84, keep: 4.6, backOff: 2.6,
+  hp: 160, speed: 66, speedOpen: 84, keep: 4.6, backOff: 2.6,
   windup: 0.62, windupOpen: 0.48, lunge: 340, lungeTime: 0.36, lungeDmg: 5, touchDmg: 1,
   shellFirst: 20, shell: 30, lattice: 60,
   fling: { min: 4, max: 7, rx: 15, ry: 9, drop: 0.06 },

@@ -1845,11 +1845,17 @@ function makeMoleMound(peek) {
 // each frame remembers how far it's shifted down (oy) so the hand and the lamp
 // can follow it.
 const MOE_W = 54, MOE_H = 50, MOE_HAND = { x: 39, y: 33 }, MOE_LAMP = { x: 44, y: 9 };
+// besides the fighting poses there are the ones for his talk: 'wave' (his near
+// arm up, waving, and a friendly open eye), 'rest' (drill put away, arm at his
+// side, friendly), 'grump' (arm at his side, the mean squint) and 'sad' (when
+// he's beaten: slumped, brows up in the middle, a frown and tears).
 function makeMoe(frame, pose) {
   const G = pixelGrid(MOE_W, MOE_H);
   const F = { light: '#7d6d99', base: '#5c4e74', mid: '#473b5e', shade: '#31283f' };
-  const ground = MOE_H - 2, crouch = pose === 'crouch' ? 2 : 0;
+  const ground = MOE_H - 2, crouch = pose === 'crouch' ? 2 : pose === 'sad' ? 2 : 0;
   const oy = crouch + (pose === 'walk' ? frame % 2 : pose === 'idle' ? frame : 0);
+  const arm = pose === 'wave' ? 'wave' : ['rest', 'grump', 'sad'].includes(pose) ? 'down' : 'drill';
+  const eye = ['wave', 'rest'].includes(pose) ? 'happy' : pose === 'sad' ? 'sad' : 'mean';
   const fur = moleFur(F, 640);
   // the far arm and its claw
   pxLine(G, 15, 30 + oy, 10, 24 + oy, F.shade, 2);
@@ -1889,14 +1895,24 @@ function makeMoe(frame, pose) {
     G.set(nx + Math.round(a * 0.5), ny + Math.round(b * 0.5), '#e66f98');
   });
   G.set(nx, ny, '#ffd6e4');
-  // mouth and the two big teeth
-  for (let x = 42; x <= 48; x++) G.set(x, 25 + oy, '#1a1018');
+  // mouth and the two big teeth (turned down at the corners when he's sad)
+  for (let x = 42; x <= 48; x++) G.set(x, 25 + oy + (eye === 'sad' && (x === 42 || x === 48) ? 1 : 0), '#1a1018');
   for (let y = 26; y <= 29; y++) [44, 45, 46, 47].forEach(x => G.set(x, y + oy, x === 45 || x === 47 || y === 29 ? '#cfc3a6' : '#fffbe8'));
   // the scar, then the eye: a mean little squint under a heavy brow, with a
-  // red glint in it
+  // red glint in it (or, while he's being friendly, a round open eye under a
+  // raised brow; or, beaten, brows up in the middle, a frown and tears)
   pxLine(G, 36, 12 + oy, 42, 21 + oy, '#c49aae');
-  [[36, 15], [37, 15], [38, 16], [39, 16], [40, 16], [41, 16]].forEach(([x, y]) => G.set(x, y + oy, '#1a1018'));
-  [[38, 17, '#120c18'], [39, 17, '#ff4a3a'], [40, 17, '#ffb09a'], [38, 18, '#120c18'], [39, 18, '#120c18'], [40, 18, '#120c18']].forEach(([x, y, c]) => G.set(x, y + oy, c));
+  if (eye === 'mean') {
+    [[36, 15], [37, 15], [38, 16], [39, 16], [40, 16], [41, 16]].forEach(([x, y]) => G.set(x, y + oy, '#1a1018'));
+    [[38, 17, '#120c18'], [39, 17, '#ff4a3a'], [40, 17, '#ffb09a'], [38, 18, '#120c18'], [39, 18, '#120c18'], [40, 18, '#120c18']].forEach(([x, y, c]) => G.set(x, y + oy, c));
+  } else if (eye === 'happy') {
+    [[37, 14], [38, 13], [39, 13], [40, 13], [41, 14]].forEach(([x, y]) => G.set(x, y + oy, '#1a1018'));
+    [[38, 16, '#120c18'], [39, 16, '#ffffff'], [40, 16, '#120c18'], [38, 17, '#120c18'], [39, 17, '#120c18'], [40, 17, '#120c18'], [39, 18, '#120c18']].forEach(([x, y, c]) => G.set(x, y + oy, c));
+  } else {
+    [[36, 16], [37, 16], [38, 15], [39, 15], [40, 14], [41, 14]].forEach(([x, y]) => G.set(x, y + oy, '#1a1018'));
+    [[38, 17, '#120c18'], [39, 17, '#7a6a8a'], [40, 17, '#120c18'], [38, 18, '#120c18'], [39, 18, '#120c18'], [40, 18, '#120c18']].forEach(([x, y, c]) => G.set(x, y + oy, c));
+    [[39, 19 + frame], [39, 20 + frame], [40, 21 + frame], [38, 23 - frame]].forEach(([x, y]) => G.set(x, y + oy, '#8fd0ff'));
+  }
   // mining helmet: a yellow dome lit from the top left, the brim, and the lamp
   for (let y = 3; y <= 13; y++) for (let x = 20; x <= 47; x++) {
     const dx = (x - 33.5) / 12.5, dy = (y - 13) / 8.5;
@@ -1909,10 +1925,23 @@ function makeMoe(frame, pose) {
   for (let y = 6; y <= 11; y++) for (let x = 42; x <= 46; x++) G.set(x, y + oy, '#3a3f47');
   for (let y = 7; y <= 10; y++) for (let x = 43; x <= 45; x++) G.set(x, y + oy, '#fff6c0');
   G.set(44, 8 + oy, '#ffffff'); G.set(44, 9 + oy, '#ffffff');
-  // near arm reaching forward to the drill
-  pxLine(G, 31, 27 + oy, 38, 32 + oy, F.base, 2);
-  pxLine(G, 31, 29 + oy, 37, 34 + oy, F.mid);
-  pxBlob(G, 39, 33 + oy, 2.6, 2.4, (dx, dy) => (dy < 0 ? '#e8a6ba' : '#c47890'));
+  // near arm: reaching forward to the drill, up waving (the paw swings side
+  // to side between the two frames), or hanging at his side
+  if (arm === 'drill') {
+    pxLine(G, 31, 27 + oy, 38, 32 + oy, F.base, 2);
+    pxLine(G, 31, 29 + oy, 37, 34 + oy, F.mid);
+    pxBlob(G, 39, 33 + oy, 2.6, 2.4, (dx, dy) => (dy < 0 ? '#e8a6ba' : '#c47890'));
+  } else if (arm === 'wave') {
+    const px = frame ? 44 : 40;
+    pxLine(G, 31, 27 + oy, px - 1, 16 + oy, F.base, 2);
+    pxLine(G, 32, 29 + oy, px, 17 + oy, F.mid);
+    pxBlob(G, px, 14 + oy, 2.8, 2.6, (dx, dy) => (dy < 0 ? '#e8a6ba' : '#c47890'));
+    [-2, 0, 2].forEach(o => { G.set(px + o, 11 + oy, '#ece4d4'); G.set(px + o, 10 + oy, '#ffffff'); });
+  } else {
+    pxLine(G, 31, 27 + oy, 34, 36 + oy, F.base, 2);
+    pxLine(G, 32, 29 + oy, 35, 37 + oy, F.mid);
+    pxBlob(G, 35, 38 + oy, 2.4, 2.2, (dx, dy) => (dy < 0 ? '#e8a6ba' : '#c47890'));
+  }
   const c = G.outline(() => '#1a1222').canvas();
   c.oy = oy;
   return c;
@@ -2424,7 +2453,9 @@ const denRoom = {
   things: [], glows: [doorLight(DEN_COLS, DEN_ROWS, DEN_DOOR)]
 };
 if (!Array.isArray(quest.denChest)) quest.denChest = rollDenLoot();
-const denChest = addStation('chest', denRoom.w / 2, 47, denRoom);
+// (off to the right of the back wall: the middle is where moe digs when you
+// first walk in)
+const denChest = addStation('chest', denRoom.w / 2 + 110, 47, denRoom);
 denChest.slots = quest.denChest;
 denChest.where = 'in Moe\'s den';
 const LOCKED_CHEST = makeChest(true);
@@ -2449,9 +2480,13 @@ denRoom.things.push(rubble);
 const MOE_FRAMES = {
   idle: [makeMoe(0, 'idle'), makeMoe(1, 'idle')],
   walk: [0, 1, 2, 3].map(f => makeMoe(f, 'walk')),
-  crouch: makeMoe(0, 'crouch')
+  crouch: makeMoe(0, 'crouch'),
+  wave: [makeMoe(0, 'wave'), makeMoe(1, 'wave')],
+  rest: makeMoe(0, 'rest'),
+  grump: makeMoe(0, 'grump'),
+  sad: [makeMoe(0, 'sad'), makeMoe(1, 'sad')]
 };
-MOE_FRAMES.white = new Map([...MOE_FRAMES.idle, ...MOE_FRAMES.walk, MOE_FRAMES.crouch].map(c => [c, whiteOf(c)]));
+MOE_FRAMES.white = new Map([...MOE_FRAMES.idle, ...MOE_FRAMES.walk, MOE_FRAMES.crouch, ...MOE_FRAMES.sad].map(c => [c, whiteOf(c)]));
 const MOE_HOME = { x: denRoom.w / 2, y: 140 };
 const moe = {
   kind: 'moe', def: CREATURES.moe, creature: true, room: denRoom, frames: [MOE_FRAMES.idle[0]], draw: drawMoe,
@@ -2499,6 +2534,8 @@ function playShake() { return shakeAmp; }
 function playCamFocus() {
   if (typeof raceCam === 'function') { const f = raceCam(); if (f) return f; }
   if (typeof wolfCam === 'function') { const f = wolfCam(); if (f) return f; }
+  // (watching him dig, the camera's on him; once you're talking, between you)
+  if (room === denRoom && moeMeet && !moeMeet.talked) return { x: moe.x, y: moe.y + 30 };
   if (room === denRoom && (moeMeet || moeTalking())) return { x: (moe.x + player.x) / 2, y: (moe.y + player.y) / 2 - 20 };
   return cine && cine.t < 2.3 * cine.k ? (cine.talked ? { x: moe.x, y: moe.y - 24 } : { x: moe.hx, y: moe.hy - 24 }) : null;
 }
@@ -2512,6 +2549,10 @@ function moePoint(c, p, img) {
   return { x: c.flip ? left + (MOE_W - 1 - p.x) : left + p.x, y: top + p.y };
 }
 function moeFrame(c, t) {
+  if (c.state === 'wave') return MOE_FRAMES.wave[Math.floor(t / 170) % 2];
+  if (c.state === 'chat' || (c.state === 'stow' && c.holster > 0.6)) return MOE_FRAMES.rest;
+  if (c.state === 'angry' || (c.state === 'brandish' && c.holster > 0.6)) return MOE_FRAMES.grump;
+  if (c.state === 'sad') return MOE_FRAMES.sad[Math.floor(t / 450) % 2];
   if (c.state === 'windup') return MOE_FRAMES.crouch;
   if (c.moving || c.state === 'lunge') return MOE_FRAMES.walk[Math.floor(c.anim * 8) % 4];
   return MOE_FRAMES.idle[Math.floor(t / 500) % 2];
@@ -2530,7 +2571,8 @@ function updateMoe(c, dt) {
   c.hurtT = Math.max(0, c.hurtT - dt);
   c.t += dt;
   c.moving = false;
-  c.spin += dt * (['windup', 'lunge', 'dig', 'pop', 'stuck', 'drillwall', 'brandish'].includes(c.state) ? 30 : c.state === 'chat' ? 0 : 12);
+  c.spin += dt * (['windup', 'lunge', 'dig', 'pop', 'stuck', 'drillwall'].includes(c.state) || (c.state === 'brandish' && c.holster < 0.3) ? 30
+    : ['notice', 'stow', 'wave', 'chat', 'angry', 'brandish', 'sad'].includes(c.state) ? 0 : 12);
   const img = moeFrame(c, performance.now());
   const hand = moePoint(c, MOE_HAND, img);
   // aimed from the middle of his body, not his hand: the hand moves when he
@@ -2560,21 +2602,40 @@ function updateMoe(c, dt) {
     case 'drillwall':
       // boring into the back wall, the drill shuddering in the rock, sparks and
       // grit coming off it
-      c.aim = Math.PI + Math.sin(c.t * 9) * 0.06;
-      c.flip = true;
+      c.aim = MOE_WALL_AIM + Math.sin(c.t * 9) * 0.06;
+      c.flip = false;
       if (Math.random() < dt * 30) burst(hand.x + Math.cos(c.aim) * 30, hand.y + Math.sin(c.aim) * 30, Math.random() < 0.5 ? '255,220,140' : '150,140,120', 1);
       if ((c.buzzT = (c.buzzT || 0) - dt) <= 0) { c.buzzT = 0.12; sfx.drill(); }
       addShake(0.25);
       break;
-    case 'chat':
-      // turned round to you, drill lowered and switched off
-      turn(Math.PI / 2, 6);
+    case 'notice':
+      // the drill stops dead in the rock and he looks round
+      if (c.t > 0.35) c.flip = player.x < c.x;
+      break;
+    case 'stow':
+      // turned to you, he pulls the drill out of the wall and slings it on his back
       c.flip = player.x < c.x;
+      turn(Math.PI / 2, 5);
+      c.holster = Math.min(1, (c.holster || 0) + dt / 0.8);
+      break;
+    case 'wave':
+    case 'chat':
+    case 'angry':
+      c.flip = player.x < c.x;
+      c.holster = 1;
+      c.aim = Math.PI / 2;
       break;
     case 'brandish':
-      // swung up and round at you, revving
+      // the drill comes back off his back and round at you, revving
+      c.holster = Math.max(0, (c.holster || 0) - dt / 0.5);
       turn(toYou, 8);
       face();
+      break;
+    case 'sad':
+      // beaten: slumped, drill on his back, tears dripping
+      c.holster = 1;
+      c.aim = Math.PI / 2;
+      if (Math.random() < dt * 3) { const e = moePoint(c, { x: 39, y: 20 }, img); particles.push({ x: e.x, y: e.y, vx: 0, vy: 10, g: 120, life: 0.6, t: 0, col: '#8fd0ff', size: 1 }); }
       break;
     case 'face':
       // above ground the drill never stops pointing at you. he keeps about
@@ -2700,7 +2761,11 @@ function updateMoe(c, dt) {
       addShake(1.5);
       c.hurtT = Math.floor(c.t * 10) % 2 ? 0.05 : 0;
       if (Math.random() < dt * 24) burst(hand.x + (Math.random() - 0.5) * 30, hand.y - Math.random() * 30, Math.random() < 0.5 ? '255,220,140' : '106,91,130', 2);
-      if (c.t >= 1.8) finishMoe(c);
+      // then he slumps and says his piece before he goes (alex)
+      if (c.t >= 1.4) {
+        Object.assign(c, { state: 'sad', t: 0, sink: 0, under: false, hurtT: 0, holster: 1 });
+        startTalk([{ d: 'I was just looking for some bling...', mood: 'sad' }], () => finishMoe(c), MOE_WHO);
+      }
       break;
   }
   // touching him above ground hurts, and a lunge hurts a lot. half buried,
@@ -2732,7 +2797,7 @@ function updateMoe(c, dt) {
 // ground he can't turn, so swings land for a quarter again as much (it was
 // half, alex toned it down). underground you can't hit him at all.
 function bossHit(c, dmg, how) {
-  if (c.under || ['wait', 'intro', 'tell', 'dying', 'drillwall', 'chat', 'brandish'].includes(c.state)) return { dmg: 0 };
+  if (c.under || ['wait', 'intro', 'tell', 'dying', 'drillwall', 'notice', 'stow', 'wave', 'chat', 'angry', 'brandish', 'sad'].includes(c.state)) return { dmg: 0 };
   if (c.state === 'stuck' || c.state === 'pop') return how === 'arrow' ? { dmg } : { dmg: dmg * 1.25, col: '#ffd23f' };
   if (how === 'arrow' || ['dazed', 'dig', 'climb'].includes(c.state)) return { dmg };
   const img = moeFrame(c, performance.now()), hand = moePoint(c, MOE_HAND, img);
@@ -3076,37 +3141,46 @@ const cineEl = $('#cine');
 // angry, and he swings it round at you. then the title card and the rocks
 // over the door, and the fight. after that (you lost) it's the old intro,
 // bursting up out of the floor.
-// (at the left wall, side on, so you can see the drill buried in the rock; at
-// the back wall it was hidden behind him)
-const MOE_WALL = { x: 50, y: 132 };
+// (at the back wall in the top middle, alex, with his drill angled up into
+// the rock on his right so you can see it past him)
+const MOE_WALL = { x: 192, y: 58 }, MOE_WALL_AIM = -0.9;
 const MOE_WHO = { name: 'Moe', voice: mood => sfx.moeVoice(mood), at: () => moe, cls: '' };
 let moeMeet = null;
 const moeTalking = () => typeof talk !== 'undefined' && !!talk && talk.who === MOE_WHO;
 function startMoeMeet() {
   moeMeet = { t: 0, talked: false };
-  Object.assign(moe, { x: MOE_WALL.x, y: MOE_WALL.y, state: 'drillwall', t: 0, under: false, sink: 0, aim: Math.PI, spot: null, tellK: null, flip: true });
+  Object.assign(moe, { x: MOE_WALL.x, y: MOE_WALL.y, state: 'drillwall', t: 0, under: false, sink: 0, aim: MOE_WALL_AIM, spot: null, tellK: null, flip: false, holster: 0 });
   mouse.down = false;
   bowDraw = null;
   stopDrill();
   eating = null;
 }
+// you stand and watch him dig for a moment first (the camera's on him), then
+// you speak up; he notices (a yellow "!"), stops, turns round and puts his
+// drill away on his back, and waves as he says hi. he's friendly until he
+// isn't, and he only pulls the drill back out at the very end.
 function tickMoeMeet(dt) {
   moeMeet.t += dt;
-  if (moeMeet.t < 1 || moeMeet.talked) return;
+  if (moeMeet.t < 2 || moeMeet.talked) return;
   moeMeet.talked = true;
   quest.moe.talked = true;
   markDirty();
+  const set = (state, extra = {}) => () => Object.assign(moe, { state, t: 0, ...extra });
   startTalk([
     { you: 'So you\'re the one who\'s been digging.' },
-    { act: () => { moe.state = 'chat'; moe.t = 0; sfx.ui(); }, wait: 0.7 },
+    { act: set('notice'), wait: 0.7 },
+    { act: () => { set('stow')(); sfx.ui(); }, wait: 1 },
+    { act: set('wave'), wait: 0 },
     { d: 'Hi there buddy! What\'s the matter?', mood: 'happy' },
+    { act: set('chat'), wait: 0 },
     { you: 'You\'re destroying the earth and mines with your drilling.' },
     { d: 'I\'m just looking for some diamonds. I can\'t look for diamonds?', mood: 'happy' },
     { you: 'Your moles are gnawing away at the terrain so much the cave is going to collapse!' },
     { d: 'I\'m sorry buddy, but I don\'t think so.', mood: 'happy' },
+    { act: set('angry'), wait: 0 },
     { d: 'This is my home. Who are you to tell me what I can do with my home?', mood: 'angry' },
     { you: 'If you can\'t listen to reason, I\'ll have to stop you.' },
-    { act: () => { moe.state = 'brandish'; moe.t = 0; sfx.rev(); addShake(2); }, wait: 0.7 },
+    { act: () => { set('brandish')(); sfx.rev(); addShake(2); }, wait: 0.8 },
     { d: 'You can\'t beat me anyway.', mood: 'angry' }
   ], () => { moeMeet = null; startMoeIntro(true); }, MOE_WHO);
 }
@@ -3188,7 +3262,7 @@ function resetMoe() {
   rubble.gone = true;
   bossBar(false);
   if (moe.dead) return;
-  Object.assign(moe, { x: moe.hx, y: moe.hy, hp: moe.def.hp, state: 'wait', t: 0, under: true, sink: 1, pops: 0, lunges: 0, aim: Math.PI / 2, hurtT: 0, tellK: null, spot: null, trail: [] });
+  Object.assign(moe, { x: moe.hx, y: moe.hy, hp: moe.def.hp, state: 'wait', t: 0, under: true, sink: 1, pops: 0, lunges: 0, aim: Math.PI / 2, hurtT: 0, tellK: null, spot: null, trail: [], holster: 0 });
   moeLamp.off = moeBeam.off = true;
 }
 
@@ -3223,6 +3297,13 @@ function drawMoe(c, toX, toY, t) {
     ctx.fillRect(toX(c.x - 18), toY(c.y - 1), 36 * S, 2 * S);
   }
   const hand = moePoint(c, MOE_HAND, base);
+  // put away, the drill hangs on his back pointing down (holster 0 is in his
+  // hand, 1 is on his back, in between it's on its way)
+  if (c.holster > 0) {
+    const back = moePoint(c, { x: 16, y: 22 }, base);
+    hand.x += (back.x - hand.x) * c.holster;
+    hand.y += (back.y - hand.y) * c.holster;
+  }
   hand.x += shake;
   // up out of the floor he holds the drill over his head, bigger, glowing hot
   // at the tip and throwing sparks (see the glow after he's drawn)
@@ -3235,8 +3316,8 @@ function drawMoe(c, toX, toY, t) {
   const drill = raised
     ? () => ctx.drawImage(DRILL_UP[Math.floor(c.spin) % 3], toX(hand.x - DRILL_UP_W / 2), toY(hand.y + 8 - DRILL_UP_H), DRILL_UP_W * S, DRILL_UP_H * S)
     : () => ctx.drawImage(DRILL_ROT[Math.floor(c.spin) % 3][k], toX(hand.x - DRILL_D / 2), toY(hand.y - DRILL_D / 2), DRILL_D * S, DRILL_D * S);
-  // pointing up, the drill goes behind him
-  const behind = Math.sin(c.aim) < -0.35;
+  // pointing up, or on his back, the drill goes behind him
+  const behind = Math.sin(c.aim) < -0.35 || c.holster > 0.5;
   ctx.save();
   // whatever's below the middle of the hole is down it
   if (sinkPx > 0) { ctx.beginPath(); ctx.rect(0, 0, canvas.width, toY(c.y - 2)); ctx.clip(); }
@@ -3262,10 +3343,11 @@ function drawMoe(c, toX, toY, t) {
     ctx.globalCompositeOperation = 'source-over';
   }
   // the tell before a lunge, same red "!" as everything else
-  if (c.state === 'windup') {
+  // (and when he notices you, a yellow one)
+  if (c.state === 'windup' || c.state === 'notice') {
     const fs = Math.max(16, 8 * Math.round((S * 5.3) / 8)), mw = Math.round(fs * 0.9);
     const mx = toX(c.x) - mw / 2, my = toY(top - 6) - mw;
-    ctx.fillStyle = '#ff4d3d';
+    ctx.fillStyle = c.state === 'notice' ? '#ffd23f' : '#ff4d3d';
     ctx.fillRect(mx, my, mw, mw);
     ctx.fillStyle = '#ffffff';
     ctx.font = `${fs}px Silkscreen, monospace`;
@@ -5394,6 +5476,7 @@ Object.assign(sfx, {
   // he's angry
   moeVoice: mood => {
     const f = (mood === 'angry' ? 130 : 290) * (0.95 + Math.random() * 0.1);
+    if (mood === 'sad') { tone(200 * (0.95 + Math.random() * 0.1), 0.09, 'triangle', 0.035); tone(170, 0.07, 'triangle', 0.02, 0.06); return; }
     if (mood === 'angry') { tone(f, 0.05, 'sawtooth', 0.025); noiseBurst(0.03, 900, 0.03); }
     else { tone(f, 0.04, 'triangle', 0.04); tone(f * 1.26, 0.03, 'triangle', 0.025, 0.03); }
   }

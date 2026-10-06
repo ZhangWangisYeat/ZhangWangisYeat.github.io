@@ -110,7 +110,8 @@ ITEMS.prismasteel = { name: 'Prismasteel' };
 Object.keys(ARMORS).forEach(m => ARMOR_SLOTS.forEach(a => {
   ITEMS[`${m}-${a.piece}`] = { name: `${ARMORS[m].name} ${a.name}`, armor: m, slot: a.key, mat: m, dur: ARMORS[m].dur };
 }));
-Object.keys(ITEMS).forEach(id => { if (id.startsWith('prismasteel')) Object.assign(ITEMS[id], { prism: true, shiny: true }); });
+// (and it shines the brightest of anything, see shineLevel)
+Object.keys(ITEMS).forEach(id => { if (id.startsWith('prismasteel')) Object.assign(ITEMS[id], { prism: true, shiny: 3 }); });
 // arrows, weakest to strongest. this is what one does fired from a full draw,
 // point blank (a part drawn bow does less, see BOW). it grows very slightly the
 // farther the arrow flies, up to 15% more at ARROW_FULL tiles.
@@ -327,6 +328,161 @@ function marbleSwordIcon(G) {
   G.set(15, 1, '#ffffff');
   G.set(14, 1, '#e6f2ff');
 }
+// the finer swords (alex): drawn at twice the resolution of the other icons
+// (32px across instead of 16, so they show their detail in the 32px slots)
+// and worked out along the sword's own axis: u runs from the middle of the
+// grip towards the point, v across it, with the lit side up and to the left.
+// iron and emerald get a longer, cleaner blade with a bright ridge down it,
+// diamond the longest and cleanest, and gold keeps the old sword's shape
+// (short blade, plain bar of a guard, wooden handle), just finer and gleaming.
+// heldK is how big it's drawn in your hand (the old swords are 0.72): the
+// handle's a smaller part of these icons, so a bigger scale keeps it the same
+// size in your hand while the blade comes out longer. shine is how hard it
+// glints (see shineLevel).
+const SWORD_O = { x: 6.5, y: 25.5 };
+const FINE_SWORDS = {
+  gold: { L: 30.5, bw: 2.1, taper: 5, guard: 4.4, gripW: 1.1, from: -5.8, pommel: 0, ridge: false, shine: 2, heldK: 0.72,
+    blade: ['#ffffff', '#fff3a8', '#f2c84b', '#c99a1c', '#7a5a08'], guardP: ['#7b818c', '#4f545e', '#30343b'], grip: ['#c08a52', '#8a5a2c'] },
+  iron: { L: 31, bw: 1.9, taper: 6, guard: 5.2, gripW: 1.05, from: -4.6, pommel: 1.6, ridge: true, shine: 2, heldK: 0.84,
+    blade: ['#ffffff', '#eef1f5', '#c4c9d0', '#8e949c', '#5d636c'], guardP: ['#eef0f3', '#a3a9b2', '#5d636c'], grip: ['#8a5530', '#4a2a12'],
+    pommelP: ['#eef0f3', '#a3a9b2', '#5d636c'] },
+  emerald: { L: 32, bw: 1.9, taper: 6.5, guard: 5.4, gripW: 1.05, from: -4.6, pommel: 1.7, ridge: true, shine: 2, heldK: 0.88, gem: true,
+    blade: ['#f4fff7', '#aef3c6', '#46c873', '#23894b', '#0f4a26'], guardP: ['#fff3b0', '#e0b43a', '#8a6410'], grip: ['#33644a', '#173022'],
+    pommelP: ['#d2ffe0', '#3fc46c', '#1a6e3a'] },
+  diamond: { L: 33.5, bw: 1.8, taper: 7, guard: 5.6, gripW: 1.05, from: -4.6, pommel: 1.7, ridge: true, shine: 3, heldK: 0.94, gem: true,
+    blade: ['#ffffff', '#ecfffc', '#a6f2e9', '#4fc8ba', '#1f7f76'], guardP: ['#ffffff', '#cfe3ea', '#7e98a4'], grip: ['#3a4f88', '#1c2850'],
+    pommelP: ['#ffffff', '#86f2e2', '#1d8b82'] }
+};
+// a point u along a fine sword, in the usual 16 unit icon space (for the glint
+// that runs up the blade in your hand)
+const swordPoint = u => [SWORD_O.x / 2 + (u / 2) * Math.SQRT1_2, SWORD_O.y / 2 - (u / 2) * Math.SQRT1_2];
+function fineSwordArt(S) {
+  const G = pixelGrid(32, 32);
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+    const px = x + 0.5 - SWORD_O.x, py = y + 0.5 - SWORD_O.y;
+    const u = (px - py) * Math.SQRT1_2, v = (px + py) * Math.SQRT1_2;
+    let col = null;
+    if (u >= 5 && u <= S.L) {
+      // the blade: a lit edge, the lit face, a bright ridge down the middle,
+      // the shaded face and a dark edge, narrowing to the point
+      const w = u > S.L - S.taper ? (S.bw * (S.L - u)) / S.taper : S.bw;
+      if (Math.abs(v) <= w + 0.2) {
+        const f = v / Math.max(w, 0.7);
+        col = f < -0.7 ? S.blade[0] : f < -0.2 ? S.blade[1] : f < 0.25 ? (S.ridge ? S.blade[0] : S.blade[2]) : f < 0.7 ? S.blade[2] : f < 0.95 ? S.blade[3] : S.blade[4];
+        if (S.ridge && f >= 0.25 && f < 0.6 && u < S.L - S.taper) col = S.blade[2];
+      }
+    } else if (u >= 3.2 && u < 5) {
+      // the crossguard, lit along the side that faces the blade, a gem in
+      // the middle on the jewelled ones
+      if (Math.abs(v) <= S.guard - (u < 3.6 || u > 4.6 ? 0.5 : 0)) {
+        col = Math.abs(v) > S.guard - 0.9 ? S.guardP[1] : u > 4.3 ? S.guardP[0] : v < 0 ? S.guardP[1] : S.guardP[2];
+        if (S.gem && Math.abs(v) < 0.95) col = Math.abs(v) < 0.4 && u > 4.1 ? S.pommelP[0] : S.pommelP[1];
+      }
+    } else if (u >= S.from && u < 3.2) {
+      // the grip: a wrapped one, or the gold sword's plain wooden handle
+      if (Math.abs(v) <= S.gripW) {
+        col = S.pommel ? (Math.floor((u - v) * 0.85 + 10) % 2 ? S.grip[0] : S.grip[1]) : v < 0 ? S.grip[0] : S.grip[1];
+      }
+    }
+    if (!col && S.pommel) {
+      // the pommel, a round knob (a gem on the jewelled ones)
+      const du = u - (S.from - S.pommel * 0.75), r = Math.hypot(du, v);
+      if (r <= S.pommel) col = du + v < -0.9 ? S.pommelP[0] : du + v < 0.6 ? S.pommelP[1] : S.pommelP[2];
+    }
+    if (col) G.set(x, y, col);
+  }
+  // glints: a white point, and a four point sparkle or two on the blade
+  const at = (u, v) => [SWORD_O.x - 0.5 + (u + v) * Math.SQRT1_2, SWORD_O.y - 0.5 + (v - u) * Math.SQRT1_2];
+  const star = (u, v) => {
+    const [cx, cy] = at(u, v);
+    G.set(cx, cy, '#ffffff');
+    [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => { if (G.get(Math.round(cx) + dx, Math.round(cy) + dy)) G.set(Math.round(cx) + dx, Math.round(cy) + dy, S.blade[0]); });
+  };
+  star(S.L * 0.62, -0.6);
+  if (S.shine >= 3) star(S.L * 0.38, -0.5);
+  const [tx, ty] = at(S.L - 0.6, 0);
+  G.set(tx, ty, '#ffffff');
+  return G.outline(() => '#141414').outline(() => '#141414').canvas();
+}
+// the prismasteel sword, after the middle sword in alex's picture
+// (downloads/swords.jpg): a long hilt of beads with a little spiked crown for a
+// pommel, a tall crossguard of flames licking up towards the point with a
+// swirl cut through it either side, and a long slender blade with a slight
+// bend, a flame flaring off its base, hooked notches cut into its back edge
+// and a barb near the point, with a thin dark flame line inlaid up it. in a
+// rainbow that runs from red at the hilt to violet at the point, paling
+// towards the tip like the picture fades to pink.
+const PRISM_SWORD_L = 34;
+function flameSwordArt() {
+  const G = pixelGrid(32, 32), L = PRISM_SWORD_L, B0 = 5;
+  const hue = u => ((u + 9) / (L + 9)) * 300;
+  const shade = (u, l, sat = 0.92) => hsl(hue(u), sat, Math.min(0.96, l + Math.max(0, (u - (L - 11)) / 11) * 0.16));
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+    const px = x + 0.5 - SWORD_O.x, py = y + 0.5 - SWORD_O.y;
+    const u = (px - py) * Math.SQRT1_2, v = (px + py) * Math.SQRT1_2;
+    let col = null;
+    if (u >= B0 && u <= L) {
+      // the blade, bending a little towards its lit side, slender, and
+      // narrowing over its last stretch to a fine point
+      const vb = v + 0.8 * Math.sin(clamp((u - B0) / (L - B0), 0, 1) * Math.PI);
+      const w = u < L - 9 ? 2.05 - ((u - B0) / (L - 9 - B0)) * 0.3 : 1.75 * ((L - u) / 9) ** 0.8;
+      let inside = Math.abs(vb) <= w;
+      // a flame flaring off the front edge at its base, licking up the blade
+      if (!inside && vb < 0 && u < B0 + 5 && -vb <= w + 1.9 * (1 - (u - B0) / 5) ** 1.4) inside = true;
+      // the barb near the point on the back edge, hooking back towards the hilt
+      const bu = u - (L - 11);
+      if (!inside && vb > 0 && bu > -1.5 && bu < 3 && vb - w < 2.2 - Math.abs(bu - 0.2) * 1.1 - Math.max(0, bu) * 0.2) inside = true;
+      // hooked notches cut into the back edge
+      if (inside && vb > 0 && [B0 + 6.5, B0 + 11, B0 + 15.5].some(uc => Math.hypot(u - uc, vb - w - 0.2) < 1.3)) inside = false;
+      if (inside) {
+        const f = vb / Math.max(w, 0.8);
+        // a thin dark flame line inlaid up the lower blade
+        const inlay = u < B0 + 13 && Math.abs(vb - 0.55 * Math.sin((u - B0) * 0.9) + 0.1) < 0.36;
+        col = inlay ? shade(u, 0.3, 0.8) : f < -0.7 ? shade(u, 0.92) : f < -0.05 ? shade(u, 0.76) : f < 0.6 ? shade(u, 0.62) : shade(u, 0.48);
+      }
+    } else if (u >= 1.2 && u < B0) {
+      // the crossguard: a band across, with tongues of flame going up off it
+      const band = Math.abs(v) <= 3.4 + (u - 1.2) * 0.35;
+      if (band) {
+        const swirl = Math.hypot(u - 3.1, Math.abs(v) - 2.4) < 0.85;
+        col = swirl ? null : Math.abs(v) > 3.1 + (u - 1.2) * 0.35 ? shade(u, 0.84) : v < 0 ? shade(u, 0.72) : shade(u, 0.54);
+      }
+    }
+    // the flames off the guard: three tongues either side, curling up
+    // towards the point and outwards, the outer ones tallest
+    if (!col && u >= 3 && u <= 11) [[3.4, 5.4], [4.7, 6.7], [5.9, 8]].forEach(([c0, top], i) => {
+      if (col || u > top + 0.01) return;
+      const k = (u - 3) / (top - 3), cv = c0 + k * (1 + i * 0.6), half = 0.55 * (1 - k) + 0.18;
+      if (Math.abs(Math.abs(v) - cv) <= half) col = v < 0 ? shade(u, 0.82) : shade(u, 0.58);
+    });
+    if (!col && u >= -6.5 && u < 1.2) {
+      // the hilt: a string of beads
+      const bead = Math.abs(Math.sin(u * 1.9)), half = 0.6 + 0.5 * bead;
+      if (Math.abs(v) <= half) col = bead > 0.7 ? (v < 0 ? shade(u, 0.82) : shade(u, 0.6)) : shade(u, 0.4);
+    }
+    if (!col && u >= -9 && u < -6.5) {
+      // the pommel: a little spiked crown
+      const k = (u + 9) / 2.5, spikes = [0, 1.25, -1.25].some(sv => Math.abs(v - sv * k) <= k * (sv ? 0.4 : 0.6));
+      if (spikes) col = v < 0 ? shade(u, 0.8) : shade(u, 0.58);
+    }
+    if (col) G.set(x, y, col);
+  }
+  const at = (u, v) => [Math.round(SWORD_O.x - 0.5 + (u + v) * Math.SQRT1_2), Math.round(SWORD_O.y - 0.5 + (v - u) * Math.SQRT1_2)];
+  [[L * 0.68, -0.9], [L * 0.42, -1], [2.6, -1.5]].forEach(([u, v]) => {
+    const [cx, cy] = at(u, v);
+    if (!G.get(cx, cy)) return;
+    G.set(cx, cy, '#ffffff');
+    [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => { if (G.get(cx + dx, cy + dy)) G.set(cx + dx, cy + dy, '#fff6ff'); });
+  });
+  const [tx, ty] = at(L - 0.5, 0);
+  G.set(tx, ty, '#ffffff');
+  return G.outline(() => '#1a1024').outline(() => '#141414').canvas();
+}
+Object.entries(FINE_SWORDS).forEach(([m, S]) => Object.assign(ITEMS[`${m}-sword`], { shiny: S.shine, heldK: S.heldK, blade: [...swordPoint(5), ...swordPoint(S.L - 1)] }));
+Object.assign(ITEMS['prismasteel-sword'], { heldK: 0.96, blade: [...swordPoint(5), ...swordPoint(PRISM_SWORD_L - 1)] });
+// how hard something glints: 1 for the marble sword, 2 for the gold, iron and
+// emerald swords, 3 (the brightest) for the diamond sword and all prismasteel
+const shineLevel = it => (it.shiny === true ? 1 : it.shiny || 0);
 function pickIcon(G, P) {
   pxLine(G, 3, 13, 11, 5, HANDLE[0], 2);
   pxLine(G, 4, 14, 11, 7, HANDLE[1]);
@@ -463,8 +619,10 @@ function prismify(G) {
   }
 }
 function makeIcon(id) {
-  const G = pixelGrid(16, 16);
   const it = ITEMS[id];
+  if (id === 'prismasteel-sword') return flameSwordArt();
+  if (it.tool === 'sword' && FINE_SWORDS[it.mat]) return fineSwordArt(FINE_SWORDS[it.mat]);
+  const G = pixelGrid(16, 16);
   if (id === 'prismasteel') {
     // an ingot like the iron and gold ones, with a facet cut in its top
     const P = MAT_PAL.prismasteel;
@@ -626,7 +784,13 @@ function makeIcon(id) {
     default:
       gemIcon(G, CRYSTAL_PAL[id] || CRYSTAL_PAL.crystal);
   }
-  if (it.prism) prismify(G);
+  if (it.prism) {
+    prismify(G);
+    // (and white glints on them, so they glisten more than the diamond ones)
+    const lit = [];
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) if (G.get(x, y) && G.get(x - 1, y) == null && G.get(x, y - 1) == null) lit.push([x, y]);
+    lit.filter((_, i) => i % 3 === 0).slice(0, 4).forEach(([x, y]) => G.set(x, y, '#ffffff'));
+  }
   return G.outline(() => '#141414').canvas();
 }
 // moe's drill in miniature, pointing up to the top right like the other tools:
@@ -5281,7 +5445,7 @@ function slotHTML(ref, stack, extra = '', ghost = '') {
   const it = stack && ITEMS[stack.id];
   const label = it ? `${it.name}${stack.n > 1 ? ` ×${stack.n}` : ''}` : '';
   return `<button type="button" class="slot ${extra}" data-ref="${ref}"${label ? ` data-tip="${label}"` : ''}${it && it.prism ? ' data-rainbow' : ''} aria-label="${label || 'Empty'}">
-    ${it ? `<i${it.shiny ? ' class="shine"' : ''} style="background-image:url(${ICON[stack.id]})"></i>${stack.n > 1 ? `<b>${stack.n}</b>` : ''}${durBar(stack)}` : ghost ? `<i class="ghost" style="background-image:url(${ghost})"></i>` : ''}
+    ${it ? `<i${it.shiny ? ` class="shine s${shineLevel(it)}${it.prism ? ' prism' : ''}"` : ''} style="background-image:url(${ICON[stack.id]})"></i>${stack.n > 1 ? `<b>${stack.n}</b>` : ''}${durBar(stack)}` : ghost ? `<i class="ghost" style="background-image:url(${ghost})"></i>` : ''}
   </button>`;
 }
 // faint outlines for the empty armor slots, so you can tell which is which
@@ -5477,7 +5641,7 @@ function renderHUD() {
   $('#hotbar').innerHTML = inv.slots.slice(0, 6).map((s, i) => `
     <button type="button" class="hb-slot${i === inv.sel ? ' is-sel' : ''}" data-hotbar="${i}"${s ? ` data-tip="${ITEMS[s.id].name}${s.n > 1 ? ` ×${s.n}` : ''}"` : ''}${s && ITEMS[s.id].prism ? ' data-rainbow' : ''} aria-label="${s ? ITEMS[s.id].name : 'Empty'}">
       <span class="hb-key">${i + 1}</span>
-      ${s ? `<i${ITEMS[s.id].shiny ? ' class="shine"' : ''} style="background-image:url(${ICON[s.id]})"></i>${s.n > 1 ? `<b>${s.n}</b>` : ''}${durBar(s)}` : ''}
+      ${s ? `<i${ITEMS[s.id].shiny ? ` class="shine s${shineLevel(ITEMS[s.id])}${ITEMS[s.id].prism ? ' prism' : ''}"` : ''} style="background-image:url(${ICON[s.id]})"></i>${s.n > 1 ? `<b>${s.n}</b>` : ''}${durBar(s)}` : ''}
     </button>`).join('');
   const s = heldItem();
   $('#held-name').innerHTML = s && ITEMS[s.id].prism ? `<span class="rainbow">${esc(ITEMS[s.id].name)}</span>` : '';
@@ -5634,7 +5798,7 @@ function playDrawHeld(dx, dy, row, col, front) {
   // tools are held by the handle and point along the swing, anything else is
   // just a smaller copy of its icon sitting in your hand. the drill is a big
   // thing, so it's held bigger.
-  const k = it.tool === 'drill' ? 0.9 : it.tool ? 0.72 : 0.55;
+  const k = it.tool === 'drill' ? 0.9 : it.tool ? it.heldK || 0.72 : 0.55;
   ctx.save();
   if (player.blink) ctx.globalAlpha = 0.4;
   ctx.translate(dx + x * S + (spinning ? Math.round(Math.random() - 0.5) * S : 0), dy + pose.y * S);
@@ -5642,16 +5806,33 @@ function playDrawHeld(dx, dy, row, col, front) {
     ctx.rotate(((a + 45) * Math.PI) / 180);
     ctx.drawImage(spinning && Math.floor(drilling.t * 30) % 2 ? DRILL_SPIN : img, -3 * k * S, -13 * k * S, 16 * k * S, 16 * k * S);
     // a shiny blade: every so often a four-point glint runs from the guard to
-    // the tip (drawn upright, whatever angle the blade's at)
-    const ph = (performance.now() % 1500) / 1500;
-    if (it.shiny && !reduceMotion && ph < 0.4) {
-      const u = ph / 0.4, glow = 1 - Math.abs(u - 0.5) * 2;
-      ctx.translate((-3 + 7 + u * 7) * k * S, (-13 + 9 - u * 7) * k * S);
-      ctx.rotate((-(a + 45) * Math.PI) / 180);
-      ctx.fillStyle = `rgba(255,255,255,${0.35 + 0.65 * glow})`;
-      ctx.fillRect(-S / 2, -1.5 * S, S, 3 * S);
-      ctx.fillRect(-1.5 * S, -S / 2, 3 * S, S);
-      if (glow > 0.6) { ctx.fillRect(-S / 2, -2.5 * S, S, S); ctx.fillRect(-S / 2, 1.5 * S, S, S); }
+    // the tip (drawn upright, whatever angle the blade's at). the shinier it
+    // is, the more often and the bigger, and the diamond sword and the
+    // prismasteel things also twinkle in between (in rainbow colours for
+    // prismasteel).
+    const lvl = shineLevel(it);
+    if (lvl && !reduceMotion) {
+      const now = performance.now(), period = [0, 1500, 1150, 850][lvl];
+      const [gx, gy, tx, ty] = it.blade || [7, 9, 14, 2];
+      const spark = (u, size, alpha, col) => {
+        ctx.save();
+        ctx.translate((-3 + gx + u * (tx - gx)) * k * S, (-13 + gy + u * (ty - gy)) * k * S);
+        ctx.rotate((-(a + 45) * Math.PI) / 180);
+        ctx.fillStyle = col || `rgba(255,255,255,${alpha})`;
+        if (col) ctx.globalAlpha *= alpha;
+        ctx.fillRect(-S / 2, -(size + 0.5) * S, S, (2 * size + 1) * S);
+        ctx.fillRect(-(size + 0.5) * S, -S / 2, (2 * size + 1) * S, S);
+        ctx.restore();
+      };
+      const ph = (now % period) / period;
+      if (ph < 0.4) {
+        const u = ph / 0.4, glow = 1 - Math.abs(u - 0.5) * 2;
+        spark(u, glow > 0.6 ? (lvl >= 3 ? 2.5 : lvl === 2 ? 2 : 1.5) : 1, 0.35 + 0.65 * glow);
+      }
+      if (lvl >= 3) [0.3, 0.75].forEach((u, i) => {
+        const tw = ((now / 700 + i * 0.5) % 1);
+        if (tw < 0.25) spark(u, 1, 1 - tw * 4, it.prism ? hsl((now / 6 + i * 140) % 360, 0.9, 0.8) : null);
+      });
     }
   } else {
     ctx.drawImage(img, -8 * k * S, -8 * k * S, 16 * k * S, 16 * k * S);

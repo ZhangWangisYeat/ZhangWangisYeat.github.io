@@ -112,6 +112,12 @@ Object.keys(ARMORS).forEach(m => ARMOR_SLOTS.forEach(a => {
 }));
 // (and it shines the brightest of anything, see shineLevel)
 Object.keys(ITEMS).forEach(id => { if (id.startsWith('prismasteel')) Object.assign(ITEMS[id], { prism: true, shiny: 3 }); });
+// the prismasteel sword and axe are the only things besides a pickaxe (or
+// moe's drill) that can mine stone and every ore and keep what comes out
+// (alex), at an iron pickaxe's pace, so about half as fast as the prismasteel
+// pickaxe. mineAs is the mining speed they use in place of their own.
+ITEMS['prismasteel-sword'].mineAs = TIERS.iron.speed;
+ITEMS['prismasteel-axe'].mineAs = TIERS.iron.speed;
 // arrows, weakest to strongest. this is what one does fired from a full draw,
 // point blank (a part drawn bow does less, see BOW). it grows very slightly the
 // farther the arrow flies, up to 15% more at ARROW_FULL tiles.
@@ -4866,17 +4872,19 @@ function mineInfo(tgt) {
       : it && ['sword', 'pickaxe', 'dagger'].includes(it.tool) ? base * TREE_TOOL_SLOW : base * TREE_HAND_SLOW;
     return { time, drops: true, cost: 1 };
   }
-  // moe's drill counts as a pickaxe, a very fast one
-  const pick = it && (it.tool === 'pickaxe' || it.tool === 'drill') ? it : null;
+  // moe's drill counts as a pickaxe, a very fast one, and so do the
+  // prismasteel sword and axe, slower ones (mineAs)
+  const pick = it && (it.tool === 'pickaxe' || it.tool === 'drill' || it.mineAs) ? it : null;
+  const pickSpeed = pick && (pick.mineAs || pick.speed);
   if (tgt.cls === 'stone') {
-    return pick ? { time: MINE_TIME.stone / pick.speed, drops: true, cost: 1 } : { time: MINE_TIME.stone * 2, drops: false, cost: 1 };
+    return pick ? { time: MINE_TIME.stone / pickSpeed, drops: true, cost: 1 } : { time: MINE_TIME.stone * 2, drops: false, cost: 1 };
   }
   const harvest = !!pick && pick.harvest >= ORE_NEED[tgt.ore];
   // iron is the lowest tier that can take a diamond, and it pays for it: three
   // diamonds and the pickaxe is done
   const cost = pick && pick.mat === 'iron' && tgt.ore === 'diamond' ? Math.ceil(pick.dur / 3) : 1;
   return {
-    time: harvest ? MINE_TIME.ore / ((pick.oreSpeed && pick.oreSpeed[tgt.ore]) || pick.speed) : MINE_TIME.ore * NO_HARVEST_SLOW,
+    time: harvest ? MINE_TIME.ore / ((pick.oreSpeed && pick.oreSpeed[tgt.ore]) || pickSpeed) : MINE_TIME.ore * NO_HARVEST_SLOW,
     drops: harvest, cost
   };
 }

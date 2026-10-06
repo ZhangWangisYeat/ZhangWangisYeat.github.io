@@ -1366,6 +1366,7 @@ body.is-title .hud-play { opacity: 0; pointer-events: none; }
   .hb-slot { width: 34px; height: 34px; }
   .hb-slot i { inset: 5px; }
   .hearts i { width: 16px; height: 15px; }
+  .hearts i b { background-size: 16px 15px; }
   .held-name { display: none; }
   .inv { padding: 14px; }
   .inv-body { grid-template-columns: 1fr; }

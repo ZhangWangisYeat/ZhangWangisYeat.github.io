@@ -230,9 +230,9 @@ const CREATURES = {
     name: 'Forest Guardian', hp: 4, speed: 46, aggro: 11, leash: 80, dmg: 0.5,
     knock: 110, h: 36, box: { w: 16, h: 26 }, rest: 'prowl', regen: 0, chip: '138,96,52',
     nightly: true, shooter: { range: 7.5, keep: 4, cd: 2.4, speed: 190, dmg: 0.5, poison: 2 },
-    // the fourth number is a drop chance: 3% for the heart, and it stops
+    // the fourth number is a drop chance: 5% for the heart, and it stops
     // dropping once you have it
-    drops: [['stick', 1, 3], ['forest-heart', 1, 1, 0.03]], intro: ['Night', 'Watch out for the poison...']
+    drops: [['stick', 1, 3], ['forest-heart', 1, 1, 0.05]], intro: ['Night', 'Watch out for the poison...']
   },
   // the mines. moles wait under the floor of their burrows and come up when
   // you get close; about as tough as the hyena (they were 6 hp with a 1.25
@@ -1459,10 +1459,20 @@ const armorBlock = () => armorSum(A => A.block);
 // set of hide is exactly half the bar: wool 0.4, gold 1.1, hide 2.5, iron 3.9,
 // emerald 6.7, diamond 9.4. past 5 the bar starts over in a shinier colour, and
 // again past 10, for the boss armor still to come.
+// the armor bar reads straight off how much of a hit you block: every icon is
+// 20%, so wool's 20% is one, iron's 70% three and a half, diamond's 85% four
+// and a quarter (alex: it used to follow a toughness curve, which made the bar
+// say something different from the protection you actually had)
+const ARMOR_PER_ICON = 0.2;
 function armorPoints() {
-  const b = Math.min(0.99, armorBlock());
-  return Math.round(((5 / 3) * (b / (1 - b))) * 100) / 100;
+  return Math.round((armorBlock() / ARMOR_PER_ICON) * 100) / 100;
 }
+// how much of a heart (or armor) icon to fill for a fraction f of it. the
+// icons are 11 pixels across with the shape in the middle 9, so the fill is
+// measured across those, not the outline round them (a sliver of health only
+// filled the outline and looked like nothing left), and anything above zero
+// shows at least one column.
+const iconFill = f => (f <= 0 ? 0 : ((1 + Math.max(1, f * 9)) / 11) * 100);
 const rand = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
 // a recipe shows up in the book once you've held every kind of material it
@@ -3766,7 +3776,9 @@ function updateNightSpawns(dt) {
     if (!inside(tx, ty) || solidTile(tx, ty) || !reach[idx(tx, ty)] || tiles[idx(tx, ty)] === T.WATER) continue;
     const where = regionAt(tx + 0.5, ty + 0.5);
     if (where === 'camp') continue;
-    spawnHostile(where === 'meadows' && Math.random() < 0.4 ? 'guardian' : 'zombie', tx, ty);
+    // (two in three of the meadows' night spawns are forest guardians, it was
+    // two in five; alex wanted more of them about)
+    spawnHostile(where === 'meadows' && Math.random() < 0.65 ? 'guardian' : 'zombie', tx, ty);
     return;
   }
 }
@@ -4744,13 +4756,17 @@ function quickMove(ref, cur) {
   if (box === 'inv' && ui === 'inv' && !ITEMS[cur.id].armor) { bagToHotbar(ref, cur); return; }
   if (box === 'inv') {
     let dest = null;
-    if (ITEMS[cur.id].armor) dest = `armor:${ITEMS[cur.id].slot}`;
-    else if (ui === 'furnace') dest = ITEMS[cur.id].cooksTo ? 'input' : ITEMS[cur.id].fuel ? 'fuel' : null;
-    else if (ui === 'chest') {
+    // with a chest open, shift click puts things in the chest first, armor too
+    // (alex: it used to put armor on you instead). armor only goes on you if
+    // the chest is full.
+    if (ui === 'chest') {
       const same = openChest.findIndex(st => st && st.id === cur.id && st.n < maxStack(cur.id));
       const free = openChest.findIndex(st => !st);
       if (same >= 0 || free >= 0) dest = `chest:${same >= 0 ? same : free}`;
     }
+    if (!dest && ITEMS[cur.id].armor) dest = `armor:${ITEMS[cur.id].slot}`;
+    else if (!dest && ui === 'furnace') dest = ITEMS[cur.id].cooksTo ? 'input' : ITEMS[cur.id].fuel ? 'fuel' : null;
+    else if (!dest && ui === 'chest') { hint('The chest is full'); return; }
     else if (ui === 'craft' && !slotRefuses('craft:0', cur.id)) {
       const free = craftGrid.findIndex(s => !s);
       if (free >= 0) dest = `craft:${free}`;
@@ -4764,12 +4780,29 @@ function quickMove(ref, cur) {
       there.n += k; cur.n -= k;
       if (!cur.n) slotSet(ref, null);
     }
+  } else if (box === 'chest') {
+    // out of a chest only what fits comes out; the rest stays in the chest
+    // (alex: with a full bag it shouldn't end up on the floor)
+    const k = Math.min(cur.n, roomFor(cur));
+    if (!k) { hint('Your bag is full'); return; }
+    if (maxStack(cur.id) === 1) { slotSet(ref, null); addStack(cur); }
+    else { addItem(cur.id, k); cur.n -= k; if (!cur.n) slotSet(ref, null); }
   } else {
     slotSet(ref, null);
     addStack(cur);
   }
   sfx.ui();
   afterInventoryChange();
+}
+// put a stack into the open chest (onto stacks of the same thing, then empty
+// slots), and say how much didn't fit
+function intoChest(st) {
+  const max = maxStack(st.id);
+  if (max > 1) openChest.forEach(c => { if (st.n && c && c.id === st.id && c.n < max) { const k = Math.min(max - c.n, st.n); c.n += k; st.n -= k; } });
+  for (let i = 0; i < openChest.length && st.n; i++) {
+    if (!openChest[i]) { const k = Math.min(max, st.n); openChest[i] = { ...st, n: k }; st.n -= k; }
+  }
+  return st.n;
 }
 
 // in the plain inventory, shift click sends things from the bag to the hotbar
@@ -4846,7 +4879,16 @@ function openUI(kind, st) {
 }
 function closeUI() {
   if (!ui) return;
-  // anything on the cursor or still on the crafting grid goes back in the bag
+  // anything on the cursor or still on the crafting grid goes back in the bag.
+  // closing a chest, what's on the cursor that won't fit in the bag goes back
+  // in the chest instead of on the floor (only if the chest is full too does
+  // it end up at your feet)
+  if (ui === 'chest' && heldStack) {
+    const st = heldStack, k = Math.min(st.n, roomFor(st));
+    if (k) { if (maxStack(st.id) === 1) addStack({ ...st }); else addItem(st.id, k); }
+    st.n -= k;
+    heldStack = st.n > 0 && intoChest(st) > 0 ? st : null;
+  }
   const back = [heldStack, ...craftGrid];
   heldStack = null;
   craftGrid.fill(null);
@@ -4972,21 +5014,21 @@ function renderVitals() {
   let hearts = '';
   for (let i = 0; i < 5; i++) {
     const f = clamp(vitals.hp - i, 0, 1);
-    hearts += `<i style="background-image:url(${HEART.empty})"><b style="width:${(f * 100).toFixed(2)}%;background-image:url(${HEART.full})"></b></i>`;
+    hearts += `<i style="background-image:url(${HEART.empty})"><b style="width:${iconFill(f).toFixed(2)}%;background-image:url(${HEART.full})"></b></i>`;
   }
   $('#hearts').innerHTML = hearts;
-  // the armor bar: each icon fills with steel for the first 5 points, then the
-  // shinier runs lay over the top of it, like minecraft's extra heart rows
-  const pts = armorPoints(), tier = pts > 10 ? 2 : pts > 5 ? 1 : 0;
+  // the armor bar: five icons, 20% of every hit blocked per icon (see
+  // armorPoints)
+  const pts = armorPoints();
   let plates = '';
   for (let i = 0; i < 5; i++) {
-    const layer = (k, img) => { const f = clamp(pts - k * 5 - i, 0, 1); return f > 0 ? `<b style="width:${(f * 100).toFixed(2)}%;background-image:url(${img})"></b>` : ''; };
-    plates += `<i style="background-image:url(${ARMOR_PT.empty})">${layer(0, ARMOR_PT.steel)}${layer(1, ARMOR_PT.reinforced)}${layer(2, ARMOR_PT.mythic)}</i>`;
+    const f = clamp(pts - i, 0, 1);
+    plates += `<i style="background-image:url(${ARMOR_PT.empty})">${f > 0 ? `<b style="width:${iconFill(f).toFixed(2)}%;background-image:url(${ARMOR_PT.steel})"></b>` : ''}</i>`;
   }
   const bar = $('#armor-bar');
   bar.innerHTML = plates;
-  bar.className = `armor-bar${tier ? ` is-tier${tier}` : ''}`;
-  bar.setAttribute('aria-label', `Armor ${pts.toFixed(2)} points, blocks ${Math.round(armorBlock() * 100)}% of every hit`);
+  bar.className = 'armor-bar';
+  bar.setAttribute('aria-label', `Armor blocks ${Math.round(armorBlock() * 100)}% of every hit`);
   $('#hearts').setAttribute('aria-label', `Health ${vitals.hp.toFixed(2)} of ${vitals.max}`);
   // saturation stays hidden, like minecraft's
   $('#hunger').innerHTML = `<span class="hunger-icons">${row(vitals.hunger, DRUM)}</span>`;

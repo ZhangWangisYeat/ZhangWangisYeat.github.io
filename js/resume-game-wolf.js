@@ -884,7 +884,9 @@ function updateTails(dt) {
   for (let i = tails.length - 1; i >= 0; i--) {
     const T = tails[i];
     if (T.back) {
-      let n = Math.ceil((560 * dt) / 3);
+      // reeling back in, quicker and quicker
+      T.backT = (T.backT || 0) + dt;
+      let n = Math.ceil(((260 + 900 * T.backT) * dt) / 3);
       while (n-- > 0 && T.path.length > 1) T.path.pop();
       [T.x, T.y] = T.path[T.path.length - 1];
       if (T.path.length <= 1) tails.splice(i, 1);
@@ -902,7 +904,8 @@ function updateTails(dt) {
         sfx.snap();
       }
     } else if ((T.strike += dt) > WOLF.tails.strikeLife) { T.back = true; continue; }
-    const sp = T.strike === null ? WOLF.tails.speed : WOLF.tails.strikeSpeed;
+    // (it uncoils: a moment to get up to speed rather than starting at full tilt)
+    const sp = T.strike === null ? WOLF.tails.speed * Math.min(1, 0.35 + T.age / 0.2) : WOLF.tails.strikeSpeed;
     T.x += Math.cos(T.a) * sp * dt;
     T.y += Math.sin(T.a) * sp * dt;
     const last = T.path[T.path.length - 1];
@@ -1222,6 +1225,66 @@ function drawChain(toX, toY, pts, ore, glow) {
   const [tx, ty] = pts[n - 1], [px, py] = pts[Math.max(0, n - 2)], a = Math.atan2(ty - py, tx - px);
   for (let s = 0; s < 5; s++) pxDisc(toX, toY, tx + Math.cos(a) * s, ty + Math.sin(a) * s, 1.8 - s * 0.35, s < 2 ? P.lt : P.hi);
 }
+// a tail that's out after you, drawn smooth rather than as a chain of pixel
+// beads (alex found those jagged): the path it's flown, rounded off (two
+// passes of corner cutting), with a gentle wave running down it so it
+// slithers, then stroked with round ends, thin at her, full a third of the
+// way out and tapering to a point: a dark edge, the ore's colour, a lit
+// stripe down its top, and a bright crystal tip. it glows while it strikes.
+function smoothPath(pts) {
+  let p = pts;
+  for (let k = 0; k < 2 && p.length > 2; k++) {
+    const q = [p[0]];
+    for (let i = 0; i < p.length - 1; i++) {
+      const [ax, ay] = p[i], [bx, by] = p[i + 1];
+      q.push([ax * 0.75 + bx * 0.25, ay * 0.75 + by * 0.25], [ax * 0.25 + bx * 0.75, ay * 0.25 + by * 0.75]);
+    }
+    q.push(p[p.length - 1]);
+    p = q;
+  }
+  return p;
+}
+function drawSmoothTail(toX, toY, raw, ore, glow, t) {
+  const P = ORE_PAL[ore], pts = smoothPath(raw), n = pts.length;
+  if (n < 2) return;
+  const rad = u => Math.max(0.6, 1.9 + 1.9 * Math.sin(Math.PI * u * 0.85) - 2 * u * u);
+  // the wave, sideways to the tail, strongest in the middle and still at both ends
+  const at = i => {
+    const u = i / (n - 1), [x, y] = pts[i], [px, py] = pts[Math.max(0, i - 1)], [nx, ny] = pts[Math.min(n - 1, i + 1)];
+    const dx = nx - px, dy = ny - py, l = Math.hypot(dx, dy) || 1, w = reduceMotion ? 0 : Math.sin(i * 0.18 - t / 70) * 1.6 * Math.sin(Math.PI * u);
+    return [toX(x - (dy / l) * w), toY(y + (dx / l) * w), u];
+  };
+  const P2 = pts.map((_, i) => at(i));
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const pass = (col, widthOf, dy = 0) => {
+    ctx.strokeStyle = col;
+    for (let i = 0; i < n - 1; i++) {
+      const [ax, ay, u] = P2[i], [bx, by] = P2[i + 1];
+      ctx.lineWidth = Math.max(1, widthOf(u) * S);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay + dy * S);
+      ctx.lineTo(bx, by + dy * S);
+      ctx.stroke();
+    }
+  };
+  if (glow) { ctx.shadowColor = `rgba(${P.rgb},0.9)`; ctx.shadowBlur = 10 * S; }
+  pass(P.out, u => rad(u) * 2 + 2);
+  ctx.shadowBlur = 0;
+  pass(glow ? P.lt : P.md, u => rad(u) * 2);
+  pass(glow ? P.hi : P.lt, u => rad(u) * 0.8, -0.6);
+  // the crystal point on the end
+  const [tx, ty] = P2[n - 1], [qx, qy] = P2[Math.max(0, n - 4)], a = Math.atan2(ty - qy, tx - qx);
+  ctx.fillStyle = P.hi;
+  ctx.beginPath();
+  ctx.moveTo(tx + Math.cos(a) * 5 * S, ty + Math.sin(a) * 5 * S);
+  ctx.lineTo(tx + Math.cos(a + 2.2) * 2 * S, ty + Math.sin(a + 2.2) * 2 * S);
+  ctx.lineTo(tx + Math.cos(a - 2.2) * 2 * S, ty + Math.sin(a - 2.2) * 2 * S);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
 // her seven tails fanned out behind her, curling up and swaying, minus any
 // that are out after you. the next one to go glows.
 function drawRestTails(c, toX, toY, t, pose) {
@@ -1438,7 +1501,7 @@ function wolfOverlay(toX, toY, t) {
   });
   tails.forEach(T => {
     const r = tailRoot(c), pts = [[r.x, r.y], ...T.path.slice(1)];
-    if (pts.length > 1) drawChain(toX, toY, pts, T.ore, T.strike !== null && !T.back);
+    if (pts.length > 1) drawSmoothTail(toX, toY, pts, T.ore, T.strike !== null && !T.back, t);
   });
   const ripple = (x, y) => {
     for (let k = 0; k < 3; k++) {

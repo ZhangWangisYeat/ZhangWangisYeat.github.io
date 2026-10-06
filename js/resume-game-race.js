@@ -732,7 +732,7 @@ const raceRoom = {
   door: Math.floor(track.xs[0] / TILE),
   // the walls (checked at your feet, like any other room), the gems and rocks
   // in the way, and nothing past the door until it's open
-  blocked: (x, y) => [[-4, -3], [3, -3], [-4, 0], [3, 0]].some(([dx, dy]) => raceSolid(x + dx, y + dy)) || (!DQ.doorOpen && y < DOOR_Y + 10)
+  blocked: (x, y) => [[-4, -3], [3, -3], [-4, 0], [3, 0]].some(([dx, dy]) => raceSolid(x + dx, y + dy)) || (!DQ.doorOpen && y < DOOR_Y + 10) || y > RACE_H - 10
     || obstacles.some(o => o.solid && !o.thing.gone && Math.abs(x - o.x) < 20 && Math.hypot(x - o.x, y - o.y) < o.r + 3),
   things: [], glows: []
 };
@@ -828,9 +828,15 @@ const HATCH_AT = (() => {
 })();
 // (and none of it is there at all until you've beaten darryl, alex: no way
 // out of the tunnel's far end before you've earned it)
-const hatchThing = { flat: true, hatch: true, x: HATCH_AT[0] * TILE + 8, y: HATCH_AT[1] * TILE + 14, frames: [HATCH_ART[DQ.hatch ? 1 : 0]], gone: !DQ.won };
+const hatchThing = { flat: true, hatch: true, x: HATCH_AT[0] * TILE + 8, y: HATCH_AT[1] * TILE + 14, frames: [HATCH_ART[1]], gone: !DQ.hatch };
+// (until then there's nothing there but a rock sitting on it, which is what
+// you shove aside the first time you climb out, see tickEmerge; after that it
+// sits to one side)
+const hatchRock = { x: hatchThing.x + (DQ.hatch ? 20 : 0), y: hatchThing.y + (DQ.hatch ? 2 : 0), frames: [BOULDERS[1]] };
+things.push(hatchRock);
+if (!DQ.hatch) extraSolid.add(idx(HATCH_AT[0], HATCH_AT[1]));
 things.push(hatchThing);
-const hatchGlow = { x: hatchThing.x, y: hatchThing.y - 10, rgb: '255,150,60', rad: 1.6, flicker: true, strength: 0.2, off: !DQ.hatch || !DQ.won };
+const hatchGlow = { x: hatchThing.x, y: hatchThing.y - 10, rgb: '255,150,60', rad: 1.6, flicker: true, strength: 0.2, off: !DQ.hatch };
 glows.push(hatchGlow);
 vaultRoom.outside = { x: hatchThing.x, y: hatchThing.y };
 vaultRoom.exit = { x: hatchThing.x, y: hatchThing.y + 28 };
@@ -1604,13 +1610,16 @@ function walkDarryl(x, y, speed, then) { Object.assign(darryl, { state: 'walk', 
 function raceTick(dt) {
   syncShaft();
   tickLift(dt);
+  // stepping down onto the cage at the bottom of the track takes you back up
+  if (room === raceRoom && !lift.dir && !race.riding && !player.dead && Math.abs(player.x - CAGE.x) < 12 && player.y > RACE_H - 22
+    && (keys.has('KeyS') || keys.has('ArrowDown'))) startCage('depart');
   tickWhistle(dt);
   // the "shift | hop out" chip in the hud (with the map and controls chips,
   // alex: it used to be a label stuck under the cart) while you can hop out
   const canHop = room === raceRoom && race.riding && (race.phase === 'free' || carts.you.fin);
   if (canHop !== hopChip) { hopChip = canHop; document.body.classList.toggle('can-hop', canHop); }
-  hatchThing.gone = !DQ.won;
-  hatchGlow.off = !DQ.won || !DQ.hatch;
+  if (!emerge) { hatchThing.gone = !DQ.hatch; hatchGlow.off = !DQ.hatch; }
+  if (emerge) tickEmerge(dt);
   if (helpOpen) { tickHelpDemo(dt); return; }
   tickTalk(dt);
   if (room === vaultRoom) { vaultTick(dt); return; }
@@ -1879,15 +1888,13 @@ function vaultTick(dt) {
   if (Math.abs(player.x - 36) < 9 && player.y < 40 && (keys.has('KeyW') || keys.has('ArrowUp'))) {
     keys.delete('KeyW');
     keys.delete('ArrowUp');
-    // up the ladder and out through the hatch, which stays open from now on
-    if (!DQ.hatch) {
-      DQ.hatch = true;
-      hatchThing.frames = [HATCH_ART[1]];
-      hatchGlow.off = false;
-      markDirty();
-    }
+    // up the ladder and out through the hatch, which stays open from now on.
+    // the first time, there's a rock on top of it to shove out of the way
+    const first = !DQ.hatch;
+    if (first) { DQ.hatch = true; markDirty(); }
     playLeaveRoom();
     sfx.creak();
+    if (first) startEmerge();
   }
 }
 
@@ -1895,7 +1902,8 @@ function raceEnter(r) {
   if (r === raceRoom) {
     if (DQ.won) resetFree(); else resetRace();
     showRemains();
-    player.y = r.h - 20;
+    player.x = CAGE.x;
+    player.y = CAGE.y - 14;
     if (!DQ.seen) {
       DQ.seen = true;
       toast('Underground', 'An old mine shaft', 'Someone is whistling down here...');
@@ -1921,7 +1929,7 @@ function raceLeave(r, quiet) {
   race.riding = false;
   if (DQ.won) resetFree(); else resetRace();
 }
-function raceHolds() { return !!lift.dir || !!talk || race.riding || !!race.judge || !!race.poof || !!door.seq || helpOpen || (room === raceRoom && darryl.state === 'walk' && race.phase === 'over'); }
+function raceHolds() { return !!lift.dir || !!emerge || !!talk || race.riding || !!race.judge || !!race.poof || !!door.seq || helpOpen || (room === raceRoom && darryl.state === 'walk' && race.phase === 'over'); }
 function raceKey(e) {
   if (helpOpen) {
     if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') { e.preventDefault(); closeHelp(); }
@@ -2067,7 +2075,7 @@ function drawRider(c, toX, toY, dy) {
 // turned to bones you're a skeleton (rattling, then a heap)
 function playDrawPlayer(toX, toY, t) {
   // riding the hoist you're drawn on the platform, see drawLift
-  if (lift.dir && !lift.drawing && !room) return true;
+  if ((lift.dir || (emerge && emerge.t < EMERGE.out)) && !lift.drawing) return true;
   if (race.riding && room === raceRoom) return true;
   if (!player.skeleton) return false;
   const pile = player.skeleton === 'pile';
@@ -2085,6 +2093,8 @@ function playDrawPlayer(toX, toY, t) {
 // zapping you, and your loot floating up into his hand
 function raceOverlay(toX, toY, t) {
   if (lift.dir && !room) { drawLift(toX, toY, t); return; }
+  if (lift.dir && room === raceRoom) { drawCage(toX, toY, t); return; }
+  if (emerge && !room) drawEmerge(toX, toY, t);
   if (room !== raceRoom) return;
   const fs = Math.max(16, 8 * Math.round((S * 5.3) / 8));
   ctx.font = `${fs}px Silkscreen, monospace`;
@@ -2485,9 +2495,10 @@ function tickLift(dt) {
   const sp = liftSpot();
   player.x = sp.x;
   if (Math.random() < dt * 10) burst(sp.x + (Math.random() - 0.5) * 20, sp.y + 4, '120,100,80', 1);
+  if (lift.dir === 'arrive' || lift.dir === 'depart') { tickCage(); return; }
   if (lift.dir === 'down') {
     player.y = sp.y;
-    if (lift.t >= LIFT_DOWN) { lift.dir = null; shaftThing.frames = [SHAFT_ART[0]]; enterRoom(raceRoom); }
+    if (lift.t >= LIFT_DOWN) { lift.dir = null; shaftThing.frames = [SHAFT_ART[0]]; enterRoom(raceRoom); startCage('arrive'); }
     return;
   }
   // coming up: the platform rises, then you step off it towards the camera
@@ -2499,7 +2510,8 @@ function drawLift(toX, toY, t) {
   const x0 = sp.left + H0.x0 + 1, x1 = sp.left + H0.x1, lip = sp.top + H0.y1, py = sp.top + LIFT_TOP + d;
   const px = (x, y, col) => { ctx.fillStyle = col; ctx.fillRect(toX(x), toY(y), S, S); };
   // the rope from the pulley down to the platform's yoke
-  [LIFT_PULLEY.x - 4, LIFT_PULLEY.x + 4].forEach(rx => { for (let y = sp.top + LIFT_PULLEY.y + 1; y <= py - 4; y++) px(Math.round(sp.left + rx), y, y % 3 ? '#c9b78f' : '#a8946a'); });
+  // (only as far as the hole's front lip: below that it's under the floor)
+  [LIFT_PULLEY.x - 4, LIFT_PULLEY.x + 4].forEach(rx => { for (let y = sp.top + LIFT_PULLEY.y + 1; y <= Math.min(py - 4, lip); y++) px(Math.round(sp.left + rx), y, y % 3 ? '#c9b78f' : '#a8946a'); });
   ctx.save();
   // everything below the front lip of the hole is out of sight
   ctx.beginPath();
@@ -2522,4 +2534,127 @@ function drawLift(toX, toY, t) {
   // and the screen goes black at the bottom (and comes back on the way up)
   const fade = lift.dir === 'down' ? (lift.t - (LIFT_DOWN - 0.45)) / 0.45 : 1 - lift.t / 0.4;
   if (fade > 0) { ctx.fillStyle = `rgba(0,0,0,${Math.min(1, fade)})`; ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height); }
+}
+
+// the bottom of the hoist, at the foot of the track (alex: you shouldn't just
+// appear in front of darryl): a timber cage against the bottom of the tunnel,
+// the shaft rising out of it into the dark, ropes coming down to a plank
+// platform. you come down in it ('arrive': the platform drops into view from
+// above with you on it, and you step off), and going back you step onto it
+// facing down ('depart': up it goes out of sight, then you're coming up out of
+// the hole outside). drawn flat so you stand in front of it.
+const CAGE_W = 40, CAGE_H = 64;
+const CAGE = { x: Math.floor(track.xs[0] / TILE) * TILE + 8, y: RACE_H - 12 };
+function makeCage() {
+  const w = CAGE_W, h = CAGE_H, G = pixelGrid(w, h);
+  // the shaft going up into the dark, cribbed with timber
+  for (let y = 0; y < h - 8; y++) for (let x = 5; x <= w - 6; x++) {
+    const crib = y % 8 === 3, dark = y / (h - 8);
+    G.set(x, y, crib ? (dark < 0.4 ? '#3a2614' : '#6b4422') : dark < 0.3 ? '#050404' : dark < 0.6 ? '#0b0807' : '#140f0b');
+  }
+  // the posts either side, and a beam across the bottom
+  [[2, 4], [w - 5, w - 3]].forEach(([a, b]) => { for (let y = 0; y < h; y++) for (let x = a; x <= b; x++) G.set(x, y, x === a ? '#c48a4f' : x === b ? '#6b4422' : '#9a6233'); });
+  [[3, 14], [w - 4, 14], [3, 40], [w - 4, 40]].forEach(([x, y]) => G.set(x, y, '#5a5a62'));
+  // the platform at the bottom, where you stand
+  for (let y = h - 9; y <= h - 3; y++) for (let x = 5; x <= w - 6; x++) G.set(x, y, y === h - 9 ? '#d29a5c' : y === h - 3 ? '#5e3a1e' : (x - 5) % 5 === 0 ? '#6b4422' : y === h - 6 ? '#7a7a84' : '#a8703f');
+  // the ropes, down out of the dark to the yoke
+  for (let x = 10; x <= w - 11; x++) G.set(x, h - 13, '#5a5a62');
+  [[10], [w - 11]].forEach(([x]) => { for (let y = h - 13; y <= h - 9; y++) G.set(x, y, '#5a5a62'); });
+  [14, w - 15].forEach(x => { for (let y = 0; y <= h - 13; y++) G.set(x, y, y % 3 ? '#c9b78f' : '#a8946a'); });
+  return G.outline(() => '#14110e').canvas();
+}
+const CAGE_ART = makeCage();
+const cageThing = { flat: true, x: CAGE.x, y: CAGE.y + 8, frames: [CAGE_ART] };
+raceRoom.things.push(cageThing);
+raceRoom.glows.push({ x: CAGE.x, y: CAGE.y - 20, rgb: '255,220,160', rad: 2.2, flicker: true, strength: 0.18 });
+const CAGE_TIME = 1.5, CAGE_DROP = 54;
+function startCage(dir) {
+  Object.assign(lift, { dir, t: 0 });
+  Object.assign(player, { x: CAGE.x, y: CAGE.y, face: 'down', moving: false, path: null });
+  sfx.creak();
+}
+function tickCage() {
+  player.x = CAGE.x;
+  if (lift.dir === 'arrive') {
+    // down it comes, then you step off it up the track
+    player.y = CAGE.y - Math.max(0, Math.min(14, (lift.t - CAGE_TIME) * 60));
+    if (lift.t >= CAGE_TIME + 0.25) lift.dir = null;
+    return;
+  }
+  player.y = CAGE.y;
+  if (lift.t >= CAGE_TIME) { lift.dir = null; playLeaveRoom(); }
+}
+// how far above the floor the platform is
+const cageLift = () => {
+  const u = Math.min(1, lift.t / CAGE_TIME);
+  return lift.dir === 'arrive' ? CAGE_DROP * (1 - u) ** 2 : CAGE_DROP * u * u;
+};
+function drawCage(toX, toY, t) {
+  const top = cageThing.y - CAGE_H + 1, left = CAGE.x - CAGE_W / 2, up = cageLift(), py = CAGE.y - 4 - up;
+  ctx.save();
+  // anything above the top of the cage is up the shaft, out of sight
+  ctx.beginPath();
+  ctx.rect(0, toY(top), ctx.canvas.width, ctx.canvas.height);
+  ctx.clip();
+  ctx.fillStyle = '#a8703f';
+  ctx.fillRect(toX(left + 5), toY(py), (CAGE_W - 10) * S, 5 * S);
+  ctx.fillStyle = '#d29a5c';
+  ctx.fillRect(toX(left + 5), toY(py), (CAGE_W - 10) * S, S);
+  lift.drawing = true;
+  const y0 = player.y;
+  player.y = y0 - up;
+  drawPlayer(toX, toY, t);
+  player.y = y0;
+  lift.drawing = false;
+  ctx.restore();
+  const fade = lift.dir === 'arrive' ? 1 - lift.t / 0.4 : (lift.t - (CAGE_TIME - 0.4)) / 0.4;
+  if (fade > 0) { ctx.fillStyle = `rgba(0,0,0,${Math.min(1, fade)})`; ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height); }
+}
+
+// the first time you climb out of the vault there's a rock on top of the
+// hatch: it shakes as you push from underneath, dust spills out round it, it
+// rolls aside, the hatch is there under it, and you climb up out of it
+const EMERGE = { shove: 0.9, roll: 1.3, rise: 1.3, out: 2, done: 2.2 };
+let emerge = null;
+function startEmerge() {
+  emerge = { t: 0 };
+  hatchThing.gone = true;
+  hatchGlow.off = true;
+  Object.assign(player, { x: hatchThing.x, y: hatchThing.y - 4, face: 'down', moving: false, path: null });
+  sfx.rumble();
+}
+function tickEmerge(dt) {
+  const e = emerge, was = e.t;
+  e.t += dt;
+  player.x = hatchThing.x;
+  if (e.t < EMERGE.shove) {
+    hatchRock.shake = 1 + e.t * 2;
+    if (Math.random() < dt * 20) burst(hatchRock.x + (Math.random() - 0.5) * 22, hatchRock.y - 2, '120,100,80', 1);
+  } else if (e.t < EMERGE.roll) {
+    if (was < EMERGE.shove) { hatchRock.shake = 0; sfx.crunch(); burst(hatchRock.x, hatchRock.y - 6, '140,140,140', 16); hatchThing.gone = false; hatchGlow.off = false; extraSolid.delete(idx(HATCH_AT[0], HATCH_AT[1])); }
+    const u = (e.t - EMERGE.shove) / (EMERGE.roll - EMERGE.shove);
+    hatchRock.x = hatchThing.x + 20 * (1 - (1 - u) ** 2);
+    hatchRock.y = hatchThing.y + 2 * u;
+  } else {
+    hatchRock.x = hatchThing.x + 20;
+    hatchRock.y = hatchThing.y + 2;
+  }
+  player.y = e.t < EMERGE.out ? hatchThing.y - 4 : hatchThing.y - 4 + Math.min(24, (e.t - EMERGE.out) * 120);
+  if (e.t >= EMERGE.done) { emerge = null; player.y = vaultRoom.exit.y; }
+}
+// you, climbing up out of the hatch (below its lip you're still down the hole)
+function drawEmerge(toX, toY, t) {
+  if (emerge.t < EMERGE.rise || emerge.t >= EMERGE.out) return;
+  const u = (emerge.t - EMERGE.rise) / (EMERGE.out - EMERGE.rise), sunk = 18 * (1 - u) ** 2;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, ctx.canvas.width, toY(hatchThing.y - 5));
+  ctx.clip();
+  lift.drawing = true;
+  const y0 = player.y;
+  player.y = y0 + sunk;
+  drawPlayer(toX, toY, t);
+  player.y = y0;
+  lift.drawing = false;
+  ctx.restore();
 }

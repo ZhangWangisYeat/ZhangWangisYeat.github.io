@@ -3794,7 +3794,9 @@ function updateCreature(c, dt) {
   if (def.burns) burnInDaylight(c, dt);
   if (c.dead) return;
   // once it's day, the night's monsters quietly leave when you can't see them
-  if (def.nightly && nightAmount() < 0.35 && Math.hypot(c.x - player.x, c.y - player.y) > 26 * TILE) { c.despawn = true; return; }
+  // (and the dark's monsters out in daylight, or a long way off anywhere,
+  // since the mines' zombies would otherwise fill the cap for good)
+  if (def.nightly && Math.hypot(c.x - player.x, c.y - player.y) > (inDaylight(c) ? 26 : 40) * TILE) { c.despawn = true; return; }
   c.hurtT = Math.max(0, c.hurtT - dt);
   c.cd -= dt;
   c.sinceHit += dt;
@@ -3926,8 +3928,11 @@ const inWater = o => !(o.room || (o === player && room)) && tiles[idx(clamp(Math
 
 // zombies catch fire in daylight (unless they're standing in water) and lose
 // half a heart a second until they're gone
+// daylight: daytime, and out in the open. the mines never get any, so a zombie
+// down there doesn't burn at any hour, and a torch isn't daylight either.
+const inDaylight = c => nightAmount() < 0.35 && !inMines(Math.floor(c.x / TILE), Math.floor(c.y / TILE));
 function burnInDaylight(c, dt) {
-  c.burning = nightAmount() < 0.35 && !inWater(c);
+  c.burning = inDaylight(c) && !inWater(c);
   if (!c.burning) { c.burnT = 0; return; }
   c.burnT = (c.burnT || 0) + dt;
   if (!reduceMotion && Math.random() < dt * 14) {
@@ -3963,8 +3968,20 @@ function shooterChase(c, dt, d, dx, dy, steer, walk) {
 // bosses (when they exist) don't count toward the cap.
 const HOSTILE_CAP = 5;
 let hostileT = 4;
+// complete darkness (alex: zombies only come out where it's pitch dark): out
+// in the open at night, or in the mines at any hour (no daylight gets down
+// there), and nowhere near a light, so not by a torch, the campfire, a lit
+// landmark or a digger's sparks. and never near you, since you carry a light
+// too (and they'd pop into existence in front of you).
+function pitchDark(tx, ty) {
+  if (!inMines(tx, ty) && nightAmount() < 0.5) return false;
+  const x = tx * TILE + 8, y = ty * TILE + 8;
+  if (Math.hypot(x - player.x, y - player.y) < 12 * TILE) return false;
+  return !glows.some(gl => !gl.off && Math.hypot(gl.x - x, gl.y - y) < (gl.rad + 1.5) * TILE);
+}
 function updateNightSpawns(dt) {
-  if (nightAmount() < 0.5) { hostileT = 4; return; }
+  const underground = regionAt(player.x / TILE, player.y / TILE) === 'mines';
+  if (nightAmount() < 0.5 && !underground) { hostileT = 4; return; }
   hostileT -= dt;
   if (hostileT > 0) return;
   hostileT = 7 + Math.random() * 6;
@@ -3975,9 +3992,9 @@ function updateNightSpawns(dt) {
     const tx = Math.floor(px + Math.cos(a) * d), ty = Math.floor(py + Math.sin(a) * d);
     if (!inside(tx, ty) || solidTile(tx, ty) || !reach[idx(tx, ty)] || tiles[idx(tx, ty)] === T.WATER) continue;
     const where = regionAt(tx + 0.5, ty + 0.5);
-    if (where === 'camp') continue;
+    if (where === 'camp' || !pitchDark(tx, ty)) continue;
     // (two in three of the meadows' night spawns are forest guardians, it was
-    // two in five; alex wanted more of them about)
+    // two in five; alex wanted more of them about. the mines only get zombies.)
     spawnHostile(where === 'meadows' && Math.random() < 0.65 ? 'guardian' : 'zombie', tx, ty);
     return;
   }

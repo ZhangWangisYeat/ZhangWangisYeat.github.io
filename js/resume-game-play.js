@@ -1355,7 +1355,7 @@ function fixFoundIds() {
 }
 function saveNow() {
   if (resetting) return;
-  store.write(SAVE_KEY, { v: 3, inv, quest, ground: ground.map(g => ({ st: g.st, x: g.x, y: g.y, room: g.room, age: g.age })), hp: vitals.hp, hunger: vitals.hunger, sat: vitals.sat, furnace: furnaceState, chest: chestSlots, clock });
+  store.write(SAVE_KEY, { v: 3, inv, quest, ground: ground.map(g => ({ st: g.st, x: g.x, y: g.y, room: g.room, age: g.age, stuck: g.stuck })), hp: vitals.hp, hunger: vitals.hunger, sat: vitals.sat, furnace: furnaceState, chest: chestSlots, clock });
   saveDirty = false;
   lastSave = performance.now();
 }
@@ -2090,7 +2090,7 @@ function dropStack(st, x, y, r, wait = 1, from = null) {
   // (something thrown lands first and joins a pile there when it lands, see
   // tickGround, so it gets its arc even when it's going onto a pile)
   if (max > 1 && !from) {
-    const pile = ground.find(g => g.room === rid && g.st.id === st.id && g.st.n < max && Math.hypot(g.x - x, g.y - y) < 10);
+    const pile = ground.find(g => g.room === rid && !g.stuck && g.st.id === st.id && g.st.n < max && Math.hypot(g.x - x, g.y - y) < 10);
     if (pile) {
       const k = Math.min(max - pile.st.n, st.n);
       pile.st.n += k;
@@ -2133,7 +2133,7 @@ function tickGround(dt) {
         g.fly = null;
         burst(g.x, g.y - 2, '150,140,120', 4);
         sfx.chip();
-        const max = maxStack(g.st.id), pile = max > 1 && ground.find(o => o !== g && !o.fly && o.room === g.room && o.st.id === g.st.id && o.st.n < max && Math.hypot(o.x - g.x, o.y - g.y) < 10);
+        const max = maxStack(g.st.id), pile = max > 1 && ground.find(o => o !== g && !o.fly && !o.stuck && o.room === g.room && o.st.id === g.st.id && o.st.n < max && Math.hypot(o.x - g.x, o.y - g.y) < 10);
         if (pile) {
           const k = Math.min(max - pile.st.n, g.st.n);
           pile.st.n += k;
@@ -2177,12 +2177,34 @@ function drawGround(o, toX, toY, t) {
   }
   // blinking out in its last 15 seconds
   if (!special(g.st) && GROUND_LIFE - g.age < 15 && Math.floor(t / 150) % 2) return;
+  if (g.stuck) { drawStuckArrow(g, toX, toY); return; }
   const bob = reduceMotion ? 0 : Math.round(Math.sin(t / 350 + g.x) * 1.5);
   ctx.fillStyle = 'rgba(0,0,0,0.3)';
   ctx.fillRect(toX(g.x - 5), toY(g.y - 1), 10 * S, 2 * S);
   // a pile shows a second one peeking out behind
   if (g.st.n > 1) ctx.drawImage(img, toX(g.x - 4), toY(g.y - 15 + bob), 12 * S, 12 * S);
   ctx.drawImage(img, toX(g.x - 6), toY(g.y - 13 + bob), 12 * S, 12 * S);
+}
+// an arrow stuck in place: its head buried, the shaft and fletching sticking
+// back out the way it came. in the floor the shaft rises out of the ground at
+// a slant; in a wall it sticks out at the height it hit, with its shadow on
+// the floor below.
+function drawStuckArrow(g, toX, toY) {
+  const { a, wall, z } = g.stuck, ux = Math.cos(a), uy = Math.sin(a), tip = MAT_PAL[g.st.id.replace(/-arrow$/, '')][2];
+  const P = (x, y, col) => { ctx.fillStyle = col; ctx.fillRect(toX(x), toY(y), S, S); };
+  if (wall) {
+    for (let k = 1; k <= 6; k++) P(g.x - ux * k, g.y - uy * k - 1, 'rgba(0,0,0,0.22)');
+    P(g.x, g.y - z, tip);
+    for (let k = 1; k <= 7; k++) P(g.x - ux * k, g.y - z - uy * k, k >= 6 ? '#f2efe8' : '#c48a4f');
+    // (the feathers stick out either side, so it reads at a glance)
+    [6, 7].forEach(k => { P(g.x - ux * k - uy, g.y - z - uy * k + ux, '#d6d0c4'); P(g.x - ux * k + uy, g.y - z - uy * k - ux, '#d6d0c4'); });
+    return;
+  }
+  P(g.x - 1, g.y, '#3a2c20'); P(g.x, g.y, '#5a4532'); P(g.x + 1, g.y, '#3a2c20');
+  for (let k = 1; k <= 7; k++) P(g.x - ux * k * 0.6, g.y - uy * k * 0.6 + 1, 'rgba(0,0,0,0.18)');
+  for (let k = 0; k <= 7; k++) P(g.x - ux * k * 0.6, g.y - uy * k * 0.6 - k * 0.9, k >= 6 ? '#f2efe8' : k === 0 ? '#8a5a32' : '#c48a4f');
+  // feathers either side of the end of the shaft
+  [6, 7].forEach(k => { const fx = g.x - ux * k * 0.6, fy = g.y - uy * k * 0.6 - k * 0.9; P(fx - 1, fy, '#d6d0c4'); P(fx + 1, fy, '#d6d0c4'); });
 }
 function groundAt(m) {
   const here = room ? room.id : null;
@@ -3716,13 +3738,47 @@ function shoot(kind, x, y, a, speed, range, extra = {}) {
   projectiles.push({ kind, x, y, a, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, range, dist: 0, from: 'player', ...extra });
 }
 const pointIn = (p, b, pad) => p.x > b.x0 - pad && p.x < b.x1 + pad && p.y > b.y0 - pad && p.y < b.y1 + pad;
+// your arrows don't just vanish at the end of their range any more (alex: laws
+// of physics): past it they lose speed and drop, nose first, and stick in the
+// floor where they come down (it starts to drop ARROW_DROP px early, so it
+// comes down about where the bow's aim line ends). one that flies into a wall
+// sticks in the wall.
+// either way it stays there to be picked up (stickArrow). fall.z is how far
+// it's dropped below the height it was flying at.
+const ARROW_HEIGHT = 10, ARROW_GRAVITY = 700, ARROW_DRAG = 6, ARROW_DROP = 20;
 function updateProjectiles(dt) {
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i];
+    const arrow = p.kind === 'arrow' && p.from !== 'mob';
+    if (arrow && p.dist > p.range - ARROW_DROP && !p.fall) p.fall = { z: 0, vz: 0 };
+    if (p.fall) {
+      const drag = Math.max(0, 1 - dt * ARROW_DRAG);
+      p.vx *= drag; p.vy *= drag;
+      p.fall.vz += ARROW_GRAVITY * dt;
+      p.fall.z += p.fall.vz * dt;
+      p.y += p.fall.vz * dt;
+    }
     const sx = p.vx * dt, sy = p.vy * dt;
     p.x += sx; p.y += sy; p.dist += Math.hypot(sx, sy);
-    const wall = room ? room.blocked(p.x, p.y + 10) : solidTile(Math.floor(p.x / TILE), Math.floor((p.y + 10) / TILE));
-    if (p.dist > p.range || wall) {
+    // the floor right under it (an arrow that's dropping is that much lower)
+    const gy = p.y + ARROW_HEIGHT - (p.fall ? p.fall.z : 0);
+    const solidAt = (x, y) => (room ? room.blocked(x, y) : solidTile(Math.floor(x / TILE), Math.floor(y / TILE)));
+    const wall = solidAt(p.x, gy);
+    if (arrow && wall) {
+      // back out of the wall to the last spot it was clear, a pixel at a time
+      let x = p.x - sx, y = gy - sy;
+      const l = Math.hypot(sx, sy) || 1;
+      for (let k = 0; k < l && !solidAt(x + sx / l, y + sy / l); k++) { x += sx / l; y += sy / l; }
+      stickArrow(p, x, y, true);
+      projectiles.splice(i, 1);
+      continue;
+    }
+    if (arrow && p.fall && p.fall.z >= ARROW_HEIGHT) {
+      stickArrow(p, p.x, gy, false);
+      projectiles.splice(i, 1);
+      continue;
+    }
+    if ((!arrow && p.dist > p.range) || wall) {
       burst(p.x, p.y, p.kind === 'snow' ? '240,244,252' : '160,102,58', 4);
       projectiles.splice(i, 1);
       continue;
@@ -3742,6 +3798,23 @@ function updateProjectiles(dt) {
     else hurtCreature(c, Math.round(p.dmg * (1 + 0.15 * Math.min(1, p.dist / (ARROW_FULL * TILE))) * 100) / 100, p.a, 'arrow');
     projectiles.splice(i, 1);
   }
+}
+// an arrow that's come to rest, in the floor or in a wall. it's a pile on the
+// ground like anything else (walk over it to pick it up, it goes after five
+// minutes), just drawn stuck in place (stuck: which way it was flying, whether
+// it's in a wall, and how high up). one that comes down in water is gone.
+function stickArrow(p, x, y, inWall) {
+  const z = inWall ? Math.max(1, Math.round(ARROW_HEIGHT - (p.fall ? p.fall.z : 0))) : 0;
+  if (!room && !inWall && tiles[idx(clamp(Math.floor(x / TILE), 0, W - 1), clamp(Math.floor(y / TILE), 0, H - 1))] === T.WATER) {
+    burst(x, y - 2, '126,195,255', 6);
+    return;
+  }
+  const g = { st: { id: `${p.mat}-arrow`, n: 1 }, x, y, room: room ? room.id : null, age: 0, wait: 0.3, stuck: { a: Math.atan2(p.vy, p.vx), wall: inWall, z } };
+  ground.push(g);
+  groundThing(g);
+  burst(x, y - z, inWall ? '150,150,150' : '150,140,120', 4);
+  sfx.chip();
+  markDirty();
 }
 // snowballs never hurt anything (a flaming boss will be the exception), they
 // just shove it back a step, whatever it's doing. an ice boss shrugs them off.
@@ -5744,7 +5817,7 @@ function playRenderOverlay(toX, toY, t) {
   // things in flight, each with a little shadow on the ground under it
   if (shootsHere()) projectiles.forEach(p => {
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.fillRect(toX(p.x - 1), toY(p.y + 10), 2 * S, S);
+    ctx.fillRect(toX(p.x - 1), toY(p.y + 10 - (p.fall ? p.fall.z : 0)), 2 * S, S);
     if (p.kind === 'snow') {
       ctx.fillStyle = '#f4f8ff';
       ctx.fillRect(toX(p.x - 1), toY(p.y - 1), 3 * S, 3 * S);
@@ -5752,7 +5825,8 @@ function playRenderOverlay(toX, toY, t) {
       ctx.fillRect(toX(p.x), toY(p.y + 1), 2 * S, S);
       return;
     }
-    const ux = Math.cos(p.a), uy = Math.sin(p.a);
+    // (a dropping arrow tips nose down as it falls)
+    const fa = p.fall ? Math.atan2(p.vy + p.fall.vz, p.vx) : p.a, ux = Math.cos(fa), uy = Math.sin(fa);
     const tip = p.kind === 'arrow' ? MAT_PAL[p.mat][1] : '#7be05a';
     for (let k = -5; k <= 3; k++) {
       ctx.fillStyle = k >= 2 ? tip : k <= -4 ? (p.kind === 'arrow' ? '#f2efe8' : '#5e3a1c') : (p.kind === 'arrow' ? '#c48a4f' : '#8b4726');
@@ -6033,6 +6107,7 @@ document.addEventListener('DOMContentLoaded', () => savedGround.forEach(g => {
   const st = validStack(g && g.st);
   if (!st || (!(g.age < GROUND_LIFE) && !special(st)) || (g.room && !roomById(g.room))) return;
   const item = { st, x: +g.x, y: +g.y, room: g.room || null, age: +g.age || 0, wait: 0 };
+  if (g.stuck && typeof g.stuck === 'object' && ITEMS[st.id].arrow) item.stuck = { a: +g.stuck.a || 0, wall: !!g.stuck.wall, z: +g.stuck.z || 0 };
   ground.push(item);
   groundThing(item);
 }));

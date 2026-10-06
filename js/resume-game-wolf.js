@@ -41,7 +41,7 @@ const ORE_DROP = { gold: 'gold', stone: 'stone', marble: 'marble', iron: 'iron',
 // lattice phase runs out, lattice is how long you get to break all seven.
 const WOLF = {
   hp: 128, speed: 66, speedOpen: 84, keep: 4.6, backOff: 2.6,
-  windup: 0.62, windupOpen: 0.48, lunge: 340, lungeTime: 0.36, lungeDmg: 4, touchDmg: 1,
+  windup: 0.62, windupOpen: 0.48, lunge: 340, lungeTime: 0.27, lungeNear: 6, lungeFar: 3.5, touchDmg: 1,
   shellFirst: 20, shell: 30, lattice: 60,
   fling: { min: 4, max: 7, rx: 15, ry: 9, drop: 0.06 },
   // a tail chases you loosely (turn), then once it's within strikeAt it
@@ -512,6 +512,10 @@ const flung = [], tails = [], lattices = [];
 let meet = null, card = null, mourn = null, immuneT = 0, noteText = '', latBroken = 0;
 const FIGHTING = ['stalk', 'windup', 'lunge', 'dazed', 'recover', 'howl', 'tails', 'stagger'];
 const fighting = () => FIGHTING.includes(wolf.state);
+// her lunge hurts most up close: 6 hearts if it lands straight away, down to
+// 3.5 at the very end of its reach (alex), by how far she's dashed
+const LUNGE_REACH = WOLF.lunge * WOLF.lungeTime;
+const lungeDmg = c => WOLF.lungeNear - (WOLF.lungeNear - WOLF.lungeFar) * clamp(c.lungeDist / LUNGE_REACH, 0, 1);
 // she talks to you in your head: the same box as darryl's, in violet, with her
 // own voice (a soft shimmer of notes), and ripples coming off her while she does
 const WOLF_WHO = { name: WOLF_NAME, voice: () => sfx.mind(), at: () => wolf, cls: 'is-mind' };
@@ -903,7 +907,9 @@ function updateTails(dt) {
     T.y += Math.sin(T.a) * sp * dt;
     const last = T.path[T.path.length - 1];
     if (Math.hypot(T.x - last[0], T.y - last[1]) >= 3) T.path.push([T.x, T.y]);
-    if (wolfRoom.blocked(T.x, T.y + 8)) { T.back = true; burst(T.x, T.y, ORE_PAL[T.ore].rgb, 8); sfx.clang(); continue; }
+    const inWall = wolfSolid(T.x, T.y + 10);
+    if (!inWall) T.free = true;
+    else if (T.free) { T.back = true; burst(T.x, T.y, ORE_PAL[T.ore].rgb, 8); sfx.clang(); continue; }
     // (a tail that reaches you while you're still blinking from the last hit
     // carries on past)
     if (!player.dead && Math.hypot(T.x - player.x, T.y - (player.y - 10)) < 10 && hurtPlayer(TAIL_DMG[T.ore], T.x, T.y)) {
@@ -949,8 +955,8 @@ function updateWolf(c, dt) {
     if (l < 2) return;
     const bx = c.x, by = c.y;
     moveBody(c, (vx / l) * speed * dt, (vy / l) * speed * dt);
-    c.x = clamp(c.x, 40, wolfRoom.w - 40);
-    c.y = clamp(c.y, 66, wolfRoom.h - 22);
+    c.x = clamp(c.x, 34, wolfRoom.w - 34);
+    c.y = clamp(c.y, 36, wolfRoom.h - 22);
     c.moving = Math.hypot(c.x - bx, c.y - by) > speed * dt * 0.2;
     if (!c.moving) c.orbit = -c.orbit;
   };
@@ -983,19 +989,21 @@ function updateWolf(c, dt) {
       if (c.t >= (open ? WOLF.windupOpen : WOLF.windup)) {
         const l = Math.max(1, Math.hypot(player.x - c.x, player.y - c.y));
         c.lx = (player.x - c.x) / l; c.ly = (player.y - c.y) / l;
-        c.state = 'lunge'; c.t = 0;
+        c.state = 'lunge'; c.t = 0; c.lungeDist = 0;
         sfx.bite();
       }
       break;
     case 'lunge': {
       const bx = c.x, by = c.y;
       moveBody(c, c.lx * WOLF.lunge * dt, c.ly * WOLF.lunge * dt);
-      c.x = clamp(c.x, 40, wolfRoom.w - 40);
-      c.y = clamp(c.y, 66, wolfRoom.h - 22);
+      c.x = clamp(c.x, 34, wolfRoom.w - 34);
+      c.y = clamp(c.y, 36, wolfRoom.h - 22);
+      c.lungeDist += Math.hypot(c.x - bx, c.y - by);
       c.moving = true;
       c.flip = c.lx < 0;
       if (c.t > 0.05 && Math.hypot(c.x - bx, c.y - by) < WOLF.lunge * dt * 0.3) {
-        // straight into the wall
+        // straight into the wall (which doesn't save you if you're right there)
+        wallLunge(c, lungeDmg(c));
         c.state = 'dazed'; c.t = 0;
         addShake(3); sfx.clang();
         burst(c.x + c.lx * 30, c.y - 14, '230,226,250', 14);
@@ -1042,8 +1050,10 @@ function updateWolf(c, dt) {
       break;
   }
   // touching her hurts a little; her lunge hurts a lot
-  if (!player.dead && fighting() && c.state !== 'stagger' && overlap(playerBox(), creatureBox(c))) {
-    hurtPlayer(c.state === 'lunge' ? WOLF.lungeDmg : WOLF.touchDmg, c.x, c.y - 10);
+  // (not while she's crouched to spring: the brush of her body used to make
+  // you blink just long enough to shrug off the point blank lunge after it)
+  if (!player.dead && fighting() && c.state !== 'stagger' && c.state !== 'windup' && overlap(playerBox(), c.state === 'lunge' ? lungeBox(c, c.lx, c.ly, 6) : creatureBox(c))) {
+    hurtPlayer(c.state === 'lunge' ? lungeDmg(c) : WOLF.touchDmg, c.x, c.y - 10);
   }
   if (c.moving) c.anim += dt;
   const pulling = c.state === 'howl' && c.t < PULL.rise + (c.pullEnd || 1) - 0.25;

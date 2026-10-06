@@ -248,7 +248,7 @@ const CREATURES = {
   },
   moe: {
     name: 'Moe the Mole', boss: true, steady: true, hp: 90, speed: 36, knock: 0, h: 50, box: { w: 34, h: 26 },
-    windup: 0.7, lunge: { speed: 320, time: 0.32 }, dmg: 1, lungeDmg: 3, popDmg: 5, drillDmg: 4, regen: 0, rest: 'wait',
+    windup: 0.7, lunge: { speed: 320, time: 0.25 }, dmg: 1, lungeDmg: 3, popDmg: 5, drillDmg: 4, regen: 0, rest: 'wait',
     chip: '106,91,130', drops: []
   },
   // passive livestock: wander, graze, and run when you hit them
@@ -1377,9 +1377,20 @@ function addItem(id, n) {
       n -= st.n;
     }
   }
-  if (n > 0) toast('Bag full...', `${n} ${ITEMS[id].name} lost`, 'Make some room in your inventory (E)');
+  if (n > 0) overflow(makeStack(id, n));
   afterInventoryChange();
   return n;
+}
+// whatever doesn't fit in a full bag is never lost (alex): it's tossed out on
+// the ground at your feet, to pick up once you've made room
+let overflowT = -Infinity;
+function overflow(st) {
+  if (!st || !st.n) return;
+  dropStack(st, player.x + (Math.random() - 0.5) * 10, player.y + 6, room, 1.2, { x: player.x, y: player.y - 12 });
+  if (performance.now() - overflowT > 1500) {
+    overflowT = performance.now();
+    toast('Bag full...', `${ITEMS[st.id].name} dropped`, 'It\'s on the ground at your feet. Make some room (E)');
+  }
 }
 // put an existing stack back in the bag, keeping its durability
 function addStack(stack) {
@@ -1387,7 +1398,7 @@ function addStack(stack) {
   if (maxStack(stack.id) > 1) { addItem(stack.id, stack.n); return; }
   const free = inv.slots.findIndex(s => !s);
   if (free >= 0) { inv.slots[free] = stack; afterInventoryChange(); }
-  else toast('Bag full...', `${ITEMS[stack.id].name} lost`, 'Make some room in your inventory (E)');
+  else overflow(stack);
 }
 function afterInventoryChange() {
   checkRecipeUnlocks();
@@ -2560,6 +2571,8 @@ function updateMoe(c, dt) {
         c.state = 'dazed'; c.t = 0;
         addShake(3); sfx.clang();
         burst(hand.x + c.lx * 34, hand.y + c.ly * 34, '255,220,140', 14);
+        // a wall stopping the dash doesn't save you if you're right in front of it
+        wallLunge(c, def.lungeDmg);
         break;
       }
       if (c.t >= def.lunge.time) { c.state = 'recover'; c.t = 0; }
@@ -3300,6 +3313,16 @@ function creatureBox(c) {
   return { x0: c.x - b.w / 2, x1: c.x + b.w / 2, y0: c.y - b.h, y1: c.y };
 }
 const overlap = (a, b) => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+// a creature's box pushed out by ext px the way it's lunging (lx, ly)
+function lungeBox(c, lx, ly, ext) {
+  const b = creatureBox(c);
+  return { x0: b.x0 + Math.min(0, lx * ext), x1: b.x1 + Math.max(0, lx * ext), y0: b.y0 + Math.min(0, ly * ext), y1: b.y1 + Math.max(0, ly * ext) };
+}
+// a boss's dash cut short by a wall still lands on you if you're right there:
+// hugging a wall used to be somewhere their lunges couldn't reach (alex)
+function wallLunge(c, dmg) {
+  if (!player.dead && overlap(playerBox(), lungeBox(c, c.lx, c.ly, 14))) hurtPlayer(dmg, c.x, c.y - 10);
+}
 
 const aimOrigin = () => ({ x: player.x, y: player.y - 10 });
 function mouseWorld() {
@@ -4581,7 +4604,7 @@ function takeCraft(toBag) {
   if (!r) return false;
   const made = makeStack(r.out, r.n);
   if (toBag) {
-    if (maxStack(r.out) === 1 && !inv.slots.some(s => !s)) { hint('Your bag is full'); return false; }
+    // (a full bag doesn't stop it: what you make lands at your feet, see overflow)
   } else if (heldStack && (heldStack.id !== r.out || heldStack.n + r.n > maxStack(r.out))) return false;
   craftGrid.forEach((s, i) => { if (s) { s.n--; if (!s.n) craftGrid[i] = null; } });
   if (toBag) addStack(made);
@@ -5472,7 +5495,7 @@ function moveRock() {
   markDirty();
 }
 function takePart() {
-  if (!inv.slots.some(st => !st)) { toast('Bag full', '???', 'Make some room in your inventory (E)'); sfx.deny(); return; }
+  // (with a full bag it lands at your feet, see overflow)
   addItem('exotic-core', 1);
   quest.cave.part = true;
   if (!quest.parts.includes('exotic-core')) quest.parts.push('exotic-core');

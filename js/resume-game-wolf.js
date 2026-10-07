@@ -937,7 +937,11 @@ function tailRoot(c) {
 }
 function launchTail(c, k) {
   const r = tailRoot(c);
-  tails.push({ ore: ORES[k], k, x: r.x, y: r.y, a: Math.atan2(player.y - 10 - r.y, player.x - r.x), age: 0, path: [[r.x, r.y]], back: false, strike: null });
+  // (it lives long enough to get to you wherever you are: a flat 1.6s ran out
+  // about 370px along, so from one corner of the arena to the far one the
+  // tail came out, chased you and reeled back in without ever striking)
+  const life = clamp(Math.hypot(player.x - r.x, player.y - 10 - r.y) / WOLF.tails.speed + 0.6, WOLF.tails.life, 2.6);
+  tails.push({ ore: ORES[k], k, x: r.x, y: r.y, a: Math.atan2(player.y - 10 - r.y, player.x - r.x), age: 0, life, path: [[r.x, r.y]], back: false, strike: null });
   whoosh();
   sfx.chime(k);
 }
@@ -982,7 +986,7 @@ function updateTails(dt) {
       continue;
     }
     // (a strike that's already on its way finishes)
-    if ((T.strike === null && T.age > WOLF.tails.life) || player.dead) T.back = true;
+    if ((T.strike === null && T.age > T.life) || player.dead) T.back = true;
   }
 }
 

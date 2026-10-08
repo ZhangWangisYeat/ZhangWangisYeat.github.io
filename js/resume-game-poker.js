@@ -549,7 +549,7 @@ function pkAiHandStart(T) {
   A.std = T.seats.map(() => new Float32Array(1326).fill(1));
   A.adp = T.seats.map(() => new Float32Array(1326).fill(1));
   A.str = pkStrengths([]);
-  A.hand = { postAgg: T.seats.map(() => 0), postAct: T.seats.map(() => 0), faced: T.seats.map(() => 0), folded: T.seats.map(() => 0), checked: T.seats.map(() => false), brockTarget: false, startStacks: T.seats.map(s => s.stack + s.total) };
+  A.hand = { betThis: [], postAgg: T.seats.map(() => 0), postAct: T.seats.map(() => 0), faced: T.seats.map(() => 0), folded: T.seats.map(() => 0), checked: T.seats.map(() => false), brockTarget: false, startStacks: T.seats.map(s => s.stack + s.total) };
   A.mood.brock.target = false;
 }
 function pkAiStreet(T) {
@@ -668,7 +668,7 @@ function pkAiSaw(T, seat, kind, before) {
   });
   if (before.street !== 'preflop') {
     A.hand.postAct[seat]++;
-    if (kind === 'raise') A.hand.postAgg[seat]++;
+    if (kind === 'raise') { A.hand.postAgg[seat]++; A.hand.betThis[seat] = before.street; }
   }
 }
 // a weighted average of strength over a range (for range advantage)
@@ -749,6 +749,10 @@ function pkDecidePre(T, s, id, P, M, L) {
   // nobody's raised yet: open, or limp, or fold
   if (level === 0) {
     let open = PK_OPEN[Math.min(6, behind)] * P.loose;
+    // heads up the button opens most hands, and three handed a bit wider too
+    const liveN = pkLive(T).length;
+    if (liveN === 2) open = Math.min(0.95, 0.8 * P.loose);
+    else if (liveN === 3) open = Math.max(open, 0.5 * P.loose);
     if (limpers) open *= 0.72;
     // steal more when the players left to act are tight (they'll fold)
     const left = T.seats.filter(o => o.i !== s.i && pkCanAct(o) && !o.vol);
@@ -1019,9 +1023,16 @@ function pkDecidePost(T, s, id, P, M, L) {
     // low in it and goes. she trims it a little against huge overbets (her
     // charts don't have enough bluffs in them there), which is the opening a
     // brave enough bluffer can use. draws with the price to continue still do.
-    const defend = mdf * (betFrac > 1.5 ? 0.85 : 1);
+    // against a raise (she bet and got raised) it's stricter: raising ranges
+    // are heavier on value than betting ones, so she defends less of her range
+    // and only with hands that really have the price, with a bit extra for
+    // the river still to come (tens on a paired ace high board facing a big
+    // check raise used to call here)
+    const raised = !!(A.hand.betThis && A.hand.betThis[s.i] === street);
+    const defend = mdf * (betFrac > 1.5 ? 0.85 : 1) * (raised ? 0.75 : 1);
+    const price = raised ? needed + (street === 'river' ? 0 : 0.03) : needed * 0.8;
     if (draw >= 2 && street !== 'river' && rank < defend && Math.random() < 0.18 && L.canRaise) return raiseTo(3, 'semibluff');
-    if (rank < defend && eq * real > needed * 0.8) return call('defend');
+    if (rank < defend && eq * real > price) return call('defend');
     if (draw >= 2 && street !== 'river' && eq * real + implied >= needed) return call('call');
     return fold('fold');
   }

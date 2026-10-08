@@ -164,6 +164,77 @@
     <button type="button" class="px-btn px px-btn-primary" id="wolf-help-go">Got it</button>
   </div>
 
+
+  <!-- the poker table in the lava cavern (js/resume-game-poker.js): its own
+       canvas over the world, with the controls, the chat and the rules on top -->
+  <section class="poker" id="poker" aria-label="Poker table" hidden>
+    <canvas id="pk-canvas" aria-hidden="true"></canvas>
+    <div class="pk-top">
+      <button type="button" class="px-btn px" id="pk-rules-btn">Rules <kbd>R</kbd></button>
+      <button type="button" class="px-btn px" id="pk-fast" aria-pressed="false">Fast</button>
+      <button type="button" class="px-btn px" id="pk-leave">Leave</button>
+    </div>
+    <div class="pk-actions px" id="pk-actions">
+      <p class="pk-status" id="pk-status"></p>
+      <div class="pk-raise-row">
+        <button type="button" class="pk-step" id="pk-minus" aria-label="Less">&minus;</button>
+        <input type="range" id="pk-slider" min="2" max="200" value="4" aria-label="Raise amount" />
+        <button type="button" class="pk-step" id="pk-plus" aria-label="More">+</button>
+        <span class="pk-amount" id="pk-amount"></span>
+      </div>
+      <div class="pk-presets" id="pk-presets">
+        <button type="button" data-p="min">Min</button>
+        <button type="button" data-p="0.5">&frac12; Pot</button>
+        <button type="button" data-p="0.75">&frac34; Pot</button>
+        <button type="button" data-p="1">Pot</button>
+        <button type="button" data-p="max">Max</button>
+      </div>
+      <div class="pk-buttons">
+        <button type="button" class="pk-btn pk-fold" id="pk-fold">Fold <kbd>F</kbd></button>
+        <button type="button" class="pk-btn pk-call" id="pk-call">Call</button>
+        <button type="button" class="pk-btn pk-raise" id="pk-raise">Raise</button>
+        <button type="button" class="pk-btn pk-allin" id="pk-allin">All in <kbd>A</kbd></button>
+      </div>
+      <label class="rh-skip pk-straddle"><input type="checkbox" id="pk-straddle" /><span>Straddle when under the gun</span></label>
+    </div>
+    <div class="pk-chat px" aria-label="Table chat">
+      <p class="pk-chat-title">Table</p>
+      <div class="pk-chat-log" id="pk-chat-log" aria-live="polite"></div>
+    </div>
+    <div class="talk px pk-talk" id="pk-talk" hidden>
+      <p class="talk-name" id="pk-talk-name"></p>
+      <p class="talk-text" id="pk-talk-text"></p>
+      <p class="talk-hint">Click or Space</p>
+    </div>
+    <div class="race-help px pk-panel" id="pk-rules" role="dialog" aria-labelledby="pk-rules-title" hidden>
+      <p class="rh-eyebrow">The Lava Cavern | House rules</p>
+      <p class="rh-title" id="pk-rules-title">No Limit Hold'em</p>
+      <ul class="rh-list">
+        <li><b>Be the last one standing.</b> Everyone starts with 100 big blinds.</li>
+        <li>The chips are ores: <span class="pk-ore iron">Iron $100</span> <span class="pk-ore gold">Gold $500</span> <span class="pk-ore ruby">Ruby $1,000</span> <span class="pk-ore emerald">Emerald $2,000</span> <span class="pk-ore diamond">Diamond $10,000</span></li>
+        <li>Blinds start at <b>$100 / $200</b> and go up every 40 hands as the lava rises. Under the gun you can <b>straddle</b> for twice the big blind, and then you act last before the flop.</li>
+        <li>Two cards each, then five shared cards: the flop (three), the turn and the river, with a round of betting before the flop and after each.</li>
+        <li>On your turn: fold, check, call, bet or raise. A raise has to be at least as big as the last bet or raise. You can bet everything you have at any time.</li>
+        <li>Going all in for less than a full raise doesn't reopen the betting. Side pots go to the best hand among the players in them.</li>
+        <li>Best five cards win: Royal Flush, Straight Flush, Four of a Kind, Full House, Flush, Straight, Three of a Kind, Two Pair, Pair, High Card.</li>
+      </ul>
+      <p class="pk-keys"><kbd>F</kbd> Fold <kbd>C</kbd> Check / Call <kbd>Enter</kbd> Raise <kbd>A</kbd> All in <kbd>&larr;</kbd><kbd>&rarr;</kbd> Size <kbd>R</kbd> Rules</p>
+      <button type="button" class="px-btn px px-btn-primary" id="pk-rules-go">Deal me in</button>
+    </div>
+    <div class="race-help px pk-panel" id="pk-buyin" role="dialog" aria-labelledby="pk-buy-title" hidden>
+      <p class="rh-eyebrow">Buy in</p>
+      <p class="rh-title" id="pk-buy-title">Bring your ore</p>
+      <p class="pk-buy-have" id="pk-buy-have"></p>
+      <input type="range" id="pk-buy-slider" min="2" max="200" value="200" aria-label="Buy in" />
+      <p class="pk-buy-amount" id="pk-buy-amount"></p>
+      <p class="pk-buy-note">Ingots, raw ore and gems all count. Up to $20,000.</p>
+      <div class="pk-buy-row">
+        <button type="button" class="px-btn px" id="pk-buy-back">Not now</button>
+        <button type="button" class="px-btn px px-btn-primary" id="pk-buy-go">Sit down</button>
+      </div>
+    </div>
+  </section>
+
   <div class="warp" id="warp" aria-hidden="true"></div>
 
   <section class="title" id="title" aria-label="Title screen">
@@ -201,5 +272,6 @@
   <script src="js/resume-game-play.js"></script>
   <script src="js/resume-game-race.js"></script>
   <script src="js/resume-game-wolf.js"></script>
+  <script src="js/resume-game-poker.js"></script>
 </body>
 </html>

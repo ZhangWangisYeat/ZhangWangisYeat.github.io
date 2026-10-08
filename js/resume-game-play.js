@@ -154,6 +154,9 @@ ITEMS['moe-drill'] = {
 // are one of a kind, so they never despawn (keep).
 ITEMS['bone-key'] = { name: 'Bone Key', keep: true };
 ITEMS['old-map'] = { name: 'Crumpled Map', keep: true };
+// the lava key, ace's prize for being the last one standing at the poker
+// table (js/resume-game-poker.js). it opens the old door at the teachla site.
+ITEMS['lava-key'] = { name: 'Lava Key', keep: true };
 // whatever you're holding that isn't a tool hits like a bare hand
 const FIST = { name: 'Bare hands', dmg: 0.25, cd: 0.45, reach: 1.4 };
 const STACK_MAX = 64;
@@ -738,6 +741,16 @@ function makeIcon(id) {
       pxLine(G, 5, 12, 12, 5, '#b9ae92');
       [[11, 3], [13, 5], [3, 10], [5, 12]].forEach(([x, y]) => pxBlob(G, x, y, 1.6, 1.6, (dx, dy) => (dx + dy < -0.4 ? '#fffaea' : '#d9cfb2')));
       [[5, 13], [7, 13], [7, 14]].forEach(([x, y]) => G.set(x, y, '#b9ae92'));
+      break;
+    case 'lava-key':
+      // a key of black glass with lava glowing in its cracks, a flame shaped
+      // bow and two teeth
+      pxBlob(G, 5, 5, 3.6, 3.6, (dx, dy) => (dx * dx + dy * dy < 0.25 ? '#16121a' : dx + dy < -0.5 ? '#4a4452' : '#2a2430'));
+      pxLine(G, 7, 7, 13, 13, '#2a2430', 2);
+      pxLine(G, 8, 7, 14, 13, '#3a3442');
+      [[11, 13], [12, 14], [13, 11], [14, 12]].forEach(([x, y]) => G.set(x, y, '#2a2430'));
+      [[4, 3], [3, 5], [6, 6], [9, 9], [11, 11], [12, 12]].forEach(([x, y]) => G.set(x, y, '#ff8a1c'));
+      G.set(5, 4, '#ffd23f'); G.set(10, 10, '#ffd23f');
       break;
     case 'old-map':
       // a crumpled scrap of map with a dotted trail and a red cross
@@ -2713,7 +2726,7 @@ function playCamFocus() {
   return cine && cine.t < 2.3 * cine.k ? (cine.talked ? { x: moe.x, y: moe.y - 24 } : { x: moe.hx, y: moe.hy - 24 }) : null;
 }
 // (any room that's sealed shut for a fight)
-function playTravelBlocked() { return !!room && (!!room.sealed || (room === denRoom && (!!cine || !!moeMeet)) || (typeof wolfHolds === 'function' && wolfHolds())); }
+function playTravelBlocked() { return !!room && (!!room.sealed || (room === denRoom && (!!cine || !!moeMeet)) || (typeof wolfHolds === 'function' && wolfHolds()) || (typeof pokerHolds === 'function' && pokerHolds())); }
 
 // where his hand (and so the drill's grip) and his lamp are in the world,
 // for whichever frame he's on, sunk however far he is into the floor
@@ -6040,6 +6053,7 @@ function enterRoom(r, quiet, at) {
   if (r === denRoom && !moe.dead) startMoeIntro();
   if (typeof raceEnter === 'function') raceEnter(r);
   if (typeof wolfEnter === 'function') wolfEnter(r);
+  if (typeof pokerEnter === 'function') pokerEnter(r);
   if (at) {
     player.x = at.x; player.y = at.y; player.face = 'down';
     // you came down a ladder walking up into it: let go of up, or you'd walk
@@ -6071,6 +6085,7 @@ function playLeaveRoom(quiet) {
   if (r === denRoom) resetMoe();
   if (typeof raceLeave === 'function') raceLeave(r, quiet);
   if (typeof wolfLeave === 'function') wolfLeave(r);
+  if (typeof pokerLeave === 'function') pokerLeave(r);
   // anything down there goes back to where it started (moles back under their
   // mounds), so walking back in doesn't drop you straight into their teeth
   creatures.forEach(c => {
@@ -6220,7 +6235,7 @@ function coreMotes(dt) {
 // raceBusy: talking to darryl, riding a minecart, or his little show after a
 // race (all in js/resume-game-race.js). the engine leaves you alone then.
 // (and the ore wolf's talking and title card, js/resume-game-wolf.js)
-const raceBusy = () => (typeof raceHolds === 'function' && raceHolds()) || (typeof wolfHolds === 'function' && wolfHolds());
+const raceBusy = () => (typeof raceHolds === 'function' && raceHolds()) || (typeof wolfHolds === 'function' && wolfHolds()) || (typeof pokerHolds === 'function' && pokerHolds());
 function playFrozen() { return ui !== null || player.dead || !!sleeping || !!cine || !!moeMeet || raceBusy(); }
 // which layer of img/player-armor.png to paint over you, or -1 for none
 const ARMOR_LAYERS = ['hide', 'wool', 'gold', 'marble', 'iron', 'emerald', 'diamond'];
@@ -6342,6 +6357,7 @@ function playUpdate(dt, t) {
   tickSnow(dt);
   if (typeof raceTick === 'function') raceTick(dt);
   if (typeof wolfTick === 'function') wolfTick(dt);
+  if (typeof pokerTick === 'function') pokerTick(dt);
   if (moeMeet) tickMoeMeet(dt);
   tickCine(dt);
   tickBossBar(dt);
@@ -6596,6 +6612,7 @@ function playRenderOverlay(toX, toY, t) {
 
   if (typeof raceOverlay === 'function') raceOverlay(toX, toY, t);
   if (typeof wolfOverlay === 'function') wolfOverlay(toX, toY, t);
+  if (typeof pokerOverlay === 'function') pokerOverlay(toX, toY, t);
 
   // floating numbers and pickups
   floats.forEach(f => {
@@ -6637,6 +6654,7 @@ function toHotbar(ref, i) {
 function playKey(e, onControl) {
   if (typeof raceKey === 'function' && raceKey(e)) return true;
   if (typeof wolfKey === 'function' && wolfKey(e)) return true;
+  if (typeof pokerKey === 'function' && pokerKey(e)) return true;
   const k = e.key.toLowerCase();
   if (k === 'e') { e.preventDefault(); if (ui) closeUI(); else openUI('inv'); return true; }
   if (k === 'escape' && ui) { closeUI(); return true; }

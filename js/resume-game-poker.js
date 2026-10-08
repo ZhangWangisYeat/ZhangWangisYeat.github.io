@@ -14,7 +14,15 @@
 // poker core start
 // the chips are ores, counted in iron (one iron is $100). the blinds are one and
 // two iron, and a straddle is four. every seat starts at 200 iron, 100 big blinds.
-const PK = { SB: 1, BB: 2, STRADDLE: 4, START: 200, MIN_BUYIN: 2, MAX_BUYIN: 200, DOLLARS: 100 };
+const PK = { SB: 1, BB: 2, STRADDLE: 4, START: 200, MIN_BUYIN: 2, MAX_BUYIN: 200, DOLLARS: 100, LEVEL_HANDS: 40 };
+// the blinds go up every LEVEL_HANDS hands ("the lava rises"). at one and two
+// for good, a last one standing game between six players runs to about 700
+// hands, which is hours. set LEVEL_HANDS to 0 to keep them at one and two.
+const PK_LEVELS = [[1, 2], [2, 4], [3, 6], [5, 10], [8, 16], [10, 20], [15, 30], [25, 50], [40, 80], [60, 120], [100, 200]];
+function pkBlinds(T) {
+  const L = PK_LEVELS[Math.min(PK_LEVELS.length - 1, PK.LEVEL_HANDS ? Math.floor((T.hand - 1) / PK.LEVEL_HANDS) : 0)];
+  return { sb: L[0], bb: L[1], straddle: L[1] * 2 };
+}
 const PK_IDS = ['you', 'brutus', 'neville', 'ace', 'brock', 'sparks'];
 
 // cards are 0 to 51: rank is c >> 2 (0 is a deuce, 12 an ace), suit is c & 3
@@ -257,7 +265,7 @@ function pkEquity(hero, board, ranges, trials) {
 function pkTable(stacks) {
   return {
     seats: PK_IDS.map((id, i) => ({ id, i, stack: stacks[i], out: !(stacks[i] > 0), cards: null, folded: true, allIn: false, bet: 0, total: 0, acted: -1, need: false, won: 0, vol: 0 })),
-    button: -1, hand: 0, board: [], deck: [], pot: 0, bet: 0, lastRaise: PK.BB, raises: 0, fullId: 0, street: null,
+    button: -1, hand: 0, board: [], deck: [], pot: 0, bet: 0, lastRaise: PK.BB, blinds: { sb: PK.SB, bb: PK.BB, straddle: PK.STRADDLE }, raises: 0, fullId: 0, street: null,
     toAct: -1, first: -1, ev: [], aggressor: -1, prevAggressor: -1, straddle: -1, sb: -1, bb: -1, over: true, ai: null, log: []
   };
 }
@@ -287,23 +295,24 @@ function pkStartHand(T, wantsStraddle) {
   T.hand++;
   T.ev = [];
   T.over = false;
+  const B = T.blinds = pkBlinds(T);
   T.seats.forEach(s => Object.assign(s, { cards: null, folded: s.out, allIn: false, bet: 0, total: 0, acted: -1, need: false, won: 0, vol: 0, shown: false }));
-  Object.assign(T, { board: [], pot: 0, bet: PK.BB, lastRaise: PK.BB, raises: 0, fullId: 0, street: 'preflop', aggressor: -1, prevAggressor: -1, straddle: -1 });
+  Object.assign(T, { board: [], pot: 0, bet: B.bb, lastRaise: B.bb, raises: 0, fullId: 0, street: 'preflop', aggressor: -1, prevAggressor: -1, straddle: -1 });
   const live = pkLive(T);
   if (T.button < 0 || T.seats[T.button].out) T.button = T.button < 0 ? live[(Math.random() * live.length) | 0].i : pkNext(T, T.button);
   else T.button = pkNext(T, T.button);
   const heads = live.length === 2;
   T.sb = heads ? T.button : pkNext(T, T.button);
   T.bb = pkNext(T, T.sb);
-  T.ev.push({ t: 'hand', hand: T.hand, button: T.button, sb: T.sb, bb: T.bb });
-  T.ev.push({ t: 'post', seat: T.sb, amount: pkPut(T, T.seats[T.sb], PK.SB), kind: 'sb' });
-  T.ev.push({ t: 'post', seat: T.bb, amount: pkPut(T, T.seats[T.bb], PK.BB), kind: 'bb' });
+  T.ev.push({ t: 'hand', hand: T.hand, button: T.button, sb: T.sb, bb: T.bb, blinds: B, levelUp: PK.LEVEL_HANDS > 0 && T.hand > 1 && (T.hand - 1) % PK.LEVEL_HANDS === 0 });
+  T.ev.push({ t: 'post', seat: T.sb, amount: pkPut(T, T.seats[T.sb], B.sb), kind: 'sb' });
+  T.ev.push({ t: 'post', seat: T.bb, amount: pkPut(T, T.seats[T.bb], B.bb), kind: 'bb' });
   let first = pkNext(T, T.bb);
-  if (live.length >= 4 && T.seats[first].stack > PK.STRADDLE * 2 && wantsStraddle && wantsStraddle(first, T)) {
+  if (live.length >= 4 && T.seats[first].stack > B.straddle * 2 && wantsStraddle && wantsStraddle(first, T)) {
     T.straddle = first;
-    T.ev.push({ t: 'post', seat: first, amount: pkPut(T, T.seats[first], PK.STRADDLE), kind: 'straddle' });
-    T.bet = PK.STRADDLE;
-    T.lastRaise = PK.STRADDLE;
+    T.ev.push({ t: 'post', seat: first, amount: pkPut(T, T.seats[first], B.straddle), kind: 'straddle' });
+    T.bet = B.straddle;
+    T.lastRaise = B.straddle;
     first = pkNext(T, first);
   }
   T.deck = pkShuffle([...Array(52).keys()]);
@@ -320,18 +329,18 @@ function pkStartHand(T, wantsStraddle) {
 }
 // who acts next, starting after seat from
 function pkAdvance(T, from) {
-  const inH = T.seats.filter(pkInHand);
-  if (inH.length === 1) { pkEndStreet(T, true); return; }
+  if (T.seats.filter(pkInHand).length === 1) { pkEndStreet(T, true); return; }
+  const actors = T.seats.filter(pkCanAct).length;
   for (let k = 1; k <= 6; k++) {
     const s = T.seats[(from + k) % 6];
-    if (pkCanAct(s) && (s.need || s.bet < T.bet)) {
-      // (alone with chips against players who are all in, and already matched
-      // the bet: nothing left to decide)
-      if (!s.need && s.bet >= T.bet) continue;
-      if (T.seats.filter(pkCanAct).length === 1 && s.bet >= T.bet) continue;
-      T.toAct = s.i;
-      return;
-    }
+    if (!pkCanAct(s)) continue;
+    const facing = s.bet < T.bet;
+    if (!s.need && !facing) continue;
+    // (alone with chips against players who are all in, and nothing to call:
+    // nothing left to decide)
+    if (actors === 1 && !facing) continue;
+    T.toAct = s.i;
+    return;
   }
   T.toAct = -1;
   pkEndStreet(T, false);
@@ -355,7 +364,7 @@ function pkAct(T, seat, a) {
   if (type === 'check' && !L.canCheck) type = 'call';
   if (type === 'call' && L.toCall === 0) type = 'check';
   if (type === 'raise' && !L.canRaise) type = L.toCall ? 'call' : 'check';
-  const before = { pot: pkPotNow(T), toCall: L.toCall, level: T.raises, street: T.street, bet: T.bet };
+  const before = { pot: pkPotNow(T), toCall: L.toCall, level: T.raises, street: T.street, bet: T.bet, mine: s.bet };
   if (type === 'fold') {
     s.folded = true;
     T.ev.push({ t: 'act', seat, kind: 'fold' });
@@ -368,8 +377,7 @@ function pkAct(T, seat, a) {
   } else {
     const to = Math.max(L.minTo, Math.min(L.maxTo, Math.round(a.to)));
     const size = to - T.bet, full = size >= T.lastRaise;
-    const wasBet = T.bet === 0;
-    pkPut(T, s, to - s.bet);
+    const wasBet = T.bet === 0, put = pkPut(T, s, to - s.bet);
     if (T.street === 'preflop') s.vol = 2;
     if (full) {
       T.lastRaise = size;
@@ -379,7 +387,7 @@ function pkAct(T, seat, a) {
       T.seats.forEach(o => { if (o.i !== seat && pkCanAct(o)) o.need = true; });
     } else T.seats.forEach(o => { if (o.i !== seat && pkCanAct(o) && o.bet < to) o.need = true; });
     T.bet = Math.max(T.bet, to);
-    T.ev.push({ t: 'act', seat, kind: s.allIn ? 'allin' : wasBet ? 'bet' : 'raise', amount: to - (s.bet - (to - (s.bet - 0)) * 0), to: s.bet, stack: s.stack, full });
+    T.ev.push({ t: 'act', seat, kind: s.allIn ? 'allin' : wasBet ? 'bet' : 'raise', amount: put, to: s.bet, stack: s.stack, full });
   }
   s.need = false;
   s.acted = T.fullId;
@@ -429,7 +437,7 @@ function pkNextStreet(T) {
   for (let k = 0; k < add; k++) cards.push(T.deck.pop());
   T.board.push(...cards);
   T.street = { preflop: 'flop', flop: 'turn', turn: 'river' }[T.street];
-  Object.assign(T, { bet: 0, lastRaise: PK.BB, raises: 0, fullId: 0 });
+  Object.assign(T, { bet: 0, lastRaise: T.blinds.bb, raises: 0, fullId: 0 });
   T.ev.push({ t: 'board', street: T.street, cards, board: T.board.slice() });
   if (T.ai) pkAiStreet(T);
 }
@@ -473,15 +481,15 @@ function pkAward(T, showdown, inH) {
     let best = -1;
     el.forEach(s => { if (showdown && s.value > best) best = s.value; });
     const win = showdown ? el.filter(s => s.value === best) : el;
-    const each = Math.floor(p.amount / win.length);
+    const each = Math.floor(p.amount / win.length), share = win.map(() => each);
     let odd = p.amount - each * win.length;
     for (let k2 = 1; k2 <= 6 && odd > 0; k2++) {
-      const s = T.seats[(T.button + k2) % 6];
-      if (win.includes(s)) { s.stack += 1; s.won += 1; odd--; }
+      const j = win.indexOf(T.seats[(T.button + k2) % 6]);
+      if (j >= 0) { share[j]++; odd--; }
     }
-    win.forEach(s => {
-      s.stack += each; s.won += each;
-      T.ev.push({ t: 'win', seat: s.i, amount: each + (s.won - each > 0 && win.length > 1 ? 0 : 0), pot: k, side: k > 0, value: showdown ? s.value : null, name: showdown ? pkHandName(s.value) : null, split: win.length > 1 });
+    win.forEach((s, j) => {
+      s.stack += share[j]; s.won += share[j];
+      T.ev.push({ t: 'win', seat: s.i, amount: share[j], pot: k, side: k > 0, value: showdown ? s.value : null, name: showdown ? pkHandName(s.value) : null, split: win.length > 1 });
     });
   });
   T.pot = 0;
@@ -532,7 +540,7 @@ function pkMood() {
 function pkAiInit(T, mood) {
   T.ai = {
     mood: mood || pkMood(),
-    stats: T.seats.map(() => ({ vpip: 0.24, pfr: 0.17, agg: 0.4, n: 0 })),
+    stats: T.seats.map(() => ({ vpip: 0.24, pfr: 0.17, agg: 0.4, ftb: 0.42, n: 0 })),
     std: [], adp: [], str: null, lastSaw: [], hand: {}, results: null
   };
 }
@@ -541,7 +549,7 @@ function pkAiHandStart(T) {
   A.std = T.seats.map(() => new Float32Array(1326).fill(1));
   A.adp = T.seats.map(() => new Float32Array(1326).fill(1));
   A.str = pkStrengths([]);
-  A.hand = { postAgg: T.seats.map(() => 0), postAct: T.seats.map(() => 0), checked: T.seats.map(() => false), heroIn: true, brockTarget: false, startStacks: T.seats.map(s => s.stack + s.total) };
+  A.hand = { postAgg: T.seats.map(() => 0), postAct: T.seats.map(() => 0), faced: T.seats.map(() => 0), folded: T.seats.map(() => 0), checked: T.seats.map(() => false), brockTarget: false, startStacks: T.seats.map(s => s.stack + s.total) };
   A.mood.brock.target = false;
 }
 function pkAiStreet(T) {
@@ -552,9 +560,9 @@ function pkAiStreet(T) {
 // what a seat's play has looked like lately, as multipliers on a solid player's
 // thresholds (1 is solid, 2 is twice as loose)
 function pkEst(T, seat, std) {
-  if (std) return { l: 1, a: 1, b: 1 };
+  if (std) return { l: 1, a: 1, b: 1, f: 1 };
   const st = T.ai.stats[seat];
-  return { l: clampN(st.vpip / 0.24, 0.45, 3.2), a: clampN(st.pfr / 0.17, 0.4, 3.6), b: clampN(st.agg / 0.4, 0.4, 2.2) };
+  return { l: clampN(st.vpip / 0.24, 0.45, 3.2), a: clampN(st.pfr / 0.17, 0.4, 3.6), b: clampN(st.agg / 0.4, 0.4, 2.2), f: clampN(st.ftb / 0.42, 0.5, 3) };
 }
 const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
 // how many players still act after seat in this preflop round
@@ -608,9 +616,10 @@ function pkPostLikelihood(se, d, kind, frac, street, est) {
 // every action narrows that player's ranges in everyone's eyes
 function pkAiSaw(T, seat, kind, before) {
   const A = T.ai;
+  if (before.street !== 'preflop' && before.toCall > 0) { A.hand.faced[seat]++; if (kind === 'fold') A.hand.folded[seat]++; }
   if (kind === 'fold') return;
   if (kind === 'check' && T.street !== 'preflop') A.hand.checked[seat] = true;
-  const frac = before.pot ? Math.max(0, (T.seats[seat].bet - before.bet + (before.bet ? 0 : 0)) / before.pot) : 1;
+  const frac = before.pot ? Math.max(0, (T.seats[seat].bet - before.mine) / before.pot) : 1;
   [true, false].forEach(std => {
     const R = std ? A.std[seat] : A.adp[seat], est = pkEst(T, seat, std);
     if (before.street === 'preflop') {
@@ -632,16 +641,6 @@ function pkRangeMean(R, S) {
   for (let i = 0; i < 1326; i++) if (S.ok[i] && R[i] > 0) { w += R[i]; t += R[i] * S.s[i]; if (S.s[i] > 0.9) nut += R[i]; }
   return w ? { mean: t / w, nut: nut / w } : { mean: 0.5, nut: 0 };
 }
-// how strong a hand is against a range right now, on this board (no more cards)
-function pkHsVs(myVal, R, S, dead) {
-  let w = 0, beat = 0;
-  for (let i = 0; i < 1326; i++) {
-    if (!S.ok[i] || R[i] <= 0 || dead[PK_C1[i]] || dead[PK_C2[i]]) continue;
-    w += R[i];
-    if (myVal > S.val[i]) beat += R[i]; else if (myVal === S.val[i]) beat += R[i] / 2;
-  }
-  return w ? beat / w : 0.5;
-}
 const pkGauss = () => { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
 const pkRound = x => Math.max(1, Math.round(x));
 // a raise to a total, kept legal: at least the minimum, at most all in, and
@@ -658,21 +657,32 @@ function pkDecide(T, seat) {
   const s = T.seats[seat], id = s.id, P = PK_PERSONA[id], M = T.ai.mood, L = pkLegal(T, seat);
   return T.street === 'preflop' ? pkDecidePre(T, s, id, P, M, L) : pkDecidePost(T, s, id, P, M, L);
 }
-// who's still in against seat, and their ranges as seat sees them (ace sees
-// the textbook ones)
-function pkOpps(T, s, gto) {
+// the range one player puts another on. ace knows the other miners inside
+// out after all these years and reads brutus, neville and brock off how
+// they've actually been playing (which is why she eats them alive), but she
+// plays you and sparks strictly by the book: you're new, and sparks is too
+// random for her charts. that's her weakness (alex): a crazy line from either
+// of you gets read as the textbook hand it represents.
+function pkRangeFor(T, me, them) {
+  if (PK_PERSONA[T.seats[me].id].gto && (them === 0 || them === 5)) return T.ai.std[them];
+  return T.ai.adp[them];
+}
+const pkEstFor = (T, me, them) => pkEst(T, them, PK_PERSONA[T.seats[me].id].gto && (them === 0 || them === 5));
+// who's still in against seat, and their ranges as seat sees them
+function pkOpps(T, s) {
   const opp = T.seats.filter(o => o.i !== s.i && pkInHand(o));
-  return { opp, ranges: opp.map(o => (gto ? T.ai.std[o.i] : T.ai.adp[o.i])) };
+  return { opp, ranges: opp.map(o => pkRangeFor(T, s.i, o.i)) };
 }
 const pkHeroIn = T => pkInHand(T.seats[0]);
 function pkDecidePre(T, s, id, P, M, L) {
   const p = pkPct(s.cards[0], s.cards[1]), level = T.raises, behind = pkBehind(T, s.i);
   const suited = (s.cards[0] & 3) === (s.cards[1] & 3), pair = (s.cards[0] >> 2) === (s.cards[1] >> 2);
   const hiR = Math.max(s.cards[0] >> 2, s.cards[1] >> 2), loR = Math.min(s.cards[0] >> 2, s.cards[1] >> 2);
-  const unit = T.straddle >= 0 ? PK.STRADDLE : PK.BB;
+  const unit = T.straddle >= 0 ? T.blinds.straddle : T.blinds.bb;
   const limpers = T.seats.filter(o => o.i !== s.i && pkInHand(o) && o.bet === T.bet && o.vol).length;
-  const ip = behind === 0 || (behind <= 2 && !T.seats.slice().some(o => o.i === T.sb || o.i === T.bb ? false : false));
-  const stackBB = (s.stack + s.bet) / PK.BB;
+  // in position after the flop against whoever raised: closer to the button
+  const postIdx = i => (i - T.button + 5) % 6;
+  const stackBB = (s.stack + s.bet) / T.blinds.bb;
   const rnd = Math.random();
   const heroAggro = T.aggressor === 0;
   // brock with a grudge against you, when you're the one he's up against
@@ -684,9 +694,11 @@ function pkDecidePre(T, s, id, P, M, L) {
   const shove = why => raise(L.maxTo, why);
   // the price to call, and what the hand's worth against whoever's raised
   const needed = L.toCall / (L.pot + L.toCall);
+  // (only against the players who've put money in: the ones still to act
+  // behind will mostly fold)
   const eqVs = () => {
-    const { ranges } = pkOpps(T, s, P.gto);
-    const eq = pkEquity(s.cards, [], ranges, 420);
+    const ranges = T.seats.filter(o => o.i !== s.i && pkInHand(o) && (o.vol || o.i === T.aggressor)).map(o => pkRangeFor(T, s.i, o.i));
+    const eq = pkEquity(s.cards, [], ranges.length ? ranges : [null], 420);
     return clampN(eq + pkGauss() * P.skill, 0, 1);
   };
   const lastRaiseTo = T.bet;
@@ -702,6 +714,12 @@ function pkDecidePre(T, s, id, P, M, L) {
   if (level === 0) {
     let open = PK_OPEN[Math.min(6, behind)] * P.loose;
     if (limpers) open *= 0.72;
+    // steal more when the players left to act are tight (they'll fold)
+    const left = T.seats.filter(o => o.i !== s.i && pkCanAct(o) && !o.vol);
+    if (left.length && id !== 'neville') {
+      const tight = left.reduce((n, o) => n + clampN(pkEstFor(T, s.i, o.i).l, 0.5, 1.5), 0) / left.length;
+      open *= 1 + 0.45 * (1 - tight);
+    }
     let size = unit * (behind === 1 && T.sb === s.i ? 3 : 2.5) + unit * limpers;
     if (tilt) { open = 0.55; size = unit * (5 + Math.random() * 4) + unit * limpers; }
     if (wild) { open = 0.62; if (rnd < 0.3) size = unit * (4 + Math.random() * 3); }
@@ -722,9 +740,10 @@ function pkDecidePre(T, s, id, P, M, L) {
   // facing a raise (or more). work out how big the raises have been and who
   // made the last one
   const agg = T.seats[T.aggressor >= 0 ? T.aggressor : T.bb];
+  const ip = postIdx(s.i) > postIdx(agg.i);
   const vsHero = T.aggressor === 0;
   const callers = T.seats.filter(o => o.i !== s.i && o.i !== agg.i && pkInHand(o) && o.bet === T.bet).length;
-  const aggEst = pkEst(T, agg.i, P.gto);
+  const aggEst = pkEstFor(T, s.i, agg.i);
   const commit = L.toCall / (s.stack + s.bet);
 
   // brutus on tilt: crazy raises before the flop, and he barely folds
@@ -755,14 +774,22 @@ function pkDecidePre(T, s, id, P, M, L) {
     if (p < 0.5 + 0.05 * g && commit < 0.3 + 0.04 * g) return call('grudgecall');
   }
 
+  // neville facing a three bet or more: he only carries on with the very top,
+  // and he's even jumpier when it's you or ace raising
+  if (id === 'neville' && level >= 2) {
+    const scared = agg.i === 0 || agg.i === 3 ? 0.7 : 1;
+    if (p < 0.009 * scared) return raise(L.maxTo <= lastRaiseTo * 3 ? L.maxTo : lastRaiseTo * 2.3, 'value');
+    if (p < 0.03 * scared && commit < 0.3) return call('call');
+    return fold();
+  }
   // a solid player: value raises off the top of the range (wider against a
   // loose raiser), the odd bluff with hands that block the top or play well,
   // and calls when the price is right
   const looser = Math.max(1, aggEst.a * 0.85);
-  const vThr = [0, 0.055, 0.026, 0.013, 0.008][Math.min(level, 4)] * P.aggro * looser * (id === 'neville' ? 0.5 : 1);
+  const vThr = [0, 0.062, 0.03, 0.031, 0.012][Math.min(level, 4)] * P.aggro * looser * (id === 'neville' ? 0.5 : 1);
   const bluffBand = (level === 1 && ((suited && (hiR === 12 || (hiR - loR <= 2 && loR >= 3))) || (hiR === 12 && loR <= 3)))
     || (level === 2 && hiR === 12 && loR <= 3 && suited);
-  const bluffP = (level === 1 ? 0.35 : level === 2 ? 0.3 : 0) * P.bluff * (id === 'neville' ? 0 : 1);
+  const bluffP = (level === 1 ? 0.5 : level === 2 ? 0.55 : 0) * P.bluff * (id === 'neville' ? 0 : 1);
   const sizeUp = level === 1 ? (ip ? 3 : 3.8) : level === 2 ? 2.3 : 10;
   const raiseTo = level >= 3 || stackBB < 40 ? L.maxTo : lastRaiseTo * sizeUp + L.toCall * callers;
   if (p < vThr) {
@@ -777,9 +804,12 @@ function pkDecidePre(T, s, id, P, M, L) {
   // harder
   if (L.toCall === 0) return { type: 'check', why: 'check' };
   const eq = eqVs();
-  const real = (ip ? 0.97 : 0.86) - 0.04 * callers + (pair || suited ? 0.04 : 0) * (stackBB > 60 && level <= 1 ? 1 : 0);
+  // (cold calling from outside the blinds is a leak against good players, so
+  // it needs a bit more; the big blind is getting a discount already)
+  const blind = s.i === T.bb || s.i === T.sb || s.i === T.straddle;
+  const real = (ip ? 0.9 : 0.76) - 0.04 * callers - (blind || level >= 2 ? 0 : 0.05) + (pair || suited ? 0.05 : 0) * (stackBB > 60 && level <= 1 ? 1 : 0);
   let margin = P.callAdj + (commit > 0.4 ? 0.02 : 0);
-  if (id === 'brock') margin += 0.03 + 0.02 * g;
+  if (id === 'brock') margin += 0.015 + 0.02 * g;
   if (id === 'neville' && commit > 0.15) margin -= 0.05;
   if (eq * real + margin >= needed) return call(level >= 3 ? 'calljam' : 'call');
   return fold();
@@ -787,7 +817,7 @@ function pkDecidePre(T, s, id, P, M, L) {
 
 function pkDecidePost(T, s, id, P, M, L) {
   const A = T.ai, S = A.str, board = T.board, street = T.street, rnd = Math.random();
-  const { opp, ranges } = pkOpps(T, s, P.gto);
+  const { opp, ranges } = pkOpps(T, s);
   const nOpp = opp.length, tilt = id === 'brutus' && M.brutus.tilt, wild = id === 'sparks' && M.sparks.wild;
   const g = id === 'brock' ? M.brock.grudge : 0;
   const vsHero = opp.some(o => o.i === 0);
@@ -809,18 +839,21 @@ function pkDecidePost(T, s, id, P, M, L) {
   const topBoard = Math.max(...board.map(pkRank));
   const hasAce = s.cards.some(c => pkRank(c) === 12), kick = Math.min(...s.cards.map(pkRank));
   const topPair = (myVal >> 20) === 1 && ((myVal >> 16) & 15) === topBoard;
+  const pot = L.pot, toCall = L.toCall, needed = toCall / (pot + toCall);
   if (id === 'neville') {
     if (hasAce && kick >= 7 && boardPaired && wet && (myVal >> 20) <= 2) perceived += 0.2;
     else if (topPair || ((myVal >> 20) === 1 && ((myVal >> 16) & 15) > topBoard)) perceived += 0.09;
+    // otherwise a big bet scares him: the bigger it is, the worse he thinks
+    // his hand is
+    else if (toCall) perceived *= 1 - 0.28 * Math.min(1.5, toCall / Math.max(1, pot - toCall));
   }
-  const pot = L.pot, toCall = L.toCall, needed = toCall / (pot + toCall);
   const ip = pkInPosition(T, s.i);
   const eff = Math.min(s.stack + s.bet, Math.max(...opp.map(o => o.stack + o.bet)));
   const spr = eff / Math.max(1, pot);
   // range advantage: is this board better for my range than for theirs?
   // (brutus bluffs when it is)
-  const myR = pkRangeMean(P.gto ? A.std[s.i] : A.adp[s.i], S);
-  const theirR = opp.map(o => pkRangeMean(P.gto ? A.std[o.i] : A.adp[o.i], S));
+  const myR = pkRangeMean(A.adp[s.i], S);
+  const theirR = opp.map(o => pkRangeMean(pkRangeFor(T, s.i, o.i), S));
   const adv = myR.mean - Math.max(...theirR.map(r => r.mean)) + (myR.nut - Math.max(...theirR.map(r => r.nut))) * 0.5;
   const wasAggressor = T.prevAggressor === s.i;
   const fold = why => (L.canCheck ? { type: 'check', why: 'check' } : { type: 'fold', why: why || 'fold' });
@@ -859,22 +892,25 @@ function pkDecidePost(T, s, id, P, M, L) {
     if (id === 'neville') return check();
     // how often to bluff. ace works it out like a solver: enough bluffs to go
     // with her value bets that her bet can't be read, given the size. the
-    // others start from a feel for it and lean on their personality.
+    // others start from a feel for it, lean on their personality, and bluff
+    // more at anyone they've seen folding too much (neville, mostly).
     let bp;
     const size = sizeFor('bluff');
     if (P.gto) {
-      const R = A.std[s.i];
+      const R = A.adp[s.i];
       let w = 0, v = 0;
       for (let i = 0; i < 1326; i++) if (S.ok[i] && R[i] > 0) { w += R[i]; if (S.se[i] > 0.78) v += R[i]; }
       const V = w ? v / w : 0.2, ratio = street === 'river' ? size / (1 + 2 * size) : (size / (1 + 2 * size)) * 1.6;
       bp = Math.min(0.85, (V * ratio) / Math.max(0.15, 1 - V) / (1 - ratio));
       // she bluffs with her worst hands and her draws, and checks the middle
       bp *= draw >= 2 ? 1.6 : myS < 0.3 ? 1.1 : 0.25;
+      if (nOpp > 1) bp *= 0.5;
     } else {
       bp = (street === 'flop' ? 0.24 : street === 'turn' ? 0.17 : 0.12) * P.bluff;
       if (wasAggressor) bp *= 1.5;
       if (draw >= 2) bp *= 1.8;
       if (nOpp > 1) bp *= 0.45;
+      else bp *= pkEstFor(T, s.i, opp[0].i).f;
       if (id === 'brutus') bp *= adv > 0.03 ? 2.1 : adv < -0.03 ? 0.25 : 1;
       if (tilt) bp *= 1.8;
       if (target) bp += 0.08 * g;
@@ -886,46 +922,56 @@ function pkDecidePost(T, s, id, P, M, L) {
 
   // facing a bet
   const betFrac = toCall / Math.max(1, pot - toCall);
-  let real = (ip ? 1 : 0.9) * (street === 'river' ? 1 : 0.96);
-  let implied = draw >= 2 && street !== 'river' && spr > 1.5 ? 0.04 : 0;
+  const real = (ip ? 1 : 0.9) * (street === 'river' ? 1 : 0.96);
+  const implied = draw >= 2 && street !== 'river' && spr > 1.5 ? 0.04 : 0;
   let margin = P.callAdj;
-  if (id === 'neville') margin += betFrac > 0.8 ? -0.05 : 0;
+  if (id === 'neville') {
+    // he folds more and more as the hand goes on, folds to raises, and folds
+    // to you and ace most of all
+    margin += { flop: -0.03, turn: -0.07, river: -0.09 }[street] + (betFrac > 0.8 ? -0.05 : 0);
+    if (T.raises >= 2 || (T.raises >= 1 && A.hand.postAgg[s.i])) margin -= 0.1;
+    if (T.aggressor === 0 || T.aggressor === 3) margin -= 0.04;
+  }
   if (wild) margin += 0.04;
   if (tilt) margin += 0.05;
   if (target) margin += 0.05 * g;
-  const raiseT = 0.8 + 0.04 * (nOpp - 1) + (street === 'river' ? 0.04 : 0);
-  const nevilleRaise = id === 'neville' ? 0.88 : raiseT;
-  if (eq > nevilleRaise && L.canRaise) {
+  const raiseT = (id === 'neville' ? 0.88 : 0.8) + 0.04 * (nOpp - 1) + (street === 'river' ? 0.04 : 0);
+  if (eq > raiseT && L.canRaise) {
     if (rnd < P.slow * 0.6 && street !== 'river' && !tilt && eq < 0.95) return call('slowplay');
     return raiseTo(id === 'neville' ? 2.6 : 3, 'value');
   }
   // getting it in when the stacks are short compared to the pot
   if (spr < 1.2 && eq > 0.45 && L.canRaise && id !== 'neville') return raiseTo(10, 'commit');
+  // where this hand sits in my own range, for bluff catching: against a
+  // normal sized bet a decent player doesn't fold so much of their range that
+  // any two cards can bet and win (the minimum defence). ace keeps to it
+  // strictly. against an overbet it doesn't apply, and everyone just asks
+  // whether the hand has the equity, which against the strong range a big bet
+  // stands for, it usually doesn't (that's the hole in ace: bet huge at her
+  // with nothing and she lays it down).
+  const own = A.adp[s.i];
+  let w = 0, above = 0;
+  for (let i = 0; i < 1326; i++) if (S.ok[i] && own[i] > 0) { w += own[i]; if (S.se[i] > mySe) above += own[i]; }
+  const rank = w ? above / w : 0.5, mdf = 1 / (1 + betFrac);
   if (P.gto) {
-    // minimum defence: she continues with enough of her range that a bet
-    // can't print money with any two cards, ranked by strength in her own
-    // range. it's balanced, and it's also why an overbet bluff gets her to
-    // fold: against a bet of three pots she only has to defend a quarter.
-    const R = A.std[s.i];
-    let w = 0, above = 0;
-    for (let i = 0; i < 1326; i++) if (S.ok[i] && R[i] > 0) { w += R[i]; if (S.se[i] > mySe) above += R[i]; }
-    const rank = w ? above / w : 0.5, mdf = 1 / (1 + betFrac);
-    if (rank < mdf * 0.14 && L.canRaise && eq > 0.6) return raiseTo(3, 'value');
-    if (draw >= 2 && street !== 'river' && rank < mdf * 1.3 && rnd < 0.2 && L.canRaise) return raiseTo(3, 'semibluff');
-    if (rank < mdf || eq * real >= needed + 0.06) return call('defend');
+    if (draw >= 2 && street !== 'river' && rank < mdf && Math.random() < 0.18 && L.canRaise) return raiseTo(3, 'semibluff');
+    if (eq * real + implied >= needed) return call('call');
+    if (betFrac <= 1.05 && nOpp === 1 && rank < mdf * 0.92 && eq > needed * 0.6) return call('defend');
     return fold('fold');
   }
   if (perceived * real + implied + margin >= needed) {
     return call(id === 'neville' && perceived > eq + 0.1 ? 'overvalue' : wild && eq * real < needed ? 'wildcall' : target && eq * real < needed ? 'grudgecall' : 'call');
   }
+  if (id !== 'neville' && betFrac <= 0.9 && nOpp === 1 && rank < mdf * 0.8 && eq > needed * 0.7) return call('catch');
   // the odd raise as a bluff: brutus check raises a lot, especially with a
   // draw or when the board's his
   let crP = (draw >= 2 ? 0.12 : 0.035) * P.cr * (A.hand.checked[s.i] ? 1.5 : 0.6);
   if (id === 'brutus') crP *= adv > 0.02 ? 1.8 : 0.5;
   if (nOpp > 1) crP *= 0.4;
+  else crP *= pkEstFor(T, s.i, opp[0].i).f;
   if (target) crP += 0.06 * g;
-  if (L.canRaise && street !== 'river' ? rnd < crP : rnd < crP * 0.4) {
-    const huge = id === 'brutus' && rnd < P.wildSize ? 4.5 : 3;
+  if (L.canRaise && Math.random() < (street !== 'river' ? crP : crP * 0.4)) {
+    const huge = id === 'brutus' && Math.random() < P.wildSize ? 4.5 : 3;
     return raiseTo(huge, A.hand.checked[s.i] ? 'checkraise' : 'bluffraise');
   }
   return fold(id === 'neville' ? 'scaredfold' : 'fold');
@@ -958,6 +1004,7 @@ function pkAiHandEnd(T, showdown, busted) {
       st.vpip += ((s.vol ? 1 : 0) - st.vpip) * a;
       st.pfr += ((s.vol === 2 ? 1 : 0) - st.pfr) * a;
       if (H.postAct[i]) st.agg += ((H.postAgg[i] / H.postAct[i]) - st.agg) * a * 1.5;
+      if (H.faced[i]) st.ftb += ((H.folded[i] / H.faced[i]) - st.ftb) * a * 1.5;
       st.n++;
     }
   });
@@ -967,24 +1014,27 @@ function pkAiHandEnd(T, showdown, busted) {
   // brutus
   const b = T.seats[1];
   if (b.cards && !b.out || busted.includes(1)) {
-    const bm = M.brutus, lost = net[1] < 0 && (invested[1] >= 4 || showdown && invested[1] > 0) && b.vol, won = net[1] > 0;
+    const bm = M.brutus, lost = net[1] < 0 && (invested[1] >= T.blinds.bb * 2 || showdown && invested[1] > 0) && b.vol, won = net[1] > 0;
     if (won) { bm.wins++; bm.losses = 0; }
     else if (lost) { bm.losses++; bm.wins = 0; }
+    // (a couple of pots without losing one in between calms him down, or a
+    // good while without losing anything)
+    bm.quiet = lost ? 0 : (bm.quiet || 0) + 1;
     if (!bm.tilt && bm.losses >= 2) { bm.tilt = true; res.events.push('brutusTilt'); }
-    else if (bm.tilt && bm.wins >= 3) { bm.tilt = false; bm.losses = 0; res.events.push('brutusCalm'); }
+    else if (bm.tilt && (bm.wins >= 2 || bm.quiet >= 10)) { bm.tilt = false; bm.losses = 0; bm.wins = 0; res.events.push('brutusCalm'); }
     if (lost && (bm.tilt || busted.includes(1))) res.events.push('brutusThrow');
   }
   // sparks
   const sp = T.seats[5];
   if (!sp.out || busted.includes(5)) {
     const sm = M.sparks;
-    if (net[5] < 0 && invested[5] >= 4) sm.losses++; else if (net[5] > 0) sm.losses = 0;
+    if (net[5] < 0 && invested[5] >= T.blinds.bb * 2) sm.losses++; else if (net[5] > 0) sm.losses = 0;
     if (sm.wild && (sp.stack < PK.START * 0.7 || sm.losses >= 3)) { sm.wild = false; sm.losses = 0; res.events.push('sparksSettle'); }
     else if (!sm.wild && sp.stack >= PK.START * 1.45) { sm.wild = true; res.events.push('sparksWild'); }
   }
   // brock's grudge against you
   const bk = T.seats[4], you = T.seats[0];
-  if ((bk.cards && you.cards) && invested[4] >= 4) {
+  if ((bk.cards && you.cards) && invested[4] >= T.blinds.bb * 2) {
     if (net[0] > 0 && net[4] < 0) {
       let k = 1;
       if (showdown && you.shown && bk.shown && pkPct(you.cards[0], you.cards[1]) > pkPct(bk.cards[0], bk.cards[1])) k++;
@@ -994,7 +1044,7 @@ function pkAiHandEnd(T, showdown, busted) {
     } else if (net[4] > 0 && net[0] < 0) M.brock.grudge = Math.max(0, M.brock.grudge - 0.5);
   }
   // ace's respect for you grows when you take a pot off her
-  if (net[0] > 0 && net[3] < 0 && invested[3] >= 4) { M.ace.respect++; res.events.push('aceBeaten'); }
+  if (net[0] > 0 && net[3] < 0 && invested[3] >= T.blinds.bb * 2) { M.ace.respect++; res.events.push('aceBeaten'); }
   A.results = res;
 }
 // poker core end

@@ -304,7 +304,7 @@ function pkStartHand(T, wantsStraddle) {
   const heads = live.length === 2;
   T.sb = heads ? T.button : pkNext(T, T.button);
   T.bb = pkNext(T, T.sb);
-  T.ev.push({ t: 'hand', hand: T.hand, button: T.button, sb: T.sb, bb: T.bb, blinds: B, levelUp: PK.LEVEL_HANDS > 0 && T.hand > 1 && (T.hand - 1) % PK.LEVEL_HANDS === 0 });
+  T.ev.push({ t: 'hand', hand: T.hand, button: T.button, sb: T.sb, bb: T.bb, blinds: B, stacks: T.seats.map(s => s.stack), levelUp: PK.LEVEL_HANDS > 0 && T.hand > 1 && (T.hand - 1) % PK.LEVEL_HANDS === 0 });
   T.ev.push({ t: 'post', seat: T.sb, amount: pkPut(T, T.seats[T.sb], B.sb), kind: 'sb' });
   T.ev.push({ t: 'post', seat: T.bb, amount: pkPut(T, T.seats[T.bb], B.bb), kind: 'bb' });
   let first = pkNext(T, T.bb);
@@ -1375,3 +1375,1883 @@ function minerFrame(id, turn, mood, look, blink, talk) {
   return c;
 }
 // poker art end
+
+// the cards: carved stone, a standard deck of 52. the face is pale granite with
+// the rank and suit cut into it and inlaid (ruby for hearts and diamonds,
+// obsidian for spades and clubs) and a chip of diamond in the corner; the back
+// is dark basalt carved in a diamond lattice with a gem set in the middle.
+const PK_CARD_W = 14, PK_CARD_H = 20;
+const PK_GLYPH = {
+  2: ['111', '001', '111', '100', '111'], 3: ['111', '001', '111', '001', '111'], 4: ['101', '101', '111', '001', '001'],
+  5: ['111', '100', '111', '001', '111'], 6: ['111', '100', '111', '101', '111'], 7: ['111', '001', '010', '010', '010'],
+  8: ['111', '101', '111', '101', '111'], 9: ['111', '101', '111', '001', '111'], T: ['10111', '10101', '10101', '10101', '10111'],
+  J: ['011', '001', '001', '101', '111'], Q: ['010', '101', '101', '110', '011'], K: ['101', '110', '100', '110', '101'], A: ['010', '101', '111', '101', '101']
+};
+const PK_SUIT5 = [
+  ['01110', '01110', '11111', '11011', '00100'],
+  ['00100', '01110', '11111', '01110', '00100'],
+  ['01010', '11111', '11111', '01110', '00100'],
+  ['00100', '01110', '11111', '11111', '00100']
+];
+const PK_SUIT7 = [
+  ['0011100', '0011100', '1101011', '1111111', '1101011', '0001000', '0011100'],
+  ['0001000', '0011100', '0111110', '1111111', '0111110', '0011100', '0001000'],
+  ['0110110', '1111111', '1111111', '1111111', '0111110', '0011100', '0001000'],
+  ['0001000', '0011100', '0111110', '1111111', '1111111', '0001000', '0011100']
+];
+const PK_RED = c => (c & 3) === 1 || (c & 3) === 2;
+function pkGlyph(G, rows, x0, y0, col, hi) {
+  rows.forEach((r, y) => [...r].forEach((b, x) => { if (b === '1') G.set(x0 + x, y0 + y, hi && (x === 0 || y === 0) && G.get(x0 + x, y0 + y) !== col ? hi : col); }));
+}
+function makeCardFace(c) {
+  const G = pixelGrid(PK_CARD_W, PK_CARD_H);
+  for (let y = 0; y < PK_CARD_H; y++) for (let x = 0; x < PK_CARD_W; x++) {
+    const edge = x === 0 || y === 0 || x === PK_CARD_W - 1 || y === PK_CARD_H - 1;
+    if (edge) { if (!((x === 0 || x === PK_CARD_W - 1) && (y === 0 || y === PK_CARD_H - 1))) G.set(x, y, '#2a2620'); continue; }
+    const n = hash2(x, y, 2201 + c);
+    let col = n < 0.08 ? '#cfc9bc' : n < 0.14 ? '#f6f2ea' : '#e6e1d6';
+    if (x === 1 || y === 1) col = '#faf7f0';
+    if (x === PK_CARD_W - 2 || y === PK_CARD_H - 2) col = '#b9b2a4';
+    G.set(x, y, col);
+  }
+  const red = PK_RED(c), ink = red ? '#b8302a' : '#25222c', lit = red ? '#ef6a5a' : '#5a566a';
+  const g = PK_GLYPH[PK_RANKS[c >> 2]];
+  pkGlyph(G, g, 2, 2, ink);
+  pkGlyph(G, PK_SUIT5[c & 3], 2, 8, ink);
+  pkGlyph(G, PK_SUIT7[c & 3], 6, 11, ink, lit);
+  G.set(12, 2, '#9df4e8'); G.set(11, 2, '#4ed6c6');
+  return G.canvas();
+}
+function makeCardBack() {
+  const G = pixelGrid(PK_CARD_W, PK_CARD_H);
+  for (let y = 0; y < PK_CARD_H; y++) for (let x = 0; x < PK_CARD_W; x++) {
+    const edge = x === 0 || y === 0 || x === PK_CARD_W - 1 || y === PK_CARD_H - 1;
+    if (edge) { if (!((x === 0 || x === PK_CARD_W - 1) && (y === 0 || y === PK_CARD_H - 1))) G.set(x, y, '#120f16'); continue; }
+    const lattice = (x + y) % 4 === 0 || (x - y + 40) % 4 === 0;
+    let col = lattice ? '#4e4658' : hash2(x, y, 2290) < 0.15 ? '#2e2836' : '#3a3442';
+    if (x === 1 || y === 1 || x === PK_CARD_W - 2 || y === PK_CARD_H - 2) col = '#6a5a7a';
+    G.set(x, y, col);
+  }
+  pkGlyph(G, ['00100', '01110', '11111', '01110', '00100'], 4, 7, '#4ed6c6');
+  G.set(6, 7, '#e8fffc'); G.set(5, 8, '#9df4e8'); G.set(6, 8, '#9df4e8'); G.set(7, 10, '#1d8b82'); G.set(7, 9, '#1d8b82');
+  return G.canvas();
+}
+const PK_FACE = Array.from({ length: 52 }, (_, c) => makeCardFace(c));
+const PK_BACK = makeCardBack();
+
+// the chips are the ores themselves in little stacks: ingots for iron and
+// gold, cut gems for ruby, emerald and diamond. one iron is $100, gold five
+// iron, ruby ten, emerald twenty and diamond a hundred (each one divides into
+// the next up, so any amount always makes change).
+const PK_ORES = ['iron', 'gold', 'ruby', 'emerald', 'diamond'];
+const PK_VAL = { iron: 1, gold: 5, ruby: 10, emerald: 20, diamond: 100 };
+const PK_CHIP = {
+  iron: ['#ffffff', '#dcd7d0', '#a8a29a', '#6e6a64'], gold: ['#fff6c2', '#f3d35a', '#c99a1c', '#7c5a0a'],
+  ruby: ['#ffd0c8', '#ef6a5a', '#c4392b', '#7c1c1c'], emerald: ['#eafff0', '#8eeaa9', '#3fc46c', '#1d7a40'], diamond: ['#f0fffc', '#9df4e8', '#4ed6c6', '#1d8b82']
+};
+// how a pile of chips is made up: some of each so it looks like real money,
+// with the small stuff topped up to a decent stack and the rest in the big
+// ones (iron up to 10, gold 6, ruby 5, emerald 4, diamonds for the rest)
+function pkChips(n) {
+  const out = { iron: 0, gold: 0, ruby: 0, emerald: 0, diamond: 0 }, want = [10, 6, 5, 4, Infinity];
+  let rest = Math.max(0, Math.round(n));
+  PK_ORES.forEach((id, k) => {
+    const v = PK_VAL[id], next = PK_ORES[k + 1];
+    if (!next) { out[id] = Math.floor(rest / v); rest -= out[id] * v; return; }
+    const nv = PK_VAL[next], step = nv / v;
+    let c = (rest % nv) / v;
+    while (c + step <= want[k] && (c + step) * v <= rest) c += step;
+    out[id] = c; rest -= c * v;
+  });
+  return out;
+}
+const pkDollars = n => `$${(Math.round(n) * PK.DOLLARS).toLocaleString('en-US')}`;
+// one stack of up to ten, seen from the front and a little above
+function makeChipStack(ore, n) {
+  const P = PK_CHIP[ore], gem = PK_VAL[ore] >= 10, w = 6, h = n + 2;
+  const G = pixelGrid(w, h);
+  for (let k = 0; k < n; k++) {
+    const y = h - 1 - k;
+    for (let x = 0; x < w; x++) G.set(x, y, x === 0 ? P[1] : x === w - 1 ? P[3] : k % 2 ? P[2] : (gem ? P[1] : P[2]));
+    if (k % 2 === 0) G.set(gem ? 2 : 1, y, P[3]);
+  }
+  for (let x = 0; x < w; x++) { G.set(x, 1, x < 2 ? P[0] : P[1]); if (x > 0 && x < w - 1) G.set(x, 0, gem && x === 2 ? '#ffffff' : P[0]); }
+  return G.outline(() => '#0c0a0e').canvas();
+}
+const PK_STACK = Object.fromEntries(PK_ORES.map(o => [o, Array.from({ length: 11 }, (_, n) => (n ? makeChipStack(o, n) : null))]));
+
+// the table: one slab of dark basalt on a thick stone base, with a rim of
+// lighter granite round it carved with notches, a ring and a diamond cut
+// into the middle of the playing surface, and lava glowing in the cracks down
+// its sides. rx, ry are the top surface's radii.
+const PK_TRX = 142, PK_TRY = 62, PK_TDEPTH = 11;
+function makePokerTable(rx, ry, depth) {
+  const w = rx * 2 + 4, h = ry * 2 + depth + 4, cx = w / 2, cy = ry + 2;
+  const c = mk(w, h), g = c.getContext('2d'), cracks = [];
+  const dot = (x, y, col) => { g.fillStyle = col; g.fillRect(x, y, 1, 1); };
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (x + 0.5 - cx) / rx, dy = (y + 0.5 - cy) / ry, d = dx * dx + dy * dy;
+    if (d <= 1) {
+      const din = ((x + 0.5 - cx) / (rx - 9)) ** 2 + ((y + 0.5 - cy) / (ry - 7)) ** 2;
+      const n = hash2(x, y, 2301), v = vnoise(x / 7, y / 5, 2302);
+      if (din > 1) {
+        // the granite rim, lit from the top left, with notches cut round it
+        const a = Math.atan2(dy, dx), notch = Math.abs(((a / (Math.PI * 2)) * 36 + 36) % 1 - 0.5) < 0.06 && din > 1.08 && d < 0.985;
+        const lit = -dy * 0.6 - dx * 0.3;
+        let col = lit > 0.35 ? '#8a8490' : lit > -0.2 ? '#6e6874' : '#55505c';
+        if (n < 0.1) col = '#4a4652';
+        if (d > 0.975) col = dy > 0 ? '#3a3640' : '#9a94a0';
+        if (din < 1.06) col = '#1c1a20';
+        if (notch) col = '#3e3a44';
+        dot(x, y, col);
+      } else {
+        // the playing surface: dark basalt, a faint grain, a carved ring and a
+        // big diamond shape cut into the middle
+        let col = v > 0.66 ? '#34313c' : n < 0.05 ? '#3c3846' : '#2c2a33';
+        const ring = Math.abs(Math.sqrt(din) - 0.72) < 0.012;
+        const dia = Math.abs(Math.abs(x + 0.5 - cx) / (rx * 0.3) + Math.abs(y + 0.5 - cy) / (ry * 0.42) - 1) < 0.03;
+        if (ring || dia) col = '#24222a';
+        if ((ring || dia) && hash2(x, y, 2303) < 0.5) col = '#3a3644';
+        if (din > 0.93) col = '#242129';
+        dot(x, y, col);
+      }
+    } else if (dy > 0 && Math.abs(dx) <= 1) {
+      // the side of the slab, under the front half of the ellipse
+      const top = cy + ry * Math.sqrt(1 - dx * dx);
+      const k = y + 0.5 - top;
+      if (k < 0 || k > depth) continue;
+      const shade = Math.round(58 - k * 2.4 - Math.abs(dx) * 10);
+      let col = `rgb(${shade},${shade - 4},${shade + 4})`;
+      if (k > depth - 1) col = '#141218';
+      if (vnoise(x / 3, k / 2, 2304) > 0.74 && k > 1 && k < depth - 1) { col = '#ff8a1c'; cracks.push([x, y]); }
+      dot(x, y, col);
+    }
+  }
+  return { canvas: c, cracks, w, h, cx, cy };
+}
+const PK_TABLE = makePokerTable(PK_TRX, PK_TRY, PK_TDEPTH);
+
+// the dealer button: a little stone disc with a D carved in it
+function makeDealerButton() {
+  const G = pixelGrid(9, 8);
+  pxBlob(G, 4, 3.5, 4, 3.4, (dx, dy) => (dy > 0.5 ? '#9a9286' : dx + dy < -0.4 ? '#fffaf0' : '#e8e1d2'));
+  [[3, 2], [4, 2], [3, 3], [5, 3], [3, 4], [5, 4], [3, 5], [4, 5]].forEach(([x, y]) => G.set(x, y, '#2a2620'));
+  return G.outline(() => '#0c0a0e').canvas();
+}
+const PK_BUTTON = makeDealerButton();
+// a stone seat: a block with a backrest, seen from behind (the top seats) or
+// from the side
+function makeStoneChair(kind) {
+  const G = pixelGrid(22, 16);
+  if (kind === 'back') {
+    for (let y = 0; y < 16; y++) for (let x = 2; x < 20; x++) {
+      if (y < 2 && (x < 4 || x > 17)) continue;
+      G.set(x, y, y === 0 ? '#8a8490' : x < 5 ? '#6e6874' : x > 16 ? '#3e3a44' : (hash2(x, y, 2310) < 0.1 ? '#4a4652' : '#55505c'));
+    }
+  } else {
+    for (let y = 6; y < 16; y++) for (let x = 3; x < 19; x++) G.set(x, y, y === 6 ? '#8a8490' : y > 13 ? '#3a3640' : x < 6 ? '#6e6874' : '#55505c');
+  }
+  return G.outline(() => '#0c0a0e').canvas();
+}
+const PK_CHAIR_BACK = makeStoneChair('back'), PK_STOOL = makeStoneChair('stool');
+
+// the cavern round the table: a dark stone floor warmed by the lava, a river
+// of lava running along the back with a crust of black rock on its bank, pools
+// of it in the corners, and stalagmites. lava is remembered pixel by pixel so
+// it can bubble and glow every frame.
+function makeCavern(w, h, tx, ty) {
+  const c = mk(w, h), g = c.getContext('2d'), lava = [];
+  const img = g.createImageData(w, h), d = img.data;
+  const river = x => ty - 104 + Math.sin(x / 37) * 5 + Math.sin(x / 13 + 1) * 2;
+  const pools = [[tx - 236, ty + 98, 70, 30], [tx + 236, ty + 98, 70, 30], [tx - 300, ty - 10, 46, 70], [tx + 300, ty - 10, 46, 70]];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4, n = hash2(x, y, 2401), v = vnoise(x / 9, y / 9, 2402), r = river(x);
+    let inLava = y < r - 3, bank = !inLava && y < r + 3;
+    let poolD = Infinity;
+    pools.forEach(([px, py, rx, ry]) => { poolD = Math.min(poolD, Math.hypot((x - px) / rx, (y - py) / ry)); });
+    if (poolD < 1) inLava = true; else if (poolD < 1.12) bank = true;
+    let R, Gc, B;
+    if (inLava) {
+      const t = vnoise(x / 11, y / 6, 2403);
+      [R, Gc, B] = t > 0.72 ? [255, 214, 90] : t > 0.5 ? [255, 140, 36] : t > 0.3 ? [228, 88, 26] : [168, 44, 18];
+      if (n < 0.02) [R, Gc, B] = [255, 240, 170];
+      lava.push(x, y);
+    } else if (bank) {
+      [R, Gc, B] = n < 0.3 ? [26, 18, 16] : [40, 28, 24];
+      if (hash2(x, y, 2404) < 0.12) [R, Gc, B] = [120, 46, 20];
+    } else {
+      // the floor: warmer the closer it is to lava
+      const warm = Math.max(0, 1 - (y - r) / 70) * 0.6 + Math.max(0, 1.6 - poolD) * 0.35;
+      const base = v > 0.62 ? 46 : v > 0.4 ? 38 : 32;
+      R = base + warm * 40; Gc = base - 6 + warm * 12; B = base - 4;
+      if (n < 0.04) { R -= 12; Gc -= 12; B -= 12; }
+      if (n > 0.985) { R += 30; Gc += 22; B += 18; }
+    }
+    d[i] = R; d[i + 1] = Gc; d[i + 2] = B; d[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  // stalagmites and boulders out of the way of the table
+  const rr = mulberry32(2405);
+  for (let k = 0; k < 26; k++) {
+    const x = rr() * w, y = river(x) + 8 + rr() * (h - river(x) - 8);
+    if (Math.abs(x - tx) < 230 && y > ty - 100 && y < ty + 125) continue;
+    const hh = 8 + rr() * 16, ww = 4 + rr() * 5;
+    for (let yy = 0; yy < hh; yy++) {
+      const half = ww * (1 - yy / hh);
+      for (let xx = -half; xx <= half; xx++) {
+        g.fillStyle = xx < -half * 0.3 ? '#5a4c46' : xx > half * 0.4 ? '#2a221f' : '#40362f';
+        g.fillRect(Math.round(x + xx), Math.round(y - yy), 1, 1);
+      }
+    }
+    g.fillStyle = 'rgba(0,0,0,0.35)';
+    g.fillRect(Math.round(x - ww), Math.round(y + 1), Math.round(ww * 2), 2);
+  }
+  return { canvas: c, lava, river };
+}
+
+// the table view: its own full screen canvas over the world, drawn at a whole
+// number scale like everything else, with the buttons, the chat and the rules
+// in html on top. where everything sits round the table, relative to the
+// middle of its top (you at the bottom, then clockwise: brutus on the left,
+// neville, ace and brock along the back, sparks on the right). cards is the
+// middle of a seat's two cards, stack and bet are the bottom middle of their
+// chips, plate is their name and stack.
+const PK_SEATS = [
+  { view: 'back', body: [0, 100], cards: [0, 46], stack: [-48, 57], bet: [38, 40], plate: [0, 108] },
+  { view: 'side', flip: false, body: [-176, 22], cards: [-118, 2], stack: [-112, 26], bet: [-86, 14], plate: [-176, 40] },
+  { view: 'front', body: [-72, -44], cards: [-72, -35], stack: [-102, -27], bet: [-56, -19], plate: [-72, -88] },
+  { view: 'front', body: [0, -48], cards: [-12, -40], stack: [-38, -31], bet: [6, -19], plate: [0, -92] },
+  { view: 'front', body: [72, -44], cards: [72, -35], stack: [102, -27], bet: [56, -19], plate: [72, -88] },
+  { view: 'side', flip: true, body: [176, 22], cards: [118, 2], stack: [112, 26], bet: [86, 14], plate: [176, 40] }
+];
+const PK_DECK = [26, -40];
+const PK_NAMES = { you: 'You', brutus: 'Brutus', neville: 'Neville', ace: 'Ace', brock: 'Brock', sparks: 'Sparks' };
+const PK_COLOR = { you: '#ffffff', brutus: '#ff8a4a', neville: '#e8d878', ace: '#6fe0d4', brock: '#ff6a6a', sparks: '#ffb03a' };
+// what each of them looks like when nothing's happening
+const pkBaseMood = (id, M) => (id === 'brutus' ? (M && M.brutus.tilt ? 'fume' : 'angry') : id === 'brock' ? 'smug' : id === 'sparks' ? (M && !M.sparks.wild ? 'idle' : 'grin') : 'idle');
+
+const pkRoot = $('#poker'), pkCv = $('#pk-canvas'), pkCtx = pkCv.getContext('2d');
+let PV = null;
+let PS = 3, PW = 400, PH = 250, PTX = 200, PTY = 110, POX = 0, POY = 0;
+let pkCave = null;
+function pvLayout() {
+  const w = window.innerWidth, h = window.innerHeight, dpr = Math.min(2, window.devicePixelRatio || 1);
+  pkCv.width = Math.round(w * dpr); pkCv.height = Math.round(h * dpr);
+  pkCv.style.width = `${w}px`; pkCv.style.height = `${h}px`;
+  PS = Math.max(2, Math.floor(Math.min(pkCv.width / 410, pkCv.height / 250)));
+  PW = Math.ceil(pkCv.width / PS); PH = Math.ceil(pkCv.height / PS);
+  PTX = Math.round(PW / 2);
+  PTY = Math.round(clamp(PH * 0.42, 104, PH - 124));
+  POX = 0; POY = 0;
+  pkCave = makeCavern(PW, PH, PTX, PTY);
+  pkCtx.imageSmoothingEnabled = false;
+}
+const pX = x => Math.round(x * PS + POX), pY = y => Math.round(y * PS + POY);
+function pRect(x, y, w, h, col) { pkCtx.fillStyle = col; pkCtx.fillRect(pX(x), pY(y), Math.round(w * PS), Math.round(h * PS)); }
+function pImg(im, x, y, flip) {
+  if (!im) return;
+  if (flip) {
+    pkCtx.save();
+    pkCtx.translate(pX(x) + im.width * PS, pY(y));
+    pkCtx.scale(-1, 1);
+    pkCtx.drawImage(im, 0, 0, im.width * PS, im.height * PS);
+    pkCtx.restore();
+  } else pkCtx.drawImage(im, pX(x), pY(y), im.width * PS, im.height * PS);
+}
+const pkFont = k => `${8 * Math.max(1, Math.round((PS * k) / 4))}px Silkscreen, monospace`;
+const seatAt = (i, key) => { const p = PK_SEATS[i][key]; return { x: PTX + p[0], y: PTY + p[1] }; };
+
+// a fresh view of the table for a game in progress
+function pvSeats(T) {
+  return T.seats.map((s, i) => ({
+    i, id: s.id, stack: s.stack, bet: 0, cards: [], folded: s.out, out: s.out, mood: pkBaseMood(s.id, T.ai && T.ai.mood), moodT: 0,
+    blinkT: 1 + Math.random() * 3, look: 0, lookT: 0, talkT: 0, pose: 'rest', poseT: 0, poseTo: null, steamT: 0, bob: Math.random() * 6
+  }));
+}
+function pvMood(i, mood, dur = 2) {
+  const v = PV.seats[i];
+  if (!v || v.id === 'you') return;
+  v.mood = mood; v.moodT = dur;
+}
+function pvPose(i, pose, dur, to) {
+  const v = PV.seats[i];
+  v.pose = pose; v.poseT = dur; v.poseDur = dur; v.poseTo = to || null;
+}
+// something sliding across the table: a card, or a pile of chips
+function pvTween(o, x1, y1, dur, delay = 0, done) {
+  o.x0 = o.x; o.y0 = o.y; o.x1 = x1; o.y1 = y1; o.mt = -delay; o.md = dur; o.mdone = done || null;
+  if (!PV.movers.includes(o)) PV.movers.push(o);
+}
+function pvFly(n, from, to, dur = 0.38, delay = 0, done) {
+  if (n <= 0) { if (done) done(); return; }
+  const f = { n, x: from.x, y: from.y, fly: true };
+  PV.flights.push(f);
+  pvTween(f, to.x, to.y, dur, delay, () => { PV.flights.splice(PV.flights.indexOf(f), 1); if (done) done(); });
+}
+function pvTick(dt) {
+  PV.time += dt;
+  for (let k = PV.movers.length - 1; k >= 0; k--) {
+    const o = PV.movers[k];
+    o.mt += dt;
+    if (o.mt < 0) continue;
+    const u = Math.min(1, o.mt / o.md), e = 1 - (1 - u) ** 3;
+    o.x = o.x0 + (o.x1 - o.x0) * e; o.y = o.y0 + (o.y1 - o.y0) * e - (o.arc ? Math.sin(u * Math.PI) * o.arc : 0);
+    if (u >= 1) { PV.movers.splice(k, 1); if (o.mdone) o.mdone(); }
+  }
+  PV.seats.forEach(v => {
+    v.moodT -= dt;
+    if (v.moodT <= 0 && v.id !== 'you') v.mood = pkBaseMood(v.id, PV.T.ai.mood);
+    v.blinkT -= dt;
+    if (v.blinkT < -0.12) v.blinkT = 2 + Math.random() * 3.5;
+    v.lookT -= dt;
+    if (v.lookT <= 0) v.look = 0;
+    v.talkT = Math.max(0, v.talkT - dt);
+    v.poseT -= dt;
+    if (v.poseT <= 0 && v.pose !== 'rest') { v.pose = 'rest'; v.poseTo = null; }
+    // brutus steams out of his ears while he's on tilt
+    if (v.id === 'brutus' && PV.T.ai.mood.brutus.tilt && !v.out && !reduceMotion) {
+      v.steamT -= dt;
+      if (v.steamT <= 0) {
+        v.steamT = 0.09 + Math.random() * 0.12;
+        const b = seatAt(v.i, 'body');
+        [-6, 7].forEach(o => PV.parts.push({ x: b.x + o + (Math.random() - 0.5) * 3, y: b.y - 22, vx: o * 1.6 + (Math.random() - 0.5) * 6, vy: -16 - Math.random() * 10, g: -4, life: 0.9 + Math.random() * 0.4, t: 0, col: Math.random() < 0.5 ? '#f2f2f2' : '#c8c8cc', size: Math.random() < 0.4 ? 2 : 1, puff: true }));
+      }
+    }
+  });
+  for (let k = PV.parts.length - 1; k >= 0; k--) {
+    const p = PV.parts[k];
+    p.t += dt;
+    if (p.t >= p.life) { PV.parts.splice(k, 1); continue; }
+    p.vy += (p.g || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.spin !== undefined) p.spin += dt * 14;
+  }
+  // embers drifting up off the lava
+  if (!reduceMotion && pkCave && Math.random() < dt * 14) {
+    const k = ((Math.random() * pkCave.lava.length) / 2 | 0) * 2;
+    if (pkCave.lava.length) PV.parts.push({ x: pkCave.lava[k], y: pkCave.lava[k + 1], vx: (Math.random() - 0.5) * 8, vy: -10 - Math.random() * 14, g: 0, life: 1.2 + Math.random(), t: 0, col: Math.random() < 0.5 ? '#ffd23f' : '#ff8a1c', size: 1, ember: true });
+  }
+  for (let k = PV.bubbles.length - 1; k >= 0; k--) { PV.bubbles[k].t += dt; if (PV.bubbles[k].t > PV.bubbles[k].dur) PV.bubbles.splice(k, 1); }
+  PV.shake = Math.max(0, PV.shake - dt * 8);
+}
+
+// drawing
+function pvDrawChips(n, x, y, maxCols = 9) {
+  if (n <= 0) return;
+  const parts = pkChips(n), cols = [];
+  PK_ORES.slice().reverse().forEach(o => { let c = parts[o]; while (c > 0) { cols.push([o, Math.min(10, c)]); c -= 10; } });
+  const show = cols.slice(0, maxCols), w = show.length * 7 + 1;
+  show.forEach(([o, k], j) => pImg(PK_STACK[o][k], x - w / 2 + j * 7, y - k - 4));
+}
+function pvDrawCard(o) {
+  if (o.a === 0) return;
+  const big = o.big ? 1 : 1;
+  if (o.a !== undefined && o.a < 1) pkCtx.globalAlpha = Math.max(0, o.a);
+  let up = o.up, sx = 1;
+  if (o.flip !== undefined && o.flip >= 0 && o.flip < 1) { sx = Math.abs(1 - o.flip * 2); up = o.flip >= 0.5 ? o.flipTo : !o.flipTo; }
+  const im = up ? PK_FACE[o.c] : PK_BACK;
+  const w = PK_CARD_W * big, h = PK_CARD_H * big;
+  pkCtx.fillStyle = 'rgba(0,0,0,0.35)';
+  pkCtx.fillRect(pX(o.x - w / 2 + 1), pY(o.y - h / 2 + 2), Math.round(w * PS * sx), h * PS);
+  if (sx < 1) {
+    const cw = Math.max(1, Math.round(w * PS * sx));
+    pkCtx.drawImage(im, pX(o.x) - (cw >> 1), pY(o.y - h / 2), cw, h * PS);
+  } else pkCtx.drawImage(im, pX(o.x - w / 2), pY(o.y - h / 2), w * PS, h * PS);
+  if (o.glow) { pkCtx.strokeStyle = '#ffd23f'; pkCtx.lineWidth = Math.max(2, PS); pkCtx.strokeRect(pX(o.x - w / 2) - 1, pY(o.y - h / 2) - 1, w * PS + 2, h * PS + 2); }
+  pkCtx.globalAlpha = 1;
+}
+// a forearm on the table, from the elbow to the hand: a sleeve two pixels
+// thick with an outline, and the hand on the end
+function pvArm(x0, y0, x1, y1, sleeve, skin) {
+  const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2) + 1;
+  [[1.5, '#000000'], [1, sleeve]].forEach(([r, col]) => {
+    pkCtx.fillStyle = col;
+    for (let k = 0; k <= n; k++) {
+      const x = x0 + ((x1 - x0) * k) / n, y = y0 + ((y1 - y0) * k) / n;
+      pkCtx.fillRect(pX(x - r), pY(y - r), Math.round(r * 2 * PS), Math.round(r * 2 * PS));
+    }
+  });
+  pRect(x1 - 2, y1 - 2, 4, 4, '#000000');
+  pRect(x1 - 1, y1 - 1, 2, 2, skin);
+}
+// where a seat's hands are right now, for whatever they're doing
+function pvHands(v, t) {
+  const S0 = PK_SEATS[v.i], c = seatAt(v.i, 'cards'), b = seatAt(v.i, 'body'), u = v.poseDur ? 1 - Math.max(0, v.poseT) / v.poseDur : 0;
+  const side = S0.view === 'side', dir = S0.flip ? -1 : 1;
+  let L = { x: c.x - 8, y: c.y + 6 }, R = { x: c.x + 8, y: c.y + 6 };
+  if (side) { L = { x: c.x - dir * 4, y: c.y - 6 }; R = { x: c.x - dir * 2, y: c.y + 8 }; }
+  const to = v.poseTo;
+  const lerp = (a, p, k) => ({ x: a.x + (p.x - a.x) * k, y: a.y + (p.y - a.y) * k });
+  const there = k => Math.sin(Math.min(1, k) * Math.PI);
+  switch (v.pose) {
+    case 'deal': if (to) R = lerp(R, to, there(u) * 0.55); break;
+    case 'knock': R = { x: R.x, y: R.y - (Math.sin(u * Math.PI * 4) > 0 ? 3 : 0) }; break;
+    case 'push': if (to) { L = lerp(L, { x: to.x - 6, y: to.y }, Math.min(1, u * 1.6)); R = lerp(R, { x: to.x + 6, y: to.y }, Math.min(1, u * 1.6)); } break;
+    case 'reach': if (to) R = lerp(R, to, there(u) * 0.8); break;
+    case 'slam': {
+      // fist up, then down hard
+      const up = u < 0.45 ? u / 0.45 : Math.max(0, 1 - (u - 0.45) / 0.1);
+      R = { x: R.x, y: R.y - up * 14 };
+      L = { x: L.x, y: L.y - up * 9 };
+      break;
+    }
+    case 'throw': if (to) R = lerp({ x: b.x + dir * 4, y: b.y - 20 }, to, Math.min(1, u * 2) * 0.35); break;
+    case 'chin': R = { x: b.x + 3, y: b.y - 12 }; break;
+  }
+  return { L, R };
+}
+function pvDrawMiner(v, t) {
+  const S0 = PK_SEATS[v.i], b = seatAt(v.i, 'body'), C = MINER[v.id];
+  const turn = S0.view === 'side' ? 1 : 0;
+  const bob = reduceMotion ? 0 : Math.round(Math.max(0, Math.sin(t / 700 + v.bob)) * 0.9);
+  const talk = v.talkT > 0 && Math.floor(t / 110) % 2 === 0;
+  // neville looking at whoever he's up against and back at his cards
+  let look = v.look;
+  if (S0.flip && (look === -1 || look === 1)) look = -look;
+  const im = minerFrame(v.id, turn, v.mood, look, v.blinkT < 0, talk);
+  const x = b.x - MINER_W / 2 - (turn ? 0.5 : 0), y = b.y - MINER_H + bob;
+  if (v.out) pkCtx.globalAlpha = 0.55;
+  pImg(im, x, y, S0.flip);
+  pkCtx.globalAlpha = 1;
+}
+function pvDrawArms(v, t) {
+  if (v.out || v.id === 'you') return;
+  const S0 = PK_SEATS[v.i], b = seatAt(v.i, 'body'), C = MINER[v.id];
+  const sleeve = (C.sleeve || C.skin)[1], skin = C.skin[1];
+  const { L, R } = pvHands(v, t);
+  if (S0.view === 'front') {
+    // the forearms come over the table edge from the elbows
+    const edge = PTY - Math.round(PK_TRY * Math.sqrt(Math.max(0, 1 - ((b.x - PTX) / PK_TRX) ** 2))) + 2;
+    pvArm(b.x - 7, Math.max(edge, L.y - 10), L.x, L.y, sleeve, skin);
+    pvArm(b.x + 7, Math.max(edge, R.y - 10), R.x, R.y, sleeve, skin);
+  } else {
+    const dir = S0.flip ? -1 : 1, sy = b.y - 13;
+    pvArm(b.x + dir * 2, sy + 1, L.x, L.y, sleeve, skin);
+    pvArm(b.x + dir * 5, sy + 2, R.x, R.y, sleeve, skin);
+  }
+}
+// you, from behind, in the seat at the bottom: your own sprite's facing away
+// idle frame, the chair's back over your legs
+function pvDrawYou(t) {
+  const b = seatAt(0, 'body'), img = sheetPlay.complete && sheetPlay.naturalWidth ? sheetPlay : sheet;
+  if (!img.naturalWidth) return;
+  const col = Math.floor(t / 200) % 6;
+  pkCtx.drawImage(img, col * CELL, ROWS.idle.up * CELL, CELL, CELL - 8, pX(b.x - 24), pY(b.y - 42), CELL * PS, (CELL - 8) * PS);
+  pImg(PK_CHAIR_BACK, b.x - 11, b.y - 9);
+}
+function pvText(text, x, y, col, k = 1, align = 'center', base = 'middle') {
+  pkCtx.font = pkFont(k);
+  pkCtx.textAlign = align;
+  pkCtx.textBaseline = base;
+  pkCtx.fillStyle = '#000';
+  pkCtx.fillText(text, pX(x) + Math.max(1, PS / 2), pY(y) + Math.max(1, PS / 2));
+  pkCtx.fillStyle = col;
+  pkCtx.fillText(text, pX(x), pY(y));
+}
+// a name plate: the name over the stack, on a dark panel, lit up yellow round
+// the edge while it's their turn
+function pvPlate(v) {
+  const p = seatAt(v.i, 'plate'), T = PV.T, s = T.seats[v.i];
+  const turn = T.toAct === v.i && !T.over && !PV.T.ev.length;
+  pkCtx.font = pkFont(1);
+  const name = PK_NAMES[v.id], money = v.out ? 'OUT' : v.stack <= 0 && s.allIn ? 'ALL IN' : pkDollars(v.stack);
+  const w = Math.max(pkCtx.measureText(name).width, pkCtx.measureText(money).width) / PS + 8, h = 15;
+  const x = p.x - w / 2, y = p.y;
+  pkCtx.globalAlpha = v.folded && !v.out ? 0.6 : 1;
+  pRect(x, y, w, h, turn ? '#ffd23f' : '#000000');
+  pRect(x + 1, y + 1, w - 2, h - 2, v.out ? '#2a2628' : '#1a1418');
+  pRect(x + 1, y + 1, w - 2, 1, '#3a2e30');
+  pvText(name, p.x, y + 4.5, v.out ? '#8a8486' : PK_COLOR[v.id]);
+  pvText(money, p.x, y + 10.5, v.out ? '#6a6466' : '#f6ecd0');
+  pkCtx.globalAlpha = 1;
+  // thinking dots over whoever's deciding
+  if (turn && v.i !== 0 && PV.think) {
+    const n = Math.floor(PV.time * 3) % 4;
+    for (let k = 0; k < 3; k++) pRect(p.x - 4 + k * 3, y - 4, 2, 2, k < n ? '#ffd23f' : '#5a4a3a');
+  }
+}
+// a speech bubble over someone: the game's popup style, a dark panel with
+// notched corners and an orange edge, their name small in orange and the line
+// in cream
+function pvBubble(bb) {
+  const v = PV.seats[bb.seat], S0 = PK_SEATS[bb.seat], b = seatAt(bb.seat, 'body');
+  const a = Math.min(1, bb.t / 0.12, (bb.dur - bb.t) / 0.25);
+  if (a <= 0) return;
+  pkCtx.globalAlpha = a;
+  pkCtx.font = pkFont(1);
+  const maxW = 104 * PS, words = bb.text.split(' '), lines = [];
+  let line = '';
+  words.forEach(wd => { const tr = line ? `${line} ${wd}` : wd; if (pkCtx.measureText(tr).width > maxW && line) { lines.push(line); line = wd; } else line = tr; });
+  if (line) lines.push(line);
+  const lh = 7, w = Math.max(...lines.map(l => pkCtx.measureText(l).width)) / PS + 10, h = lines.length * lh + 11;
+  let cx = b.x, top;
+  if (bb.seat === 0) { top = b.y - 40 - h; }
+  else if (S0.view === 'front') top = b.y - MINER_H - h - 18;
+  else top = b.y - MINER_H - h - 4;
+  cx = clamp(cx, w / 2 + 2, PW - w / 2 - 2);
+  top = Math.max(2, top);
+  const x = Math.round(cx - w / 2);
+  pRect(x + 1, top, w - 2, h, '#ff9a3a');
+  pRect(x, top + 1, w, h - 2, '#ff9a3a');
+  pRect(x + 1, top + 1, w - 2, h - 2, '#16121a');
+  pRect(b.x - 1, top + h, 3, 1, '#ff9a3a'); pRect(b.x, top + h + 1, 1, 2, '#ff9a3a');
+  pvText(PK_NAMES[v.id].toUpperCase(), x + 4, top + 4.5, '#ff9a3a', 0.8, 'left');
+  lines.forEach((l, k) => pvText(l, x + 4, top + 11 + k * lh, '#f6ecd0', 1, 'left'));
+  pkCtx.globalAlpha = 1;
+}
+function pvDraw(t) {
+  const c = pkCtx;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.fillStyle = '#0c0808';
+  c.fillRect(0, 0, pkCv.width, pkCv.height);
+  if (!pkCave) return;
+  const sh = PV.shake > 0 && !reduceMotion ? Math.round(Math.sin(t / 20) * PV.shake) : 0;
+  POX = 0; POY = 0;
+  c.drawImage(pkCave.canvas, 0, 0, PW * PS, PH * PS);
+  // the lava breathing: a soft glow over it that swells and fades, and bright
+  // bubbles popping up and down its length
+  c.globalCompositeOperation = 'lighter';
+  const pulse = reduceMotion ? 0.5 : 0.5 + 0.5 * Math.sin(t / 900);
+  const gr = c.createLinearGradient(0, pY(PTY - 130), 0, pY(PTY - 70));
+  gr.addColorStop(0, `rgba(255,120,30,${0.1 + pulse * 0.08})`);
+  gr.addColorStop(1, 'rgba(255,120,30,0)');
+  c.fillStyle = gr;
+  c.fillRect(0, 0, pkCv.width, pY(PTY - 70));
+  if (!reduceMotion) for (let k = 0; k < 26; k++) {
+    const seed = Math.floor(t / 400 + k * 7.3), j = ((hash2(seed, k, 2501) * pkCave.lava.length) / 2 | 0) * 2, life = ((t / 400 + k * 7.3) % 1);
+    if (!pkCave.lava.length) break;
+    c.fillStyle = `rgba(255,236,150,${0.7 * Math.sin(life * Math.PI)})`;
+    c.fillRect(pX(pkCave.lava[j]), pY(pkCave.lava[j + 1]), PS * (k % 3 ? 1 : 2), PS);
+  }
+  c.globalCompositeOperation = 'source-over';
+  POX = sh;
+  // the back row: their chairs, then them, behind the table
+  [2, 3, 4].forEach(i => { const b = seatAt(i, 'body'); pImg(PK_CHAIR_BACK, b.x - 11, b.y - 22); });
+  [2, 3, 4].forEach(i => pvDrawMiner(PV.seats[i], t));
+  // the table, and the lava in its cracks flickering
+  const tb = PK_TABLE, tx = PTX - tb.cx, ty = PTY - tb.cy;
+  c.fillStyle = 'rgba(0,0,0,0.45)';
+  for (let k = 0; k < 4; k++) c.fillRect(pX(tx + 6 - k * 2), pY(ty + tb.h - 2 + k), (tb.w - 12 + k * 4) * PS, PS);
+  pImg(tb.canvas, tx, ty);
+  if (!reduceMotion) {
+    c.globalCompositeOperation = 'lighter';
+    for (let k = 0; k < tb.cracks.length; k += 2) {
+      const [x, y] = tb.cracks[k], f = 0.5 + 0.5 * Math.sin(t / 260 + x * 0.7);
+      c.fillStyle = `rgba(255,${180 + Math.round(f * 60)},80,${0.25 + f * 0.4})`;
+      c.fillRect(pX(tx + x), pY(ty + y), PS, PS);
+    }
+    c.globalCompositeOperation = 'source-over';
+  }
+  // the side seats, beside the table
+  [1, 5].forEach(i => {
+    const b = seatAt(i, 'body');
+    pImg(PK_STOOL, b.x - 11, b.y - 6);
+    pvDrawMiner(PV.seats[i], t);
+  });
+  // what's on the table: the deck by ace, the button, stacks, bets, the pot,
+  // the cards, chips in the air
+  if (PV.deck) { for (let k = 0; k < 3; k++) pImg(PK_BACK, PTX + PK_DECK[0] - 7 - k * 0.5, PTY + PK_DECK[1] - 10 - k); }
+  if (PV.buttonAt) pImg(PK_BUTTON, PV.buttonAt.x - 4, PV.buttonAt.y - 4);
+  PV.seats.forEach(v => {
+    if (v.out) return;
+    const st = seatAt(v.i, 'stack');
+    if (!v.pushing) pvDrawChips(v.stack, st.x, st.y);
+  });
+  PV.seats.forEach(v => {
+    if (v.bet > 0) {
+      const bt = seatAt(v.i, 'bet');
+      pvDrawChips(v.bet, bt.x, bt.y, 5);
+      pvText(pkDollars(v.bet), bt.x, bt.y + 4, '#f6ecd0', 0.8);
+    }
+  });
+  if (PV.pot > 0) {
+    pvDrawChips(PV.pot, PTX, PTY + 31, 7);
+    pvText(`POT ${pkDollars(PV.pot)}`, PTX, PTY + 14, '#ffd23f');
+  } else if (PV.T && PV.T.blinds && !PV.board.length) pvText(`BLINDS ${pkDollars(PV.T.blinds.sb)} / ${pkDollars(PV.T.blinds.bb)}`, PTX, PTY + 14, '#8a7a6a', 0.8);
+  PV.board.forEach(pvDrawCard);
+  PV.seats.forEach(v => v.cards.forEach(pvDrawCard));
+  PV.flights.forEach(f => pvDrawChips(f.n, f.x, f.y + 6, 6));
+  // arms over the table edge and onto it
+  PV.seats.forEach(v => pvDrawArms(v, t));
+  pvDrawYou(t);
+  // the name of your hand under your cards
+  if (PV.handName) pvText(PV.handName, seatAt(0, 'cards').x, seatAt(0, 'cards').y + 15, '#bfe9a6', 0.8);
+  PV.seats.forEach(pvPlate);
+  if (PV.winText) {
+    const w = PV.winText, a = Math.min(1, w.t / 0.2);
+    pkCtx.globalAlpha = a;
+    pvText(w.text, w.x, w.y - Math.min(8, w.t * 10), '#ffd23f', 1);
+    if (w.sub) pvText(w.sub, w.x, w.y + 8 - Math.min(8, w.t * 10), '#f6ecd0', 0.8);
+    pkCtx.globalAlpha = 1;
+  }
+  PV.parts.forEach(p => {
+    const k = 1 - p.t / p.life;
+    if (p.card !== undefined) {
+      // a card spinning through the air (brutus throwing his)
+      c.save();
+      c.translate(pX(p.x), pY(p.y));
+      c.rotate(p.spin);
+      c.drawImage(PK_BACK, -PK_CARD_W * PS / 2, -PK_CARD_H * PS / 2, PK_CARD_W * PS, PK_CARD_H * PS);
+      c.restore();
+      return;
+    }
+    c.globalAlpha = p.puff ? k * 0.8 : k;
+    c.fillStyle = p.col;
+    const sz = (p.size || 1) * (p.puff ? 1 + (1 - k) * 1.5 : 1);
+    c.fillRect(pX(p.x), pY(p.y), Math.ceil(sz * PS), Math.ceil(sz * PS));
+  });
+  c.globalAlpha = 1;
+  PV.bubbles.forEach(pvBubble);
+  POX = 0;
+}
+
+// what's saved: whether you've met them, won, been given the key, who last
+// knocked you out (they remember), brock's grudge and ace's respect carried
+// between games, and a game in progress (stacks, button, moods), saved after
+// every hand so a reload puts you back in your seat
+quest.poker = Object.assign({ met: false, won: false, keyGiven: false, visits: 0, busts: 0, lastBeater: null, table: null, grudge: 0, respect: 0, wins: 0, hideRules: false },
+  quest.poker && typeof quest.poker === 'object' ? quest.poker : {});
+const PQ = quest.poker;
+
+// everyone's voice: a little blip per letter or two, like darryl's, each in
+// their own register
+Object.assign(sfx, {
+  pkVoice: id => {
+    const j = 0.96 + Math.random() * 0.08;
+    if (id === 'brutus') { tone(110 * j, 0.05, 'sawtooth', 0.028); noiseBurst(0.02, 700, 0.02); }
+    else if (id === 'neville') tone(520 * j * (1 + Math.sin(performance.now() / 40) * 0.04), 0.04, 'sine', 0.03);
+    else if (id === 'ace') tone(330 * j, 0.05, 'triangle', 0.032);
+    else if (id === 'brock') { tone(196 * j, 0.045, 'square', 0.022); tone(392 * j, 0.02, 'square', 0.008); }
+    else if (id === 'sparks') tone(440 * j * (Math.random() < 0.5 ? 1 : 1.25), 0.03, 'square', 0.024);
+    else sfx.you('x x');
+  },
+  pkCard: () => { noiseBurst(0.03, 3800, 0.04); tone(1500, 0.015, 'triangle', 0.012); },
+  pkChips: n => { for (let k = 0; k < Math.min(4, 1 + (n > 10) + (n > 50) + (n > 150)); k++) tone(2400 + Math.random() * 900, 0.025, 'triangle', 0.02, k * 0.035); },
+  pkKnock: () => { noiseBurst(0.03, 400, 0.12); noiseBurst(0.03, 400, 0.1); },
+  pkSlam: () => { noiseBurst(0.2, 260, 0.22); tone(60, 0.25, 'square', 0.06); },
+  pkFold: () => noiseBurst(0.06, 2400, 0.04),
+  pkWin: () => [72, 76, 79, 84].forEach((n, i) => tone(midiHz(n), 0.12, 'triangle', 0.035, i * 0.07))
+});
+
+// lines. a few of each so they don't repeat too much; {x} is filled in.
+const PK_LINES = {
+  brutus: {
+    raise: ['RAISE.', 'You want some? Come get some.', 'Raise. Deal with it.', 'Bigger. BIGGER.'],
+    allin: ['ALL IN. TRY ME.', 'Everything. NOW.', 'Push it all in. Go on, call.'],
+    bluff: ['Bet. Let\'s see you call THAT.', 'Go on. Fold.'],
+    wildbluff: ['Let\'s see you call THAT.', 'Big bet. Bigger guts.', 'Your whole stack is shaking, I can hear it.'],
+    checkraise: ['Check. HA. Raise!', 'Gotcha. Raise.'],
+    tilt: ['RAISE. EVERYTHING. NOW.', 'I\'m not folding ANYTHING.', 'Come on, come ON.'],
+    call: ['Fine. Call.', 'Call. Whatever.'],
+    fold: ['Bah.', 'Garbage. Fold.', 'Not worth my time.'],
+    win: ['HA! That\'s MINE.', 'Get that ore over here.', 'Finally, some respect.', 'Read it and weep.'],
+    lose: ['ARGH!', 'This deck is RIGGED.', 'Unbelievable.', 'Are you KIDDING me?'],
+    tiltStart: ['THAT\'S IT. NO MORE MR NICE GUY.', 'Every. Single. Time.', 'I\'m gonna crush ALL of you.'],
+    calm: ['...Fine. I\'m calm. I\'m calm.', 'Okay. Breathing. Like Ace said.', 'Alright. Back to business.'],
+    throw: ['STUPID CARDS!', 'TAKE YOUR CARDS BACK!', 'WHO SHUFFLED THIS?!'],
+    bust: ['This is a JOKE!', 'Rigged. Rigged I tell you!'],
+    vsSparks: ['Shut it, Sparks.', 'Keep laughing, matchstick.', 'One more word, Sparks.'],
+    beatSparks: ['Who\'s laughing now, Sparks?', 'Take THAT, matchstick!']
+  },
+  neville: {
+    fold: ['I-I fold.', 'Too rich for me.', 'Nope. Nope nope.', 'I\'ll sit this one out.'],
+    scaredfold: ['N-nope. Fold.', 'Too scary. Fold.', 'That\'s a big bet. I fold.'],
+    call: ['Okay... call.', 'I guess I call?'],
+    overvalue: ['I... I think I have to call this one.', 'Okay, okay. I have to call. I have to.', 'This is a good hand. Right? Call.'],
+    raise: ['I, um... raise?', 'R-raise.', 'Raise. Sorry.'],
+    allin: ['A-all in. Sorry. Sorry.', 'I\'m all in. I have to be.'],
+    vsYou: ['Why are you looking at me like that?', 'You\'re new. New people are scary.', 'I don\'t know what you have. I hate that.', 'Are you bluffing? Please be bluffing.'],
+    vsAce: ['Ace, please, not again...', 'She knows. She always knows.', 'Why is it always you, Ace?'],
+    win: ['Oh! I won? I won!', 'Phew.', 'Sorry! Sorry. But I won.'],
+    lose: ['I knew it. I knew it.', 'Why do I even play.', 'Of course.'],
+    bust: ['I\'m going to go sit by the lava and think about my choices.', 'That\'s it. I\'m out. Good game.']
+  },
+  ace: {
+    raise: ['Raise.', 'I\'ll make it {x}.', 'Raise to {x}.'],
+    call: ['Call.', 'I\'ll call.'],
+    allin: ['All in.', 'I\'m all in.'],
+    win: ['Nice hand.', 'As expected.', 'The numbers rarely lie.'],
+    praise: { brutus: ['Well played, Brutus.', 'Good hand, Brutus. Don\'t let it go to your head.'], neville: ['Nice hand, Neville. Really.', 'See, Neville? You can do it.'], brock: ['Fine. Good hand, Brock.', 'Well played. Don\'t make it weird, Brock.'], sparks: ['Good call, Sparks. Annoyingly good.', 'That shouldn\'t work. And yet.'] },
+    shocked: ['...Huh. I didn\'t expect that.', 'Interesting. That shouldn\'t have worked.', 'You\'re full of surprises.', 'Wait, what?'],
+    impressed: ['Okay. You\'re actually good.', 'I\'m starting to think you know exactly what you\'re doing.', 'You play like nobody I\'ve seen down here.'],
+    chastise: ['Brutus. The cards did nothing to you.', 'Throw the cards at me again and you\'re dealt out.', 'Brutus! Pick those up.', 'Really, Brutus? Again?'],
+    tilt: ['Breathe, Brutus.', 'Someone\'s tilting.', 'Here we go.'],
+    level: ['The lava\'s rising. Blinds are now {sb} and {bb}.', 'Blinds up. {sb} and {bb}.'],
+    deal: ['Shuffle up and deal.', 'Cards in the air.', 'Next hand.'],
+    bust: ['Good game.', 'Well played, everyone.'],
+    vsBrock: ['Run the numbers, Brock. Oh, right.', 'Statistically, Brock, that was terrible.']
+  },
+  brock: {
+    raise: ['Watch and learn.', 'Raise. Obviously.', 'Let me show you how it\'s done.'],
+    grudge3: ['Not this time, rookie.', 'Three bet. Learn your place.', 'You think you can push ME around?'],
+    grudge4: ['Four bet. Fold, beginner.', 'Cute three bet. Four bet.', 'Nice try, newbie.'],
+    grudge5: ['Five bet. Your move, newbie.', 'All in. Call it, I dare you.', 'Fold, rookie. FOLD.'],
+    grudgecall: ['I know you\'re bluffing.', 'Call. You\'ve got nothing.', 'Beginners always bluff. Call.'],
+    grudgebluff: ['Big bet. Scared yet, rookie?', 'Bet. Go ahead and fold.'],
+    allin: ['All in, baby!', 'Push it. All of it.'],
+    call: ['Call.', 'Yeah, I\'ll call.'],
+    beatYou: ['That\'s what I\'m talking about! Read you like a book.', 'Welcome to the big leagues, rookie.', 'Should\'ve stuck to mining, beginner.'],
+    loseYou: ['Lucky. So lucky.', 'You don\'t even know what you\'re doing!', 'That\'s not how poker works, beginner!', 'Rookie luck. Enjoy it while it lasts.'],
+    loseAce: ['Calculator girl got lucky again.', 'Ugh. Do you ever NOT have it, Ace?', 'Spreadsheet poker. So boring.'],
+    beatAce: ['Who\'s the calculator now, Ace?', 'Math THAT, Ace.'],
+    slam: ['ARE YOU KIDDING ME?!', 'NO WAY. NO WAY!', 'UNREAL!'],
+    win: ['Too easy.', 'And that\'s why they call me the best.', 'Ship it.'],
+    lose: ['Whatever.', 'I let you have that one.'],
+    bust: ['Whatever. I let you win.', 'This game is so rigged.']
+  },
+  sparks: {
+    wildcall: ['I guess I have to call.', 'I can\'t win if I don\'t call!', 'Call! Obviously.', 'Strawberry Jam!'],
+    wildshove: ['I\'m all in again I guess.', 'Strawberry Jam!', 'All in! Let\'s gooo!', 'Why not? All in!'],
+    wildvalue: ['All in! For real this time!', 'Strawberry Jam!'],
+    wild3: ['Raise! Because why not.', 'Let\'s make it spicy.', 'Bigger! I like bigger.'],
+    wild: ['Raise it up!', 'Let\'s gamble!'],
+    allin: ['I\'m all in again I guess.', 'All in! Wheee!'],
+    call: ['Call!', 'Sure, call.'],
+    win: ['Ha! Pay up!', 'That\'s how it\'s done!', 'Strawberry Jam! I win!'],
+    lose: ['Worth it.', 'Eh, ore comes and goes.', 'Strawberry Jam...', 'Oops!'],
+    settle: ['Alright, alright. Sparks is focusing now.', 'Okay. Serious face.', 'Maybe I should actually look at my cards.'],
+    goWild: ['Big stack Sparks is back, baby!', 'Look at all this ore! Time to have fun!'],
+    tauntBrutus: ['Careful Brutus, your hat\'s whistling.', 'Is that steam or are you just happy to see me?', 'Somebody get Brutus a bucket of water!'],
+    beatBrutus: ['Sorry, big guy! Not sorry!', 'Brutus! Buddy! Pal! Thanks for the ore!'],
+    tauntBrock: ['Nice hand, champ. Oh wait.', 'Brock, buddy, maybe try a different game?'],
+    tauntNeville: ['Neville, you can blink, you know.', 'Boo! Hehe.'],
+    tauntAce: ['Ace, do the math on THAT.', 'Calculate this!'],
+    bust: ['Strawberry Jam... Good game, everybody!', 'Out! That was fun though.']
+  },
+  you: {}
+};
+const pkAny = a => a[(Math.random() * a.length) | 0];
+const pkFill = (s, o = {}) => s.replace(/\{(\w+)\}/g, (_, k) => (o[k] !== undefined ? o[k] : ''));
+
+// the chat box: everything that happens, and everything anyone says
+const pkChat = $('#pk-chat-log');
+function pvLog(html, cls = '') {
+  const p = document.createElement('p');
+  p.className = cls;
+  p.innerHTML = html;
+  pkChat.appendChild(p);
+  while (pkChat.children.length > 80) pkChat.removeChild(pkChat.firstChild);
+  pkChat.scrollTop = pkChat.scrollHeight;
+}
+const pkWho = i => `<b style="color:${PK_COLOR[PK_IDS[i]]}">${PK_NAMES[PK_IDS[i]]}</b>`;
+// someone says something over the table. force skips the cooldown that stops
+// them chattering every action.
+function pvSay(i, text, force = false, dur) {
+  if (!PV || !text) return;
+  const v = PV.seats[i];
+  const now = PV.time;
+  if (!force && v.saidAt && now - v.saidAt < 5) return;
+  v.saidAt = now;
+  const k = PV.bubbles.findIndex(b => b.seat === i);
+  if (k >= 0) PV.bubbles.splice(k, 1);
+  PV.bubbles.push({ seat: i, text, t: 0, dur: dur || 2.2 + text.length * 0.045 });
+  v.talkT = Math.min(1.6, 0.3 + text.length * 0.035);
+  pvLog(`${pkWho(i)}: ${text.replace(/</g, '&lt;')}`, 'talk');
+  const n = Math.min(8, Math.ceil(text.length / 3));
+  for (let k2 = 0; k2 < n; k2++) setTimeout(() => sfx.pkVoice(PK_IDS[i]), k2 * 70);
+}
+function pvSayPick(i, key, chance = 1, o, force) {
+  const L = PK_LINES[PK_IDS[i]][key];
+  if (!L || Math.random() > chance) return false;
+  pvSay(i, pkFill(pkAny(L), o), force);
+  return true;
+}
+
+// the human's controls
+const pkUI = {
+  actions: $('#pk-actions'), fold: $('#pk-fold'), call: $('#pk-call'), raise: $('#pk-raise'), allin: $('#pk-allin'),
+  slider: $('#pk-slider'), amount: $('#pk-amount'), minus: $('#pk-minus'), plus: $('#pk-plus'), presets: $('#pk-presets'),
+  straddle: $('#pk-straddle'), fast: $('#pk-fast'), leave: $('#pk-leave'), rulesBtn: $('#pk-rules-btn'), status: $('#pk-status')
+};
+function pvRaiseVal() { return clamp(Math.round(+pkUI.slider.value), +pkUI.slider.min, +pkUI.slider.max); }
+function pvSetRaise(v) {
+  const L = PV.legal;
+  v = clamp(Math.round(v), L.minTo, L.maxTo);
+  pkUI.slider.value = v;
+  pkUI.amount.textContent = pkDollars(v);
+  pkUI.raise.innerHTML = `${v >= L.maxTo ? 'All in' : L.isBet ? 'Bet' : 'Raise to'} <b>${pkDollars(v)}</b>`;
+}
+function pvShowControls() {
+  const T = PV.T, L = pkLegal(T, 0);
+  PV.legal = L;
+  PV.human = true;
+  pkUI.actions.classList.add('is-turn');
+  pkUI.call.innerHTML = L.canCheck ? 'Check <kbd>C</kbd>' : `Call <b>${pkDollars(L.toCall)}</b> <kbd>C</kbd>`;
+  // (no folding when checking is free)
+  pkUI.fold.disabled = L.canCheck;
+  pkUI.call.disabled = false;
+  const can = L.canRaise;
+  [pkUI.raise, pkUI.slider, pkUI.minus, pkUI.plus].forEach(el => { el.disabled = !can; });
+  pkUI.presets.querySelectorAll('button').forEach(b => { b.disabled = !can; });
+  pkUI.allin.disabled = !(L.maxTo > T.bet && (can || L.toCall >= T.seats[0].stack));
+  pkUI.slider.min = L.minTo; pkUI.slider.max = L.maxTo; pkUI.slider.step = 1;
+  if (can) pvSetRaise(L.minTo);
+  else { pkUI.raise.innerHTML = 'Raise'; pkUI.amount.textContent = ''; }
+  pkUI.status.textContent = 'Your turn';
+  sfx.ui();
+}
+function pvHideControls() {
+  PV.human = false;
+  pkUI.actions.classList.remove('is-turn');
+  [pkUI.fold, pkUI.call, pkUI.raise, pkUI.allin, pkUI.slider, pkUI.minus, pkUI.plus].forEach(el => { el.disabled = true; });
+  pkUI.presets.querySelectorAll('button').forEach(b => { b.disabled = true; });
+  pkUI.status.textContent = '';
+}
+function pvHuman(type, to) {
+  if (!PV || !PV.human || PV.scene) return;
+  const L = PV.legal;
+  if (type === 'allin') { type = L.canRaise ? 'raise' : 'call'; to = L.maxTo; }
+  pvHideControls();
+  PV.lastWhy[0] = type;
+  pkAct(PV.T, 0, { type, to });
+}
+pkUI.fold.addEventListener('click', () => pvHuman('fold'));
+pkUI.call.addEventListener('click', () => pvHuman(PV.legal.canCheck ? 'check' : 'call'));
+pkUI.raise.addEventListener('click', () => pvHuman('raise', pvRaiseVal()));
+pkUI.allin.addEventListener('click', () => pvHuman('allin'));
+pkUI.slider.addEventListener('input', () => pvSetRaise(+pkUI.slider.value));
+pkUI.minus.addEventListener('click', () => pvSetRaise(pvRaiseVal() - PV.T.blinds.bb));
+pkUI.plus.addEventListener('click', () => pvSetRaise(pvRaiseVal() + PV.T.blinds.bb));
+pkUI.presets.addEventListener('click', e => {
+  const b = e.target.closest('button[data-p]');
+  if (!b || !PV || !PV.legal) return;
+  const L = PV.legal, p = b.dataset.p;
+  // a fraction of the pot after you've called, like everywhere online
+  const potAfter = L.pot + L.toCall, base = PV.T.bet;
+  const to = p === 'min' ? L.minTo : p === 'max' ? L.maxTo : base + potAfter * +p;
+  pvSetRaise(to);
+});
+pkUI.straddle.addEventListener('change', () => { if (PV) PV.youStraddle = pkUI.straddle.checked; });
+pkUI.fast.addEventListener('click', () => {
+  if (!PV) return;
+  PV.fast = !PV.fast;
+  pkUI.fast.classList.toggle('is-on', PV.fast);
+  pkUI.fast.setAttribute('aria-pressed', String(PV.fast));
+});
+pkUI.leave.addEventListener('click', () => pvAskLeave());
+pkUI.rulesBtn.addEventListener('click', () => pvRules(!PV.rulesOpen));
+
+// what your two cards are called before the flop
+function pkPreName(a, b) {
+  const ra = a >> 2, rb = b >> 2, hi = Math.max(ra, rb), lo = Math.min(ra, rb);
+  if (hi === lo) return `Pocket ${PK_PLURAL[hi]}`;
+  return `${PK_WORD[hi]} ${PK_WORD[lo]}${(a & 3) === (b & 3) ? ' Suited' : ''}`;
+}
+function pvUpdateHandName() {
+  const s = PV.T.seats[0];
+  if (!s.cards || s.folded || s.out) { PV.handName = ''; return; }
+  const shown = PV.board.filter(c => c.up).map(c => c.c);
+  PV.handName = shown.length >= 3 ? pkHandName(pkEval2(s.cards[0], s.cards[1], shown)) : pkPreName(s.cards[0], s.cards[1]);
+}
+const pvCardSpot = (i, k) => {
+  const c = seatAt(i, 'cards');
+  return i === 0 ? { x: c.x + (k ? 8 : -8), y: c.y } : { x: c.x + (k ? 4 : -4), y: c.y + (k ? 1 : 0) };
+};
+
+// playing the engine's events out one at a time. each handler sets up its
+// animation and returns how long to wait before the next.
+const PV_EV = {
+  hand(ev) {
+    const T = PV.T;
+    PV.seats.forEach(v => {
+      v.cards = []; v.bet = 0; v.out = T.seats[v.i].out; v.folded = v.out; v.stack = ev.stacks[v.i]; v.pushing = false;
+    });
+    PV.board = []; PV.pot = 0; PV.handName = ''; PV.winText = null; PV.deck = true; PV.wins = []; PV.runout = false;
+    const b = seatAt(ev.button, 'stack'), bt = { x: b.x + (ev.button === 0 ? 30 : PK_SEATS[ev.button].view === 'front' ? 0 : PK_SEATS[ev.button].flip ? -14 : 14), y: b.y + (PK_SEATS[ev.button].view === 'front' ? 10 : ev.button === 0 ? 2 : -14) };
+    if (!PV.buttonAt) PV.buttonAt = { ...bt };
+    pvTween(PV.buttonAt, bt.x, bt.y, 0.4);
+    pvLog(`<span class="dim">Hand ${ev.hand} | Blinds ${pkDollars(ev.blinds.sb)} / ${pkDollars(ev.blinds.bb)}</span>`, 'sys');
+    if (ev.levelUp) { pvSayPick(3, 'level', 1, { sb: pkDollars(ev.blinds.sb), bb: pkDollars(ev.blinds.bb) }, true); return 1.6; }
+    if (!T.seats[3].out && Math.random() < 0.08) pvSayPick(3, 'deal', 1);
+    pvChatter();
+    return 0.45;
+  },
+  post(ev) {
+    const v = PV.seats[ev.seat];
+    v.stack -= ev.amount;
+    pvFly(ev.amount, seatAt(ev.seat, 'stack'), seatAt(ev.seat, 'bet'), 0.3, 0, () => { v.bet += ev.amount; sfx.pkChips(ev.amount); });
+    if (ev.kind === 'straddle') {
+      pvLog(`${pkWho(ev.seat)} straddles ${pkDollars(ev.amount)}`);
+      if (ev.seat === 5 && PV.T.ai.mood.sparks.wild) pvSay(5, 'Straddle! Strawberry Jam!');
+    }
+    return 0.3;
+  },
+  deal(ev) {
+    const T = PV.T, n = ev.order.length;
+    let k = 0;
+    [0, 1].forEach(round => ev.order.forEach(i => {
+      const o = { c: T.seats[i].cards[round], up: false, x: PTX + PK_DECK[0], y: PTY + PK_DECK[1], arc: 6 };
+      PV.seats[i].cards.push(o);
+      const spot = pvCardSpot(i, round), d = k * 0.08;
+      setTimeout(() => { if (PV) { pvPose(3, 'deal', 0.16, spot); sfx.pkCard(); } }, d * 1000 / PV.speed);
+      pvTween(o, spot.x, spot.y, 0.22, d, () => {
+        if (i === 0) { o.flip = 0; o.flipTo = true; pvFlip(o); }
+      });
+      k++;
+    }));
+    return n * 2 * 0.08 + 0.4;
+  },
+  act(ev) {
+    const v = PV.seats[ev.seat], why = PV.lastWhy[ev.seat] || '', id = v.id;
+    const say = { fold: 'folds', check: 'checks', call: `calls ${pkDollars(ev.amount)}`, bet: `bets ${pkDollars(ev.to)}`, raise: `raises to ${pkDollars(ev.to)}`, allin: `is all in for ${pkDollars(ev.to)}` }[ev.kind];
+    pvLog(`${pkWho(ev.seat)} ${say}`);
+    if (ev.kind === 'fold') {
+      v.folded = true;
+      v.cards.forEach((o, k) => { o.a = 1; pvTween(o, PTX + (k ? 3 : -3), PTY - 4, 0.35, k * 0.04, () => { o.a = 0; }); o.fade = true; });
+      sfx.pkFold();
+      pvReact(ev, why);
+      if (ev.seat === 0) PV.handName = '';
+      return 0.45;
+    }
+    if (ev.kind === 'check') {
+      pvPose(ev.seat, 'knock', 0.35);
+      sfx.pkKnock();
+      pvReact(ev, why);
+      return 0.42;
+    }
+    const amt = ev.amount;
+    v.stack = ev.stack;
+    if (ev.kind === 'allin' && id === 'sparks') {
+      // sparks shoves the lot into the middle with both arms
+      const bt = seatAt(ev.seat, 'bet');
+      pvPose(ev.seat, 'push', 0.9, bt);
+      pvFly(amt, seatAt(ev.seat, 'stack'), bt, 0.7, 0.15, () => { v.bet = ev.to; sfx.pkChips(amt); PV.shake = Math.max(PV.shake, 1); });
+      pvMood(ev.seat, 'grin', 2.5);
+      pvReact(ev, why);
+      return 1.3;
+    }
+    pvPose(ev.seat, 'reach', 0.35, seatAt(ev.seat, 'bet'));
+    pvFly(amt, seatAt(ev.seat, 'stack'), seatAt(ev.seat, 'bet'), 0.32, 0, () => { v.bet = ev.to; sfx.pkChips(amt); });
+    pvReact(ev, why);
+    return ev.kind === 'allin' ? 1 : 0.6;
+  },
+  refund(ev) {
+    const v = PV.seats[ev.seat];
+    v.bet -= ev.amount;
+    pvFly(ev.amount, seatAt(ev.seat, 'bet'), seatAt(ev.seat, 'stack'), 0.3, 0, () => { v.stack += ev.amount; });
+    pvLog(`<span class="dim">${pkDollars(ev.amount)} back to ${PK_NAMES[v.id]}</span>`);
+    return 0.35;
+  },
+  collect(ev) {
+    const to = { x: PTX, y: PTY + 31 };
+    let any = false;
+    PV.seats.forEach(v => {
+      if (v.bet <= 0) return;
+      const n = v.bet;
+      v.bet = 0;
+      any = true;
+      pvFly(n, seatAt(v.i, 'bet'), to, 0.35);
+    });
+    setTimeout(() => { if (PV) { PV.pot = ev.pot; sfx.pkChips(ev.pot); } }, 360 / PV.speed);
+    return any ? 0.5 : 0.1;
+  },
+  board(ev) {
+    const start = PV.board.length;
+    ev.cards.forEach((c, k) => {
+      const o = { c, up: false, x: PTX + PK_DECK[0], y: PTY + PK_DECK[1], arc: 4 };
+      PV.board.push(o);
+      const slot = { x: PTX - 32 + (start + k) * 16, y: PTY - 4 };
+      setTimeout(() => { if (PV) { pvPose(3, 'deal', 0.18, slot); sfx.pkCard(); } }, k * 120 / PV.speed);
+      pvTween(o, slot.x, slot.y, 0.25, k * 0.12, () => { o.flip = 0; o.flipTo = true; pvFlip(o, () => pvUpdateHandName()); });
+    });
+    pvLog(`<span class="dim">${{ flop: 'Flop', turn: 'Turn', river: 'River' }[ev.street]}: ${ev.board.map(pkCardHtml).join(' ')}</span>`, 'sys');
+    return (ev.street === 'flop' ? 1 : 0.7) + (PV.runout ? 0.7 : 0);
+  },
+  runout() {
+    PV.runout = true;
+    PV.winText = { text: 'ALL IN', x: PTX, y: PTY - 26, t: 0 };
+    return 0.6;
+  },
+  reveal(ev) {
+    const v = PV.seats[ev.seat];
+    if (ev.seat !== 0) v.cards.forEach((o, k) => { o.flip = 0; o.flipTo = true; setTimeout(() => pvFlip(o), k * 90); });
+    pvLog(`${pkWho(ev.seat)} shows ${ev.cards.map(pkCardHtml).join(' ')}`);
+    if (ev.seat !== 0) pvPose(ev.seat, 'reach', 0.3, seatAt(ev.seat, 'cards'));
+    return PV.runout ? 0.4 : 0.6;
+  },
+  showdown() { PV.winText = null; return 0.25; },
+  win(ev) {
+    const v = PV.seats[ev.seat];
+    PV.pot = Math.max(0, PV.pot - ev.amount);
+    pvFly(ev.amount, { x: PTX, y: PTY + 31 }, seatAt(ev.seat, 'stack'), 0.5, 0.1, () => { v.stack += ev.amount; sfx.pkChips(ev.amount); });
+    PV.wins.push(ev);
+    const p = seatAt(ev.seat, 'cards');
+    PV.winText = { text: `${PK_NAMES[v.id].toUpperCase()} ${ev.split ? 'SPLITS' : 'WINS'} ${pkDollars(ev.amount)}`, sub: ev.name || '', x: PTX, y: PTY - 26, t: 0 };
+    if (ev.name) v.cards.forEach(o => { o.glow = true; });
+    pvLog(`${pkWho(ev.seat)} ${ev.split ? 'splits' : 'wins'} ${ev.side ? 'a side pot of ' : ''}${pkDollars(ev.amount)}${ev.name ? ` with ${ev.name}` : ''}`, 'win');
+    if (ev.seat === 0) sfx.pkWin();
+    pvMood(ev.seat, ev.seat === 5 || ev.seat === 4 ? 'grin' : 'happy', 2.5);
+    void p;
+    return PV.wins.length > 1 ? 0.8 : 1.15;
+  },
+  bust(ev) {
+    const v = PV.seats[ev.seat];
+    v.out = true; v.folded = true;
+    pvLog(`${pkWho(ev.seat)} is out of the game`, 'bust');
+    if (ev.seat !== 0) {
+      pvMood(ev.seat, ev.seat === 5 ? 'grin' : ev.seat === 2 ? 'sad' : 'angry', 3);
+      setTimeout(() => { if (PV) pvSayPick(ev.seat, 'bust', 1, null, true); }, 300);
+    }
+    return 1.2;
+  },
+  end(ev) { return pvAfterHand(ev); }
+};
+const pkCardHtml = c => `<span class="pk-c${PK_RED(c) ? ' red' : ''}">${PK_RANKS[c >> 2] === 'T' ? '10' : PK_RANKS[c >> 2]}${'♣♦♥♠'[c & 3]}</span>`;
+// a card turning over: it narrows to nothing, swaps face, and widens again
+function pvFlip(o, done) {
+  o.flip = 0;
+  const step = () => {
+    if (!PV) return;
+    o.flip += 0.12 * PV.speed;
+    if (o.flip >= 1) { o.flip = -1; o.up = o.flipTo; if (done) done(); return; }
+    requestAnimationFrame(step);
+  };
+  sfx.pkCard();
+  requestAnimationFrame(step);
+}
+
+// reacting to an action: what they say (the decision's why picks the line),
+// faces, and anyone with feelings about it
+function pvReact(ev, why) {
+  const i = ev.seat, id = PK_IDS[i], T = PV.T, M = T.ai.mood;
+  const big = ev.kind === 'allin' || (ev.to && ev.to >= T.blinds.bb * 12);
+  if (id === 'sparks') {
+    if (['wildcall', 'wildshove', 'wildvalue', 'wild3', 'wild'].includes(why)) pvSayPick(i, why, why === 'wildcall' ? 0.45 : 0.85);
+    else if (ev.kind === 'allin') pvSayPick(i, 'allin', 0.8);
+  } else if (id === 'brutus') {
+    if (why === 'tilt' && ev.kind !== 'call') pvSayPick(i, 'tilt', 0.55);
+    else if (ev.kind === 'allin') pvSayPick(i, 'allin', 0.8);
+    else if (why === 'wildbluff') pvSayPick(i, 'wildbluff', 0.8);
+    else if (why === 'checkraise') pvSayPick(i, 'checkraise', 0.7);
+    else if (ev.kind === 'raise' || ev.kind === 'bet') pvSayPick(i, 'raise', 0.25);
+    else if (ev.kind === 'fold') pvSayPick(i, 'fold', 0.15);
+    if (ev.kind !== 'fold' && ev.kind !== 'check') pvMood(i, M.brutus.tilt ? 'fume' : 'angry', 1.5);
+  } else if (id === 'neville') {
+    if (why === 'scaredfold') { pvSayPick(i, 'scaredfold', 0.6); pvMood(i, 'scared', 1.5); }
+    else if (why === 'overvalue') pvSayPick(i, 'overvalue', 0.7);
+    else if (ev.kind === 'allin') { pvSayPick(i, 'allin', 0.9); pvMood(i, 'scared', 2); }
+    else if (ev.kind === 'raise' || ev.kind === 'bet') pvSayPick(i, 'raise', 0.5);
+    else if (ev.kind === 'fold') pvSayPick(i, 'fold', 0.2);
+  } else if (id === 'brock') {
+    if (why.startsWith('grudge')) { pvSayPick(i, why, 0.85); pvMood(i, 'smug', 2); }
+    else if (ev.kind === 'allin') pvSayPick(i, 'allin', 0.7);
+    else if ((ev.kind === 'raise' || ev.kind === 'bet') && T.street !== 'preflop' && pkInHand(T.seats[3]) && Math.random() < 0.3) pvSayPick(i, 'raise', 1);
+    else if (ev.kind === 'raise') pvSayPick(i, 'raise', 0.2);
+  } else if (id === 'ace') {
+    if (ev.kind === 'allin') pvSayPick(i, 'allin', 0.6);
+    else if (ev.kind === 'raise' || ev.kind === 'bet') pvSayPick(i, 'raise', 0.2, { x: pkDollars(ev.to) });
+  }
+  // neville gets nervous when you or ace put money in against him
+  if ((i === 0 || i === 3) && (ev.kind === 'raise' || ev.kind === 'bet' || ev.kind === 'allin') && pkInHand(T.seats[2]) && !T.seats[2].allIn) {
+    pvMood(2, 'scared', 2.5);
+    if (Math.random() < 0.4) setTimeout(() => PV && pvSayPick(2, i === 0 ? 'vsYou' : 'vsAce', 1), 500);
+  }
+  // sparks can't help needling brutus
+  if (i === 1 && big && pkInHand(T.seats[5]) && Math.random() < 0.35) setTimeout(() => PV && pvSayPick(5, 'tauntBrutus', 1), 650);
+  if (i === 5 && big && pkInHand(T.seats[1]) && Math.random() < 0.3) setTimeout(() => PV && pvSayPick(1, 'vsSparks', 1), 650);
+}
+// a bit of table talk now and then at the start of a hand
+function pvChatter() {
+  const T = PV.T;
+  if (Math.random() > 0.12) return;
+  const alive = i => !T.seats[i].out;
+  const opts = [];
+  if (alive(5) && alive(1)) opts.push(() => pvSayPick(5, 'tauntBrutus', 1), () => { pvSayPick(5, 'tauntBrutus', 1); setTimeout(() => PV && pvSayPick(1, 'vsSparks', 1, null, true), 1400); });
+  if (alive(5) && alive(4)) opts.push(() => pvSayPick(5, 'tauntBrock', 1));
+  if (alive(5) && alive(2)) opts.push(() => pvSayPick(5, 'tauntNeville', 1));
+  if (alive(5) && alive(3)) opts.push(() => pvSayPick(5, 'tauntAce', 1));
+  if (alive(3) && alive(4)) opts.push(() => pvSayPick(3, 'vsBrock', 1));
+  if (opts.length) pkAny(opts)();
+}
+// after a hand: winners and losers react, moods change (with brutus's steam,
+// brock's slam, and cards thrown at ace), and the game's saved
+function pvAfterHand() {
+  const T = PV.T, res = T.ai.results || { net: [0, 0, 0, 0, 0, 0], events: [] };
+  let extra = 0;
+  const net = res.net, ws = PV.wins.map(w => w.seat);
+  const top = ws.length ? ws.reduce((a, b) => (net[b] > net[a] ? b : a)) : -1;
+  const losers = net.map((n, i) => [n, i]).filter(([n]) => n < 0).sort((a, b) => a[0] - b[0]).map(([, i]) => i);
+  const bigPot = Math.max(...net.map(Math.abs)) >= T.blinds.bb * 10;
+  const ev = res.events;
+  const later = (fn, ms) => setTimeout(() => { if (PV && !PV.closing) fn(); }, ms / PV.speed);
+  // the winner, when it's a decent pot
+  if (top > 0 && bigPot) {
+    const id = PK_IDS[top];
+    if (id === 'brock' && losers.includes(0)) pvSayPick(top, 'beatYou', 0.7, null, true);
+    else if (id === 'brock' && losers.includes(3)) pvSayPick(top, 'beatAce', 0.8, null, true);
+    else if (id === 'brutus' && losers.includes(5)) pvSayPick(top, 'beatSparks', 0.8, null, true);
+    else if (id === 'sparks' && losers.includes(1)) pvSayPick(top, 'beatBrutus', 0.8, null, true);
+    else pvSayPick(top, 'win', 0.5, null, true);
+  }
+  // ace: praise for whoever beat her, and surprise (then respect) when it's you
+  if (losers.includes(3) && top >= 0 && top !== 3 && bigPot && !T.seats[3].out) {
+    if (top === 0) {
+      PQ.respect = T.ai.mood.ace.respect;
+      later(() => { pvMood(3, 'shock', 2.5); pvSayPick(3, T.ai.mood.ace.respect >= 3 ? 'impressed' : 'shocked', 1, null, true); }, 900);
+    } else later(() => pvSay(3, pkAny(PK_LINES.ace.praise[PK_IDS[top]]), true), 900);
+  }
+  // brock: furious when he loses to you or ace, and he slams the table
+  if (losers.includes(4) && (top === 0 || top === 3) && bigPot && !T.seats[4].out) {
+    later(() => {
+      pvPose(4, 'slam', 0.7);
+      pvMood(4, 'angry', 3);
+      setTimeout(() => { if (PV) { PV.shake = 3; sfx.pkSlam(); pvSay(4, pkAny(PK_LINES.brock[top === 0 ? 'loseYou' : 'loseAce']), true); } }, 330 / PV.speed);
+    }, 700);
+    extra += 0.8;
+  } else if (losers.includes(4) && bigPot && !T.seats[4].out && Math.random() < 0.3) later(() => pvSayPick(4, 'lose', 1, null, true), 800);
+  if (losers.includes(2) && bigPot && !T.seats[2].out) { pvMood(2, 'sad', 2.5); if (Math.random() < 0.4) later(() => pvSayPick(2, 'lose', 1, null, true), 1000); }
+  if (losers.includes(5) && bigPot && !T.seats[5].out && Math.random() < 0.5) later(() => pvSayPick(5, 'lose', 1, null, true), 1000);
+  if (losers.includes(1) && bigPot && !T.seats[1].out && !ev.includes('brutusThrow')) { pvMood(1, T.ai.mood.brutus.tilt ? 'fume' : 'angry', 2); if (Math.random() < 0.5) later(() => pvSayPick(1, 'lose', 1, null, true), 700); }
+  // brutus's moods
+  if (ev.includes('brutusTilt')) {
+    later(() => { pvMood(1, 'fume', 3); pvSayPick(1, 'tiltStart', 1, null, true); }, 1300);
+    later(() => pvSayPick(3, 'tilt', 0.7, null, true), 2600);
+    extra += 1.2;
+  }
+  if (ev.includes('brutusThrow') && !PV.seats[3].out) {
+    later(() => pvThrow(), 900);
+    extra += 2;
+  }
+  if (ev.includes('brutusCalm')) later(() => pvSayPick(1, 'calm', 1, null, true), 1200);
+  if (ev.includes('sparksSettle')) later(() => pvSayPick(5, 'settle', 1, null, true), 1500);
+  if (ev.includes('sparksWild')) later(() => pvSayPick(5, 'goWild', 1, null, true), 1500);
+  if (ev.includes('brockGrudge')) PQ.grudge = T.ai.mood.brock.grudge;
+  // save where the game's at, unless it's over
+  const live = T.seats.filter(s => !s.out);
+  if (T.seats[0].out || live.length <= 1) PQ.table = null;
+  else PQ.table = { stacks: T.seats.map(s => s.stack), button: T.button, hand: T.hand, mood: T.ai.mood, stats: T.ai.stats };
+  markDirty();
+  if (T.seats[0].out) { PV.gameOver = 'bust'; PV.beater = top > 0 ? top : 3; }
+  else if (live.length === 1) PV.gameOver = 'win';
+  return 1.5 + extra;
+}
+// brutus, on tilt and losing, throws his cards at ace, and she tells him off
+function pvThrow() {
+  const b = seatAt(1, 'body'), a = seatAt(3, 'body');
+  pvPose(1, 'throw', 0.5, a);
+  pvMood(1, 'fume', 3);
+  pvSayPick(1, 'throw', 1, null, true);
+  [0, 1].forEach(k => {
+    const p = { card: true, x: b.x + 6, y: b.y - 16, vx: (a.x - b.x) / 0.55 + (k ? 12 : -10), vy: (a.y - 14 - b.y) / 0.55 - 30, g: 110, life: 0.55, t: 0, spin: k };
+    PV.parts.push(p);
+  });
+  sfx.pkFold();
+  setTimeout(() => {
+    if (!PV) return;
+    pvMood(3, 'angry', 2.5);
+    PV.shake = 1;
+    pvSayPick(3, 'chastise', 1, null, true);
+  }, 650);
+}
+
+// whose go is it: the bots think for a moment (neville keeps looking from
+// whoever he's up against to his cards and back before he does anything) and
+// you get your buttons
+function pvAiThink(dt) {
+  const T = PV.T, seat = T.toAct, id = PK_IDS[seat], v = PV.seats[seat], M = T.ai.mood;
+  if (!PV.think) {
+    const d = pkDecide(T, seat), L = pkLegal(T, seat);
+    const bigSpot = L.toCall > (T.seats[seat].stack + T.seats[seat].bet) * 0.25 || (d.type === 'raise' && d.to >= T.seats[seat].stack + T.seats[seat].bet);
+    let t = { ace: 0.9 + Math.random() * 0.5, brutus: M.brutus.tilt ? 0.35 + Math.random() * 0.3 : 0.6 + Math.random() * 0.5, neville: 1 + Math.random() * 0.6, brock: 0.8 + Math.random() * 0.5, sparks: M.sparks.wild ? 0.4 + Math.random() * 0.45 : 0.8 + Math.random() * 0.4 }[id];
+    if (bigSpot) t += 0.7;
+    // neville hesitates when he's facing a bet, or up against you or ace
+    const agg = T.aggressor >= 0 ? T.aggressor : 0;
+    const hes = id === 'neville' && (L.toCall > 0 || pkInHand(T.seats[0]) || pkInHand(T.seats[3]));
+    if (hes) t = 2.5;
+    PV.think = { seat, d, t, t0: t, hes, agg };
+    if (id === 'ace' && bigSpot) pvMood(3, 'think', t);
+    if (id === 'brock' && Math.random() < 0.3) pvPose(4, 'chin', t);
+    return;
+  }
+  const th = PV.think;
+  th.t -= dt;
+  if (th.hes) {
+    // look at them, at the cards, at them, at the cards, at them, and decide
+    const k = Math.floor((th.t0 - th.t) / 0.42);
+    const opp = th.agg === 2 ? 0 : th.agg;
+    const dir = seatAt(opp, 'body').x < seatAt(2, 'body').x ? -1 : 1;
+    v.look = k % 2 === 0 ? dir : 2;
+    v.lookT = 0.5;
+    if (k === 0 && (opp === 0 || opp === 3)) pvMood(2, 'scared', 3);
+  }
+  if (th.t > 0) return;
+  PV.think = null;
+  PV.lastWhy[seat] = th.d.why;
+  v.look = 0;
+  pkAct(T, seat, th.d);
+}
+function pvStep(dt) {
+  if (PV.scene || PV.modal || PV.gameOverRun) return;
+  PV.wait -= dt;
+  if (PV.wait > 0) return;
+  const T = PV.T;
+  if (T.ev.length) { const ev = T.ev.shift(), h = PV_EV[ev.t]; PV.wait = h ? h(ev) : 0; return; }
+  if (T.over) {
+    if (PV.gameOver) { PV.gameOverRun = true; pvGameOver(PV.gameOver); return; }
+    if (PV.leaving) { PV.gameOverRun = true; pvLeaveNow(); return; }
+    pkStartHand(T, (seat, TT) => (seat === 0 ? !!PV.youStraddle && TT.seats[0].stack > TT.blinds.straddle * 2 : pkAiStraddle(TT, seat)));
+    return;
+  }
+  if (T.toAct === 0) { if (!PV.human) pvShowControls(); return; }
+  if (T.toAct > 0) pvAiThink(dt);
+}
+
+// conversations at the table: a box along the bottom, typed out a letter at a
+// time in each speaker's voice, click, space or enter to go on. steps are
+// { who: seat, text, mood }, { you: text } or { act, wait }.
+const pkTalk = $('#pk-talk'), pkTalkName = $('#pk-talk-name'), pkTalkText = $('#pk-talk-text');
+function pvScene(steps, done) {
+  PV.scene = { steps, i: -1, t: 0, done };
+  pvHideControls();
+  pvSceneNext();
+}
+function pvSceneNext() {
+  const sc = PV.scene;
+  sc.i++;
+  if (sc.i >= sc.steps.length) {
+    PV.scene = null;
+    PV.speaker = -1;
+    pkTalk.hidden = true;
+    if (sc.done) sc.done();
+    return;
+  }
+  const st = sc.steps[sc.i];
+  sc.t = 0; sc.shown = -1;
+  if (st.act) { pkTalk.hidden = true; PV.speaker = -1; st.act(); return; }
+  pkTalk.hidden = false;
+  pkTalk.classList.toggle('is-reply', !!st.you);
+  const id = st.you ? 'you' : PK_IDS[st.who];
+  pkTalkName.textContent = st.you ? 'You' : st.name || PK_NAMES[id];
+  pkTalkName.style.color = st.you ? '#f6ecd0' : PK_COLOR[id];
+  pkTalkText.textContent = '';
+  PV.speaker = st.you ? 0 : st.who;
+  if (!st.you && st.mood) pvMood(st.who, st.mood, 4);
+  if (st.look !== undefined && !st.you) { PV.seats[st.who].look = st.look; PV.seats[st.who].lookT = 3; }
+  if (st.all) PV.seats.forEach(v => { if (v.i) { v.look = st.all; v.lookT = 2.5; } });
+}
+function pvSceneTick(dt) {
+  const sc = PV.scene;
+  if (!sc) return;
+  const st = sc.steps[sc.i];
+  sc.t += dt;
+  if (st.act) { if (sc.t >= (st.wait || 0)) pvSceneNext(); return; }
+  const text = st.text || st.you;
+  const n = st.you ? text.length : Math.min(text.length, Math.floor(sc.t * 44));
+  if (n !== sc.shown) {
+    const was = sc.shown;
+    sc.shown = n;
+    pkTalkText.textContent = (st.you ? '▶ ' : '') + text.slice(0, n);
+    if (!st.you && n > was && /[a-z0-9]/i.test(text[n - 1] || '') && n % 2 === 0) sfx.pkVoice(PK_IDS[st.who]);
+    if (!st.you) PV.seats[st.who].talkT = n < text.length ? 0.2 : 0;
+  }
+}
+function pvSceneAdvance() {
+  const sc = PV.scene;
+  if (!sc) return;
+  const st = sc.steps[sc.i];
+  if (st.act) return;
+  const text = st.text || st.you;
+  if (!st.you && sc.t * 44 < text.length) { sc.t = text.length / 44; return; }
+  if (st.you) sfx.you(text); else sfx.ui();
+  pvSceneNext();
+}
+pkTalk.addEventListener('click', () => pvSceneAdvance());
+
+// the rules: up before every game you sit down to, and on R any time
+const pkRulesEl = $('#pk-rules');
+function pvRules(open, then) {
+  if (!PV) return;
+  PV.rulesOpen = open;
+  pkRulesEl.hidden = !open;
+  PV.modal = open || !!PV.buyin;
+  if (open) { PV.rulesThen = then || PV.rulesThen || null; setTimeout(() => $('#pk-rules-go').focus(), 40); }
+  else if (PV.rulesThen) { const f = PV.rulesThen; PV.rulesThen = null; f(); }
+}
+$('#pk-rules-go').addEventListener('click', () => { sfx.ui(); pvRules(false); });
+
+// your ores: ingots or raw, they're all money down here (the miners smelt it
+// themselves)
+const PK_ITEM = { iron: ['iron', 'iron-ore'], gold: ['gold', 'gold-ore'], ruby: ['ruby'], emerald: ['emerald'], diamond: ['diamond'] };
+function pkWealth() { return PK_ORES.reduce((n, o) => n + PK_ITEM[o].reduce((m, id) => m + countItem(id), 0) * PK_VAL[o], 0); }
+// paying in: the biggest ores first, without going over, then one bigger
+// piece if it's needed, with the change given back in smaller ores
+function pkTakeOre(amount) {
+  let need = amount;
+  PK_ORES.slice().reverse().forEach(o => PK_ITEM[o].forEach(id => {
+    const v = PK_VAL[o], k = Math.min(countItem(id), Math.floor(need / v));
+    if (k > 0) { takeItem(id, k); need -= k * v; }
+  }));
+  if (need > 0) {
+    for (const o of PK_ORES) {
+      const id = PK_ITEM[o].find(x => countItem(x) > 0);
+      if (id && PK_VAL[o] >= need) { takeItem(id, 1); pkPayout(PK_VAL[o] - need, true); need = 0; break; }
+    }
+  }
+  afterInventoryChange();
+}
+// cashing out: the chips go back into your bag as ores, the same mix as the
+// stack looked on the table
+function pkPayout(n, quiet) {
+  if (n <= 0) return;
+  const c = pkChips(n);
+  PK_ORES.forEach(o => { if (c[o]) addItem(o, c[o]); });
+  if (!quiet) toast('Cashed out', pkDollars(n), PK_ORES.filter(o => c[o]).map(o => `${c[o]} ${ITEMS[o].name}`).join(', '));
+}
+
+// the buy in, for every visit after the first: as much as you like up to 100
+// big blinds, at least one
+const pkBuyEl = $('#pk-buyin'), pkBuySlider = $('#pk-buy-slider'), pkBuyAmt = $('#pk-buy-amount');
+function pvBuyIn(done) {
+  const have = pkWealth(), max = Math.min(PK.MAX_BUYIN, have);
+  PV.buyin = { done };
+  PV.modal = true;
+  pkBuyEl.hidden = false;
+  $('#pk-buy-have').textContent = `You have ${pkDollars(have)} in ore`;
+  pkBuySlider.min = PK.MIN_BUYIN; pkBuySlider.max = max; pkBuySlider.value = max;
+  pkBuyAmt.textContent = pkDollars(max);
+  setTimeout(() => $('#pk-buy-go').focus(), 40);
+}
+pkBuySlider.addEventListener('input', () => { pkBuyAmt.textContent = pkDollars(+pkBuySlider.value); });
+$('#pk-buy-go').addEventListener('click', () => {
+  if (!PV || !PV.buyin) return;
+  const n = clamp(Math.round(+pkBuySlider.value), PK.MIN_BUYIN, Math.min(PK.MAX_BUYIN, pkWealth()));
+  const done = PV.buyin.done;
+  PV.buyin = null; PV.modal = false;
+  pkBuyEl.hidden = true;
+  sfx.ui();
+  pkTakeOre(n);
+  done(n);
+});
+$('#pk-buy-back').addEventListener('click', () => {
+  if (!PV) return;
+  PV.buyin = null; PV.modal = false;
+  pkBuyEl.hidden = true;
+  pvClose();
+});
+
+// opening the table: the view, a game (fresh or the one you left), and the
+// music. it starts paused until the rules are read.
+let pkRaf = 0, pkLast = 0;
+function pvOpen() {
+  pvLayout();
+  PV = {
+    T: pkTable(PK_IDS.map((_, i) => (i ? PK.START : 0))), seats: null, board: [], pot: 0, movers: [], flights: [], bubbles: [], parts: [], wait: 0.4,
+    think: null, human: false, scene: null, modal: false, lastWhy: [], speed: 1, fast: false, shake: 0, time: 0, deck: true, buttonAt: null,
+    speaker: -1, wins: [], started: false, youStraddle: false
+  };
+  pkAiInit(PV.T);
+  PV.seats = pvSeats(PV.T);
+  pkChat.innerHTML = '';
+  pkUI.straddle.checked = false;
+  pkUI.fast.classList.remove('is-on');
+  pvHideControls();
+  pkRoot.hidden = false;
+  document.body.classList.add('is-poker');
+  pkLast = performance.now();
+  cancelAnimationFrame(pkRaf);
+  pkRaf = requestAnimationFrame(pvLoop);
+  bossMusic(true, POKER_TUNE);
+}
+function pvClose() {
+  if (!PV) return;
+  const won = PV.gameOver === 'win';
+  PV.closing = true;
+  pkRoot.hidden = true;
+  pkTalk.hidden = true; pkRulesEl.hidden = true; pkBuyEl.hidden = true;
+  document.body.classList.remove('is-poker');
+  cancelAnimationFrame(pkRaf);
+  PV = null;
+  if (musicOn && musicTune === POKER_TUNE) bossMusic(false);
+  renderHUD();
+  markDirty();
+  if (won && !found.has('desperate')) setTimeout(() => { victoryJingle(); discover(desperatePoi); }, 400);
+}
+function pvLoop(ts) {
+  if (!PV) return;
+  const raw = Math.min(0.05, Math.max(0, (ts - pkLast) / 1000));
+  pkLast = ts;
+  // quicker when you're not in the hand, and quicker again with fast on
+  const out = !PV.T.seats[0] || PV.T.seats[0].folded || PV.T.seats[0].out;
+  PV.speed = (PV.fast ? 2.2 : 1) * (out && PV.started && !PV.scene ? 1.7 : 1);
+  const dt = raw * PV.speed;
+  pvTick(dt);
+  pvSceneTick(raw);
+  if (PV && PV.started) pvStep(dt);
+  if (PV) pvDraw(ts);
+  if (PV && PV.speaker >= 0) {
+    // a little marker over whoever's talking in a conversation
+    const b = seatAt(PV.speaker, 'body'), y = b.y - (PV.speaker === 0 ? 46 : MINER_H + 6) - (Math.floor(ts / 250) % 2);
+    pRect(b.x - 2, y, 5, 1, '#ffd23f'); pRect(b.x - 1, y + 1, 3, 1, '#ffd23f'); pRect(b.x, y + 2, 1, 1, '#ffd23f');
+  }
+  if (PV) pkRaf = requestAnimationFrame(pvLoop);
+}
+window.addEventListener('resize', () => { if (PV) pvLayout(); });
+
+// a game: you in seat 0 with what you brought, everyone else at 200 iron (or
+// where they were if you're picking up a game you left)
+function pvNewGame(youStack) {
+  const T = pkTable(PK_IDS.map((_, i) => (i ? PK.START : youStack)));
+  const mood = pkMood();
+  mood.brock.grudge = Math.min(4, PQ.grudge * 0.5);
+  mood.ace.respect = PQ.respect;
+  pkAiInit(T, mood);
+  PV.T = T;
+  PV.seats = pvSeats(T);
+  PQ.table = { stacks: T.seats.map(s => s.stack), button: -1, hand: 0, mood, stats: T.ai.stats };
+  markDirty();
+}
+function pvResume(saved) {
+  const T = pkTable(saved.stacks);
+  T.button = saved.button; T.hand = saved.hand;
+  pkAiInit(T, Object.assign(pkMood(), saved.mood));
+  if (Array.isArray(saved.stats) && saved.stats.length === 6) T.ai.stats = saved.stats;
+  PV.T = T;
+  PV.seats = pvSeats(T);
+}
+function pvBegin() {
+  pvRules(true, () => {
+    PV.started = true;
+    PV.wait = 0.3;
+    pvLog('<span class="dim">Ace shuffles up and deals.</span>', 'sys');
+  });
+}
+
+// the first time: they're mid argument when you walk up, notice you, and
+// sparks offers you a seat and a stack on the house
+const PK_OPENERS = [
+  [{ who: 1, text: 'Deal the cards, Ace. I\'ve been waiting all day.', mood: 'angry' }, { who: 3, text: 'You\'ve been waiting forty seconds.' },
+    { who: 5, text: 'Strawberry Jam! New hand, new me!', mood: 'grin' }, { who: 4, text: 'Same old you. Same old losing.', mood: 'smug' }],
+  [{ who: 4, text: 'I\'m telling you, I had him. It was a perfect bluff.', mood: 'smug' }, { who: 3, text: 'You bluffed into a full house, Brock.' },
+    { who: 4, text: 'A PERFECT bluff.' }, { who: 5, text: 'Hahaha! He called so fast!', mood: 'grin' }],
+  [{ who: 2, text: 'Is it hot in here? It\'s hot in here.', mood: 'scared' }, { who: 1, text: 'We\'re sitting next to LAVA, Neville.', mood: 'angry' },
+    { who: 2, text: 'Right. Right. That explains it.' }, { who: 3, text: 'Your blind, Neville.' }]
+];
+function pvIntro() {
+  const opener = pkAny(PK_OPENERS);
+  pvScene([
+    ...opener,
+    { who: 2, text: 'Um. Guys. Someone\'s here.', mood: 'scared', look: 2 },
+    { act: () => { PV.seats.forEach(v => { if (v.i) { v.look = 2; v.lookT = 3; } }); pvMood(5, 'shock', 1.5); }, wait: 0.7 },
+    { who: 5, text: 'Whoa! A visitor! Nobody ever comes down here!', mood: 'grin' },
+    { who: 4, text: 'Great. Another tourist.', mood: 'smug' },
+    { who: 5, text: 'Hey, you play poker? Course you do. Everybody plays poker.', mood: 'grin' },
+    { you: 'I don\'t really play that much poker...' },
+    { who: 4, text: 'Ha! A beginner. Perfect. Easy ore.', mood: 'grin' },
+    { who: 5, text: 'Even better! Grab a seat! Your first stack\'s on me!', mood: 'grin' },
+    { who: 3, text: 'Sparks. That\'s my ore you\'re giving away.', mood: 'angry' },
+    { who: 5, text: 'It\'s OUR ore. Communal ore. Strawberry Jam ore.', mood: 'grin' },
+    { who: 3, text: '...Fine. Twenty thousand in ore. No limit hold\'em, last one standing.' },
+    { who: 1, text: 'And no crying when you lose it.', mood: 'angry' },
+    { you: 'What do I get if I win?' },
+    { who: 3, text: 'Nobody\'s beaten this table in years.', mood: 'smug' },
+    { who: 3, text: 'But if you do, I have a key that opens a door nobody\'s opened in a very long time.' },
+    { who: 5, text: 'Ooooh. Spooky. Sit, sit!', mood: 'grin' }
+  ], () => {
+    PQ.met = true;
+    PQ.visits++;
+    pvNewGame(PK.START);
+    toast('On the house', pkDollars(PK.START), '1 Diamond, 1 Emerald, 4 Rubies, 6 Gold, 10 Iron');
+    pvBegin();
+  });
+}
+// coming back: whoever knocked you out last time has something to say about
+// it, then it's your own ore this time
+function pvReturn() {
+  const b = PQ.lastBeater, steps = [];
+  if (PQ.won) steps.push({ who: 1, text: 'YOU. Sit down. I want my ore back.', mood: 'fume' }, { who: 3, text: 'The champion returns.', mood: 'smug' });
+  else if (b === 'brutus') steps.push({ who: 1, text: 'Back for another beating? I\'ll take your ore again.', mood: 'angry' }, { who: 3, text: 'Good to see you. Try again, you\'ll get him.' });
+  else if (b === 'neville') steps.push({ who: 2, text: 'Oh no, you\'re back. I-I didn\'t mean to knock you out last time!', mood: 'scared' }, { who: 3, text: 'You can beat him. Try again.' });
+  else if (b === 'brock') steps.push({ who: 4, text: 'Look who crawled back. Rookie wants another lesson.', mood: 'grin' }, { who: 3, text: 'Ignore him. Try again.' });
+  else if (b === 'sparks') steps.push({ who: 5, text: 'My favourite donor! Kidding, kidding. Sit down!', mood: 'grin' }, { who: 3, text: 'Try again. You were close.' });
+  else if (b === 'ace') steps.push({ who: 3, text: 'You came back. Good. Did you learn anything?', mood: 'smug' }, { who: 3, text: 'Try again.' });
+  else steps.push({ who: 5, text: 'Hey, it\'s you! Welcome back!', mood: 'grin' }, { who: 3, text: 'Ready for another go?' });
+  steps.push({ who: 5, text: 'No free stack this time though. Bring your own ore!', mood: 'grin' });
+  const have = pkWealth();
+  if (have < PK.MIN_BUYIN) {
+    steps.push({ who: 4, text: `You need at least ${pkDollars(PK.MIN_BUYIN)} in ore to sit down. That's one big blind, rookie.`, mood: 'smug' },
+      { who: 5, text: 'Go mine something and come back!', mood: 'grin' });
+    pvScene(steps, () => pvClose());
+    return;
+  }
+  if (have < 10) steps.push({ who: 4, text: `That's it? ${pkDollars(have)}? Adorable.`, mood: 'grin' }, { who: 3, text: 'Ore is ore. Let them sit.' });
+  pvScene(steps, () => {
+    PQ.visits++;
+    pvBuyIn(n => { pvNewGame(n); pvBegin(); });
+  });
+}
+function pokerSit() {
+  if (PV) return;
+  pvOpen();
+  if (PQ.table && Array.isArray(PQ.table.stacks) && PQ.table.stacks.length === 6 && PQ.table.stacks[0] > 0) {
+    pvResume(PQ.table);
+    pvScene([{ who: 5, text: 'Your seat\'s still warm! Where\'d you go?', mood: 'grin' }, { who: 3, text: 'Let\'s carry on.' }], () => pvBegin());
+  } else if (!PQ.met) pvIntro();
+  else pvReturn();
+}
+
+// leaving: you stand up after the hand you're in, and take your stack with you
+let pkLeaveAsk = 0;
+function pvAskLeave() {
+  if (!PV || !PV.started || PV.gameOverRun) { if (PV && !PV.started && !PV.scene) pvClose(); return; }
+  if (performance.now() - pkLeaveAsk > 2500) {
+    pkLeaveAsk = performance.now();
+    pkUI.leave.textContent = 'Sure?';
+    setTimeout(() => { pkUI.leave.textContent = 'Leave'; }, 2500);
+    return;
+  }
+  pkUI.leave.textContent = 'Leaving...';
+  PV.leaving = true;
+  if (PV.human) pvHuman(PV.legal.canCheck ? 'check' : 'fold');
+}
+function pvLeaveNow() {
+  const n = PV.T.seats[0].stack;
+  pvScene([
+    { who: 3, text: 'Cashing out? Fair enough.' },
+    { who: 4, text: 'Running away already, rookie?', mood: 'smug' }
+  ], () => {
+    PQ.table = null;
+    pkPayout(n);
+    pkUI.leave.textContent = 'Leave';
+    pvClose();
+  });
+}
+// the end of a game: you went bust, or you're the last one standing
+function pvGameOver(kind) {
+  pvHideControls();
+  if (kind === 'bust') {
+    const b = PV.beater, id = PK_IDS[b];
+    PQ.busts++;
+    PQ.lastBeater = id;
+    PQ.table = null;
+    const gloat = {
+      brutus: [{ who: 1, text: 'HA! Get out of my sight!', mood: 'grin' }],
+      neville: [{ who: 2, text: 'I\'m so sorry! Wait. I won? I won!', mood: 'happy' }],
+      brock: [{ who: 4, text: 'And THAT is why you don\'t play with the big boys, rookie.', mood: 'grin' }],
+      sparks: [{ who: 5, text: 'Strawberry Jam! Don\'t worry, ore always comes back around!', mood: 'grin' }],
+      ace: [{ who: 3, text: 'Good game. You played better than you think.', mood: 'happy' }]
+    }[id] || [];
+    pvScene([...gloat, { who: 3, text: 'Come back when you\'ve got more ore. The seat\'s yours.' }], () => pvClose());
+    return;
+  }
+  // you won. they argue, sparks laughs, and ace gives you the key
+  const n = PV.T.seats[0].stack;
+  PQ.won = true;
+  PQ.wins++;
+  PQ.table = null;
+  pvScene([
+    { act: () => { pvPose(4, 'slam', 0.7); setTimeout(() => { if (PV) { PV.shake = 3; sfx.pkSlam(); } }, 300); }, wait: 0.8 },
+    { who: 4, text: 'This is YOUR fault, Brutus! You handed them half your stack!', mood: 'angry' },
+    { who: 1, text: 'MY fault? You five bet a beginner with nine four!', mood: 'fume' },
+    { who: 4, text: 'It was SUITED!', mood: 'angry' },
+    { who: 2, text: 'I... I think the new one was just good?', mood: 'scared' },
+    { who: 1, text: 'STAY OUT OF THIS, NEVILLE.', mood: 'fume' },
+    { who: 4, text: 'STAY OUT OF THIS, NEVILLE.', mood: 'angry' },
+    { who: 5, text: 'Hahahaha! Strawberry Jam! Best night EVER!', mood: 'grin' },
+    { who: 3, text: 'Enough.' },
+    { act: () => { PV.seats.forEach(v => { if (v.i && v.i !== 3) { v.look = 2; v.lookT = 2; } }); }, wait: 0.6 },
+    { who: 3, text: 'Congratulations. That was... genuinely impressive.', mood: 'happy' },
+    { who: 3, text: 'I said nobody\'s beaten this table in years. I meant it.' },
+    { who: 3, text: 'A deal\'s a deal.' },
+    { act: () => {
+      if (!PQ.keyGiven) { PQ.keyGiven = true; addItem('lava-key', 1); toast('Got it', 'Lava Key', 'It\'s warm to the touch...'); sfx.found(); }
+      pkPayout(n);
+    }, wait: 1.2 },
+    { who: 3, text: 'The Lava Key. It opens the old door at the bottom of the mines.' },
+    { who: 3, text: 'Whatever\'s down there has been asleep a long time. Be careful.' },
+    { you: 'Thanks. Good game, everyone.' },
+    { who: 1, text: 'Don\'t come back!', mood: 'angry' },
+    { who: 5, text: 'DO come back!', mood: 'grin' }
+  ], () => pvClose());
+}
+
+// keys while you're at the table: everything goes to the table, nothing to
+// the world behind it
+function pokerKey(e) {
+  if (!PV) return false;
+  const k = e.key.toLowerCase();
+  e.preventDefault();
+  if (PV.scene) { if (k === ' ' || k === 'enter' || k === 'e') pvSceneAdvance(); return true; }
+  if (PV.rulesOpen) { if (k === 'r' || k === 'escape' || k === 'enter' || k === ' ') pvRules(false); return true; }
+  if (PV.buyin) { if (k === 'enter') $('#pk-buy-go').click(); if (k === 'escape') $('#pk-buy-back').click(); return true; }
+  if (k === 'r') { pvRules(true); return true; }
+  if (!PV.human) return true;
+  const L = PV.legal;
+  if (k === 'f' && !L.canCheck) pvHuman('fold');
+  else if (k === 'c' || k === 'k') pvHuman(L.canCheck ? 'check' : 'call');
+  else if (k === 'enter' && L.canRaise) pvHuman('raise', pvRaiseVal());
+  else if (k === 'a') pvHuman('allin');
+  else if (k === 'arrowleft' || k === 'arrowdown') pvSetRaise(pvRaiseVal() - PV.T.blinds.bb * (e.shiftKey ? 5 : 1));
+  else if (k === 'arrowright' || k === 'arrowup') pvSetRaise(pvRaiseVal() + PV.T.blinds.bb * (e.shiftKey ? 5 : 1));
+  return true;
+}
+const pokerHolds = () => !!PV;
+
+// out in the mines: desperate measures' landmark is the way into the lava
+// cavern, a ragged mouth in the cave wall with lava light pouring out of it.
+// it's boarded up like the other lairs until bruinpop's been found.
+const desperatePoi = POIS.find(p => p.id === 'desperate');
+const pkLairThing = desperatePoi.thing;
+function makeLavaCave() {
+  const w = 64, h = 58, cx = 31.5, ground = h - 2, G = pixelGrid(w, h);
+  wallFace(G, w, h, 2601);
+  const ar = 14, acy = ground - 14;
+  const edge = (x, y) => (y <= acy
+    ? Math.hypot(x - cx, (y - acy) * 1.15) - ar - (vnoise(Math.atan2(y - acy, x - cx) * 3, 0.5, 2602) - 0.5) * 4
+    : Math.abs(x - cx) - ar - (vnoise(0.5, y / 3, 2603) - 0.5) * 2 + (y - acy) * 0.12);
+  // the mouth: a ragged lip of black basalt, and inside, the glow of lava
+  // somewhere further in, brightest at the floor
+  for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
+    const d = edge(x, y);
+    if (d > 1.6) continue;
+    if (d > 0) { if (G.get(x, y)) G.set(x, y, hash2(x, y, 2604) < 0.5 ? '#1a1412' : '#2a201c'); continue; }
+    const glow = Math.max(0, 1 - Math.hypot((x - cx) / 13, (y - ground) / 11));
+    G.set(x, y, d > -1.4 ? '#2a0e08' : glow > 0.7 ? '#ffb84a' : glow > 0.5 ? '#f07a2a' : glow > 0.3 ? '#a8401a' : glow > 0.12 ? '#5a1c0e' : '#240a06');
+  }
+  // a little river of lava running out of it along the floor, and drips off
+  // the lip
+  for (let y = ground - 2; y <= ground; y++) for (let x = Math.round(cx - 5); x <= Math.round(cx + 5); x++) G.set(x, y, hash2(x, y, 2605) < 0.3 ? '#ffe08a' : '#ff8a1c');
+  [-8, -2, 5, 10].forEach(dx => {
+    const x = Math.round(cx + dx);
+    let y = acy - ar; while (edge(x, y) > -0.5 && y < acy) y++;
+    for (let k = 0; k < 3 + (dx & 1); k++) G.set(x, y + k, k === 0 ? '#ffb84a' : '#e0561a');
+  });
+  // glowing veins in the rock round it
+  for (let k = 0; k < 40; k++) {
+    const a = hash2(k, 0, 2606) * Math.PI * 2, r = ar + 3 + hash2(k, 1, 2606) * 10;
+    const x = Math.round(cx + Math.cos(a) * r), y = Math.round(acy + Math.sin(a) * r * 0.9);
+    if (G.get(x, y) && edge(x, y) > 2 && y < ground - 1) G.set(x, y, hash2(k, 2, 2606) < 0.4 ? '#ffb84a' : '#c4401a');
+  }
+  rubbleStones(G, [[cx - 18, ground - 1, 2.2], [cx + 17, ground, 1.8], [cx - 14, ground, 1.3]]);
+  const FACE = ['#2a2622', '#3b352f', '#1e1b18', '#332e29'];
+  return G.outline(c => (FACE.includes(c) ? null : '#120c0a')).canvas();
+}
+const PK_LAVA_CAVE = makeLavaCave();
+const pkMouth = idx(desperatePoi.at[0], desperatePoi.at[1]);
+const pkLairOpen = () => found.has('bruinpop');
+const pkLairGlow = { x: pkLairThing.x, y: pkLairThing.y - 6, rgb: '255,130,40', rad: 2.6, flicker: true, strength: 0.32, off: true };
+glows.push(pkLairGlow);
+let pkLairWas = null;
+function syncPokerLair() {
+  const open = pkLairOpen();
+  if (open === pkLairWas) return;
+  pkLairWas = open;
+  pkLairThing.frames = open ? [PK_LAVA_CAVE] : SPRITE.lair;
+  pkLairGlow.off = !open;
+  if (open) extraSolid.delete(pkMouth); else extraSolid.add(pkMouth);
+}
+syncPokerLair();
+
+// the cavern itself: a dark basalt floor, a river of lava along the back wall
+// and pools of it in the corners, the stone table in the middle with the five
+// of them round it, and an empty stool at the near side for you
+const PKR_COLS = 22, PKR_ROWS = 15, PKR_DOOR = 11;
+const pkrW = PKR_COLS * TILE, pkrH = PKR_ROWS * TILE;
+const PKR_TABLE = { x: pkrW / 2, y: 128 };
+const PKR_SMALL = makePokerTable(44, 17, 5);
+const pkrLava = (x, y) => y < 50 + Math.sin(x / 23) * 4 || Math.hypot((x - 28) / 30, (y - 205) / 22) < 1 || Math.hypot((x - (pkrW - 28)) / 30, (y - 205) / 22) < 1;
+function paintPokerRoom() {
+  const c = mk(pkrW, pkrH), g = c.getContext('2d'), img = g.createImageData(pkrW, pkrH), d = img.data;
+  for (let y = 0; y < pkrH; y++) for (let x = 0; x < pkrW; x++) {
+    const i = (y * pkrW + x) * 4, n = hash2(x, y, 2701), v = vnoise(x / 8, y / 8, 2702);
+    const wall = x < 12 || x >= pkrW - 12 || y < 26 || (y >= pkrH - 10 && Math.abs(x - (PKR_DOOR * TILE + 8)) > 9);
+    let col;
+    if (wall) {
+      const k = y >= 18 && y < 26 && x >= 12 && x < pkrW - 12 ? 60 - (25 - y) * 3 : 28 + vnoise(x / 6, y / 6, 2703) * 18;
+      col = [k + 6, k - 2, k - 4];
+      if (vnoise(x / 4, y / 4, 2704) > 0.8 && n < 0.4) col = n < 0.15 ? [255, 160, 50] : [180, 60, 24];
+    } else if (pkrLava(x, y)) {
+      const t = vnoise(x / 9, y / 5, 2705);
+      col = t > 0.7 ? [255, 214, 90] : t > 0.45 ? [255, 140, 36] : t > 0.25 ? [228, 88, 26] : [168, 44, 18];
+    } else if (pkrLava(x, y - 3) || pkrLava(x - 3, y) || pkrLava(x + 3, y)) col = n < 0.4 ? [26, 18, 16] : [44, 30, 26];
+    else {
+      const base = v > 0.6 ? 46 : v > 0.38 ? 38 : 33;
+      col = [base + 8, base - 2, base - 4];
+      if (n < 0.04) col = [base - 10, base - 14, base - 14];
+    }
+    d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  // the light from the mines coming in at the door
+  const gr = g.createLinearGradient(0, pkrH, 0, pkrH - 26);
+  gr.addColorStop(0, 'rgba(255,236,200,0.2)');
+  gr.addColorStop(1, 'rgba(255,236,200,0)');
+  g.fillStyle = gr;
+  g.fillRect(PKR_DOOR * TILE, pkrH - 26, TILE, 26);
+  return c;
+}
+const pokerRoom = {
+  id: 'poker', w: pkrW, h: pkrH, dust: '#6a4a3a', shade: 0.45, underground: true, fight: false,
+  canvas: paintPokerRoom(),
+  outside: { x: pkLairThing.x, y: pkLairThing.y }, exit: { x: pkLairThing.x, y: pkLairThing.y + 10 }, door: PKR_DOOR,
+  blocked: (x, y) => x < 16 || x > pkrW - 16 || y < 30 || (y > pkrH - 12 && Math.abs(x - (PKR_DOOR * TILE + 8)) > 5)
+    || pkrLava(x, y) || pkrLava(x, y - 4)
+    || ((x - PKR_TABLE.x) / 66) ** 2 + ((y - PKR_TABLE.y + 6) / 30) ** 2 < 1,
+  things: [], glows: [
+    { x: pkrW / 2, y: 40, rgb: '255,120,40', rad: 7, flicker: true, strength: 0.3 },
+    { x: 28, y: 205, rgb: '255,120,40', rad: 3.4, flicker: true, strength: 0.3 },
+    { x: pkrW - 28, y: 205, rgb: '255,120,40', rad: 3.4, flicker: true, strength: 0.3 },
+    { x: PKR_TABLE.x, y: PKR_TABLE.y - 10, rgb: '255,200,140', rad: 3.2, flicker: true, strength: 0.18 }
+  ]
+};
+EXTRA_ROOMS.push(pokerRoom);
+BUILDINGS.push({
+  thing: pkLairThing, tile: desperatePoi.at, room: pokerRoom, get name() { return PQ.won ? 'The Lava Cavern' : 'Lava Cavern'; }, open: pkLairOpen,
+  shut: ['Sealed', '? ? ?', 'Beat the bosses before it first.'], hint: () => pkLairOpen() && !PQ.met
+});
+MINE_BOSSES.desperate = { beaten: () => !!PQ.won, guard: 'You hear ores clinking down there...' };
+MINES_STEPS.splice(MINES_STEPS.length - 1, 0,
+  { done: () => !!PQ.met, title: 'Find the next landmark' },
+  { done: () => !!PQ.won, title: 'Be the last one standing at the poker table' });
+// the table and the five of them round it, at the world's scale: the same
+// sprites as at the table, idling (a bob, a blink), and every few seconds one
+// of them says something short over the game they're playing without you
+const PKR_SEATS = { brutus: [-58, 8, 1, false], neville: [-26, -14, 0], ace: [0, -16, 0], brock: [26, -14, 0], sparks: [58, 8, 1, true] };
+pokerRoom.things.push({ x: PKR_TABLE.x, y: PKR_TABLE.y + 22, frames: [mk(1, 1)], draw: (o, toX, toY, t) => {
+  const tb = PKR_SMALL, x = PKR_TABLE.x - tb.cx, y = PKR_TABLE.y - tb.cy;
+  ctx.drawImage(tb.canvas, toX(x), toY(y), tb.w * S, tb.h * S);
+  // cards and a few chips on it, so it looks like a game's on
+  [[-10, -2], [6, -2], [-26, -4], [22, -4]].forEach(([dx, dy]) => ctx.drawImage(PK_BACK, toX(PKR_TABLE.x + dx), toY(PKR_TABLE.y + dy), 7 * S, 10 * S));
+  [[-34, 6, 'gold', 4], [30, 6, 'iron', 6], [-6, 10, 'diamond', 2], [2, 10, 'ruby', 3]].forEach(([dx, dy, ore, n]) => ctx.drawImage(PK_STACK[ore][n], toX(PKR_TABLE.x + dx), toY(PKR_TABLE.y + dy - n), 8 * S, (n + 4) * S));
+  // and the flicker of lava in its cracks
+  ctx.globalCompositeOperation = 'lighter';
+  for (let k = 0; k < tb.cracks.length; k += 2) {
+    const [cx2, cy2] = tb.cracks[k], f = 0.5 + 0.5 * Math.sin(t / 260 + cx2 * 0.7);
+    ctx.fillStyle = `rgba(255,${180 + Math.round(f * 60)},80,${0.2 + f * 0.4})`;
+    ctx.fillRect(toX(x + cx2), toY(y + cy2), S, S);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+} });
+pokerRoom.things.push({ x: PKR_TABLE.x, y: PKR_TABLE.y + 36, frames: [PK_STOOL] });
+const pkrMiners = Object.entries(PKR_SEATS).map(([id, [dx, dy, turn, flip]]) => {
+  const m = { id, x: PKR_TABLE.x + dx, y: PKR_TABLE.y + dy, turn, flip, frames: [mk(1, 1)], blink: Math.random() * 3, mood: null, moodT: 0,
+    draw: (o, toX, toY, t) => {
+      const blink = Math.floor((t / 1000 + o.blink) % 4) === 0 && (t / 1000 + o.blink) % 1 < 0.12;
+      const im = minerFrame(o.id, o.turn, o.mood || pkBaseMood(o.id), 0, blink, o.talk > 0 && Math.floor(t / 110) % 2 === 0);
+      const bob = reduceMotion ? 0 : Math.round(Math.max(0, Math.sin(t / 700 + o.x)) * 0.9);
+      if (o.turn) {
+        const st = PK_STOOL;
+        ctx.drawImage(st, toX(o.x - 11), toY(o.y - 6), st.width * S, st.height * S);
+      } else ctx.drawImage(PK_CHAIR_BACK, toX(o.x - 11), toY(o.y - 18), PK_CHAIR_BACK.width * S, PK_CHAIR_BACK.height * S);
+      const dx = toX(o.x - MINER_W / 2), dy = toY(o.y - MINER_H + bob);
+      if (o.flip) { ctx.save(); ctx.translate(dx + MINER_W * S, dy); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, MINER_W * S, MINER_H * S); ctx.restore(); }
+      else ctx.drawImage(im, dx, dy, MINER_W * S, MINER_H * S);
+    } };
+  pokerRoom.things.push(m);
+  return m;
+});
+// what they say to each other while you watch
+const PKR_CHATTER = {
+  brutus: ['RAISE.', 'Rigged!', 'Call. Whatever.', 'ARGH!'], neville: ['F-fold.', 'Um... check?', 'Is that a raise?'],
+  ace: ['Call.', 'Raise.', 'Your blind.', 'Nice hand.'], brock: ['Too easy.', 'Ship it!', 'I had you.'], sparks: ['Strawberry Jam!', 'All in!', 'I guess I call!', 'Hahaha!']
+};
+let pkrChatT = 3;
+function pokerRoomTick(dt) {
+  syncPokerLair();
+  if (room !== pokerRoom) return;
+  pkrChatT -= dt;
+  pkrMiners.forEach(m => { m.talk = Math.max(0, (m.talk || 0) - dt); });
+  if (pkrChatT <= 0 && !PV) {
+    pkrChatT = 4 + Math.random() * 5;
+    const m = pkAny(pkrMiners);
+    floatText(pkAny(PKR_CHATTER[m.id]), m.x, m.y - MINER_H - 2, PK_COLOR[m.id]);
+    m.talk = 0.6;
+  }
+}
+// clicking the table (or any of them) sits you down, once you're close enough
+const pkNearTable = () => Math.hypot(player.x - PKR_TABLE.x, (player.y - PKR_TABLE.y) * 1.4) < 110;
+const pkOverTable = m => ((m.x - PKR_TABLE.x) / 76) ** 2 + ((m.y - PKR_TABLE.y + 4) / 40) ** 2 < 1;
+canvas.addEventListener('pointerdown', e => {
+  if (!started || room !== pokerRoom || PV || ui || player.dead || e.button !== 0) return;
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  if (!pkOverTable(mouseWorld())) return;
+  e.stopImmediatePropagation();
+  e.preventDefault();
+  if (!pkNearTable()) { toast('The Poker Table', 'Too far...', 'Walk up to the table.'); return; }
+  sfx.ui();
+  pokerSit();
+}, true);
+function pokerEnter(r) {
+  if (r !== pokerRoom) return;
+  if (!PQ.met) setTimeout(() => toast('Inside', 'The Lava Cavern', 'Somebody\'s playing cards down here...'), 50);
+  else setTimeout(() => toast('Inside', 'The Lava Cavern', PQ.won ? 'They\'re still arguing...' : 'Click the table to play.'), 50);
+}
+function pokerLeave(r) { if (r === pokerRoom && PV) pvClose(); }
+// "click to play" over the table when you're near it
+function pokerOverlay(toX, toY, t) {
+  if (room !== pokerRoom || PV || !pkNearTable()) return;
+  const fs = Math.max(16, 8 * Math.round((S * 2.5) / 8));
+  ctx.font = `${fs}px Silkscreen, monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const y = toY(PKR_TABLE.y - 52) - (Math.floor(t / 400) % 2) * S;
+  ctx.fillStyle = '#000';
+  ctx.fillText('CLICK TO PLAY', toX(PKR_TABLE.x) + 2, y + 2);
+  ctx.fillStyle = '#ffd23f';
+  ctx.fillText('CLICK TO PLAY', toX(PKR_TABLE.x), y);
+}
+function pokerTick(dt) { pokerRoomTick(dt); teachDoorTick(); }
+
+// the teachla site's landmark is the last room in the mines, behind a door of
+// black glass with lava in its cracks and a keyhole the shape of a flame. the
+// lava key from the poker game fits it, but what's on the other side isn't
+// built yet.
+const teachPoi = POIS.find(p => p.id === 'teachla-site');
+function makeLavaDoor(lit) {
+  const w = LAIR_W, h = LAIR_H, cx = (w - 1) / 2, ground = h - 2, G = pixelGrid(w, h);
+  wallFace(G, w, h, 2801);
+  doorway(G, cx, 18, ground, 11, (x, y, e) => {
+    const crack = vnoise(x / 2.5, y / 4, 2802) > 0.74;
+    return crack ? (lit ? '#ffb84a' : '#c4401a') : e < 1.5 ? '#1a1418' : hash2(x, y, 2803) < 0.2 ? '#2a2430' : '#16121a';
+  });
+  stoneArch(G, cx, 12, ground, 11, 17, ['#4a4452', '#36303e', '#26222c', '#0e0c12']);
+  // the keyhole, a flame
+  [[0, -3], [0, -2], [-1, -1], [0, -1], [1, -1], [-1, 0], [0, 0], [1, 0], [0, 1], [-1, 2], [0, 2], [1, 2]].forEach(([dx, dy]) => G.set(cx + dx, 36 + dy, lit ? '#fff1a8' : '#ff8a1c'));
+  return G.outline(c => (c === '#2a2622' || c === '#3b352f' || c === '#1e1b18' || c === '#332e29' ? null : '#0c0a10')).canvas();
+}
+const PK_LAVA_DOOR = [makeLavaDoor(false), makeLavaDoor(true)];
+let teachWas = null;
+function teachDoorTick() {
+  const st = PQ.won ? (countItem('lava-key') ? 2 : 1) : 0;
+  if (st === teachWas) return;
+  teachWas = st;
+  teachPoi.thing.frames = st ? [PK_LAVA_DOOR[st - 1]] : SPRITE.lair;
+}
+BUILDINGS.push({
+  thing: teachPoi.thing, tile: teachPoi.at, room: null, name: 'The Old Door', open: () => false,
+  shut: () => (countItem('lava-key') ? ['The Lava Key glows...', 'The Old Door', 'It fits. But the door won\'t budge yet. Coming soon.']
+    : PQ.won ? ['Locked', 'The Old Door', 'Bring the Lava Key.'] : ['Sealed', '? ? ?', 'Beat the bosses before it first.']),
+  hint: () => false
+});
+
+// the music at the table: an original, laid back lounge tune in b flat at 96
+// bpm with a swing to it. a walking bass, soft chords on the offbeats, brushes
+// and a ride, and a vibraphone picking out the chords. nothing to do with
+// any real song.
+const PK_CH = {
+  Cm7: [48, 51, 55, 58], F7: [41, 45, 48, 51], Bbmaj7: [46, 50, 53, 57], Gm7: [43, 46, 50, 53], Dm7: [50, 53, 57, 60], G7: [43, 47, 50, 53],
+  Fm7: [41, 44, 48, 51], Bb7: [46, 50, 53, 56], Ebmaj7: [51, 55, 58, 62], Ab7: [44, 48, 51, 54], Dm7b5: [50, 53, 56, 60]
+};
+const PK_BARS = ['Cm7', 'F7', 'Bbmaj7', 'Gm7', 'Cm7', 'F7', 'Dm7', 'G7', 'Cm7', 'F7', 'Fm7', 'Bb7', 'Ebmaj7', 'Ab7', 'Dm7b5', 'G7'];
+const PK_VIBES = [{ 0: 3, 6: 2 }, { 4: 1, 10: 2, 14: 3 }, { 0: 2 }, { 8: 1, 12: 0 }, { 0: 3, 3: 2, 6: 1 }, { 10: 3 }, { 0: 2, 8: 3 }, { 6: 1, 14: 0 }];
+function pokerStep(bar, step, t) {
+  const name = PK_BARS[bar], ch = PK_CH[name], st = 60 / POKER_TUNE.bpm / 4;
+  const swing = step % 4 === 2 ? st * 0.33 : 0, tt = t + swing;
+  const next = PK_CH[PK_BARS[(bar + 1) % PK_BARS.length]];
+  // the walking bass, a note a beat: root, third, fifth, then a step into the
+  // next chord
+  if (step % 4 === 0) {
+    const n = [ch[0], ch[1], ch[2], next[0] + (Math.random() < 0.5 ? 1 : -1)][step / 4] - 12;
+    mNote('triangle', midiHz(n), t, st * 3.4, 0.16, { lp: 900, rel: 0.06 });
+    mNote('sine', midiHz(n - 12), t, st * 3, 0.06);
+  }
+  // soft chords on the and of two and the and of four, and a held one
+  // under the start of every other bar
+  if (step === 6 || step === 14) ch.slice(1).forEach(n => mNote('triangle', midiHz(n + 12), tt, st * 1.4, 0.035, { lp: 1600, at: 0.01 }));
+  if (step === 0 && bar % 2 === 0) ch.forEach(n => mNote('sine', midiHz(n + 12), t, st * 12, 0.022, { at: 0.3, rel: 0.4 }));
+  // the ride (ding, ding-a, ding, ding-a) and brushes on two and four
+  if ([0, 4, 6, 8, 12, 14].includes(step)) mNoise(tt, 0.08, step % 4 === 0 ? 0.035 : 0.022, 'highpass', 7000);
+  if (step === 4 || step === 12) mNoise(t, 0.18, 0.05, 'bandpass', 1800, 0.7);
+  // the vibes, now and then
+  const m = PK_VIBES[bar % PK_VIBES.length];
+  if (bar >= 4 && m[step] !== undefined) mallet(midiHz(ch[m[step]] + 24), tt, 0.16, 0.7, true);
+}
+const POKER_TUNE = { bpm: 96, bars: PK_BARS.length, loopFrom: 0, bright: true, step: pokerStep };

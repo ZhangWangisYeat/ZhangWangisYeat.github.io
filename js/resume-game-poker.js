@@ -600,7 +600,7 @@ function pkPreLikelihood(p, kind, level, behind, est) {
   if (kind === 'check') return 1 - 0.8 * pkSig((0.12 - p) / 0.02);
   return 1;
 }
-function pkPostLikelihood(se, d, kind, frac, street, est) {
+function pkPostLikelihood(se, d, kind, frac, street, est, back) {
   if (kind === 'raise' || kind === 'bet') {
     const vT = 0.6 + 0.09 * Math.min(frac, 2) + (kind === 'raise' ? 0.12 : 0) + (street === 'river' ? 0.05 : 0);
     const bluff = est.b * (d >= 2 ? 0.55 : d === 1 ? 0.25 : 0.12) * (street === 'river' ? 0.6 : 1);
@@ -610,8 +610,37 @@ function pkPostLikelihood(se, d, kind, frac, street, est) {
     const cT = 0.32 + 0.14 * Math.min(frac, 2) - 0.05 * (est.l - 1);
     return Math.max(pkSig((se - cT) / 0.08) * (1 - 0.45 * pkSig((se - 0.94) / 0.02)), d >= 2 ? 0.6 : 0);
   }
-  if (kind === 'check') return 1 - 0.62 * pkSig((se - 0.82) / 0.05);
+  if (kind === 'check') return 1 - (back ? 0.62 : 0.3) * pkSig((se - 0.82) / 0.05);
   return 1;
+}
+// a bet or raise, read the way a solver builds one: the value part is every
+// combo strong enough for the size, and the bluffs are added on top in the
+// share that keeps the bet balanced (bluffs to value of b / (1 + b) for a bet of
+// b pots on the river, more on earlier streets where bluffs are draws with
+// equity of their own). bluffs are draws first, then the weakest hands; middling
+// hands hardly ever bluff. a check raise is weighted a bit more to value, and a
+// player who's been aggressive lately (est.b) gets more bluffs in their range.
+// the old version gave every weak combo a flat chance of betting, so after a
+// couple of checks and a big raise most of the range still read as air.
+function pkPolarSqueeze(R, S, kind, frac, street, est, checkRaise) {
+  const vT = 0.62 + 0.07 * Math.min(frac, 2) + (kind === 'raise' ? 0.1 : 0) + (checkRaise ? 0.04 : 0) + (street === 'river' ? 0.04 : 0);
+  const wv = new Float32Array(1326), wb = new Float32Array(1326);
+  let V = 0, B = 0;
+  for (let i = 0; i < 1326; i++) {
+    if (!(R[i] > 0) || !S.ok[i]) continue;
+    const se = S.se[i], d = street === 'river' ? 0 : S.draw[i];
+    wv[i] = pkSig((se - vT) / 0.05);
+    // (on the flop and turn the bluffs are draws, with only a little pure air;
+    // on the river there are no draws left, so it's the weakest hands)
+    const air = street === 'river' ? 0.35 : street === 'turn' ? 0.06 : 0.14;
+    wb[i] = (1 - wv[i]) * (d >= 2 ? 1 : d === 1 ? 0.45 : se < 0.45 ? air : air * 0.15);
+    V += R[i] * wv[i]; B += R[i] * wb[i];
+  }
+  const b = Math.min(3, Math.max(0.2, frac));
+  const ratio = (b / (1 + b)) * ({ flop: 1.7, turn: 1.25, river: 1 }[street] || 1) * (checkRaise ? 0.75 : 1) * est.b;
+  // (never more bluffs than there are hands to bluff with)
+  const k = B > 0 ? Math.min(1, (ratio * V) / B) : 0;
+  for (let i = 0; i < 1326; i++) if (R[i] > 0 && S.ok[i]) R[i] *= Math.max(0.003, wv[i] + k * wb[i]);
 }
 // every action narrows that player's ranges in everyone's eyes
 function pkAiSaw(T, seat, kind, before) {
@@ -627,7 +656,14 @@ function pkAiSaw(T, seat, kind, before) {
       for (let i = 0; i < 1326; i++) if (R[i] > 0) R[i] *= Math.max(0.01, pkPreLikelihood(PK_CPCT[i], kind, before.level, behind, est));
     } else {
       const S = A.str, k = kind === 'raise' && before.bet === 0 ? 'bet' : kind;
-      for (let i = 0; i < 1326; i++) if (R[i] > 0 && S.ok[i]) R[i] *= Math.max(0.01, pkPostLikelihood(S.se[i], S.draw[i], k, frac, before.street, est));
+      if (k === 'bet' || k === 'raise') pkPolarSqueeze(R, S, k, frac, before.street, est, k === 'raise' && A.hand.checked[seat]);
+      else {
+        // (checking first, out of position, is what a good player does with
+        // most of their range, strong hands included; checking it back when
+        // they could have bet says a lot more)
+        const back = k === 'check' && before.street !== 'preflop' && pkInPosition(T, seat);
+        for (let i = 0; i < 1326; i++) if (R[i] > 0 && S.ok[i]) R[i] *= Math.max(0.01, pkPostLikelihood(S.se[i], S.draw[i], k, frac, before.street, est, back));
+      }
     }
   });
   if (before.street !== 'preflop') {
@@ -856,6 +892,11 @@ function pkDecidePost(T, s, id, P, M, L) {
   const theirR = opp.map(o => pkRangeMean(pkRangeFor(T, s.i, o.i), S));
   const adv = myR.mean - Math.max(...theirR.map(r => r.mean)) + (myR.nut - Math.max(...theirR.map(r => r.nut))) * 0.5;
   const wasAggressor = T.prevAggressor === s.i;
+  // where this hand sits in my own range (the fraction of it that's stronger)
+  const own = A.adp[s.i];
+  let ownW = 0, ownAbove = 0;
+  for (let i = 0; i < 1326; i++) if (S.ok[i] && own[i] > 0) { ownW += own[i]; if (S.se[i] > mySe) ownAbove += own[i]; }
+  const rank = ownW ? ownAbove / ownW : 0.5;
   const fold = why => (L.canCheck ? { type: 'check', why: 'check' } : { type: 'fold', why: why || 'fold' });
   const check = why => ({ type: 'check', why: why || 'check' });
   const call = why => (L.canCheck ? check() : { type: 'call', why: why || 'call' });
@@ -874,6 +915,8 @@ function pkDecidePost(T, s, id, P, M, L) {
     if (id === 'brutus' && kind === 'bluff' && adv > 0 && rnd < P.wildSize * (tilt ? 1.6 : 1)) return 2 + Math.random() * 2.5;
     if (target && kind === 'bluff' && rnd < 0.45) return 1.2 + Math.random() * 1.3;
     if (P.gto) {
+      const nutEdge = myR.nut - Math.max(...theirR.map(r => r.nut));
+      if (street !== 'flop' && nutEdge > 0.12 && (eq > 0.85 || kind === 'bluff')) return 1.25;
       if (street === 'river') return eq > 0.85 || kind === 'bluff' ? (rnd < 0.35 ? 1.4 : 0.85) : 0.6;
       return !wet && adv > 0 ? 0.33 : wet ? 0.7 : 0.5;
     }
@@ -885,7 +928,24 @@ function pkDecidePost(T, s, id, P, M, L) {
 
   if (L.canCheck) {
     // checked to us: bet for value, bluff some, check the rest
-    if (perceived > valueT) {
+    // (ace only value bets what's genuinely strong on the board, not
+    // anything that's ahead of a range she thinks is weak: a middling pair
+    // under an ace wants to see a showdown cheaply, not build a pot)
+    // she also asks the solver's question: if she bets, will worse hands
+    // call? that's her equity against just the part of your range that would
+    // call this size, and it has to be better than even
+    let strongEnough = true;
+    if (P.gto && perceived > valueT) {
+      const cT = 0.32 + 0.14 * Math.min(sizeFor('value'), 2);
+      const callers = ranges.map(R => {
+        const C = new Float32Array(1326);
+        for (let i = 0; i < 1326; i++) if (R[i] > 0 && S.ok[i]) C[i] = R[i] * Math.max(pkSig((S.se[i] - cT) / 0.06), S.draw[i] >= 2 && street !== 'river' ? 0.7 : 0);
+        return C;
+      });
+      const eqCall = pkEquity(s.cards, board, callers, 420);
+      strongEnough = eqCall > 0.52 || eq > 0.9;
+    }
+    if (perceived > valueT && strongEnough) {
       if (rnd < P.slow * (eq > 0.88 ? 1 : 0.3) && street !== 'river' && !tilt) return check('slowplay');
       return bet(sizeFor('value'), 'value');
     }
@@ -896,6 +956,7 @@ function pkDecidePost(T, s, id, P, M, L) {
     // more at anyone they've seen folding too much (neville, mostly).
     let bp;
     const size = sizeFor('bluff');
+    if (P.gto && myS > 0.45 && draw < 2) return check('pot control');
     if (P.gto) {
       const R = A.adp[s.i];
       let w = 0, v = 0;
@@ -941,7 +1002,7 @@ function pkDecidePost(T, s, id, P, M, L) {
     return raiseTo(id === 'neville' ? 2.6 : 3, 'value');
   }
   // getting it in when the stacks are short compared to the pot
-  if (spr < 1.2 && eq > 0.45 && L.canRaise && id !== 'neville') return raiseTo(10, 'commit');
+  if (spr < 1.2 && eq > 0.45 && L.canRaise && id !== 'neville' && (!P.gto || rank < 0.3)) return raiseTo(10, 'commit');
   // where this hand sits in my own range, for bluff catching: against a
   // normal sized bet a decent player doesn't fold so much of their range that
   // any two cards can bet and win (the minimum defence). ace keeps to it
@@ -949,14 +1010,19 @@ function pkDecidePost(T, s, id, P, M, L) {
   // whether the hand has the equity, which against the strong range a big bet
   // stands for, it usually doesn't (that's the hole in ace: bet huge at her
   // with nothing and she lays it down).
-  const own = A.adp[s.i];
-  let w = 0, above = 0;
-  for (let i = 0; i < 1326; i++) if (S.ok[i] && own[i] > 0) { w += own[i]; if (S.se[i] > mySe) above += own[i]; }
-  const rank = w ? above / w : 0.5, mdf = 1 / (1 + betFrac);
+  const mdf = 1 / (1 + betFrac);
   if (P.gto) {
-    if (draw >= 2 && street !== 'river' && rank < mdf && Math.random() < 0.18 && L.canRaise) return raiseTo(3, 'semibluff');
-    if (eq * real + implied >= needed) return call('call');
-    if (betFrac <= 1.05 && nOpp === 1 && rank < mdf * 0.92 && eq > needed * 0.6) return call('defend');
+    // she continues with the top of her own range, as much of it as the size
+    // says she has to (the minimum defence), and folds the rest, however good
+    // the price looks against her read. a raise is judged the same way: her
+    // range after betting twice is strong, so a pair under the top card sits
+    // low in it and goes. she trims it a little against huge overbets (her
+    // charts don't have enough bluffs in them there), which is the opening a
+    // brave enough bluffer can use. draws with the price to continue still do.
+    const defend = mdf * (betFrac > 1.5 ? 0.85 : 1);
+    if (draw >= 2 && street !== 'river' && rank < defend && Math.random() < 0.18 && L.canRaise) return raiseTo(3, 'semibluff');
+    if (rank < defend && eq * real > needed * 0.8) return call('defend');
+    if (draw >= 2 && street !== 'river' && eq * real + implied >= needed) return call('call');
     return fold('fold');
   }
   if (perceived * real + implied + margin >= needed) {

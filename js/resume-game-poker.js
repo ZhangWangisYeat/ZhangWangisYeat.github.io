@@ -730,8 +730,8 @@ function pkDecidePre(T, s, id, P, M, L) {
       return fold();
     }
     if (p < open) return raise(size, tilt ? 'tilt' : wild ? 'wild' : 'open');
-    // neville limps his small pairs and suited hands instead of folding them
-    if (id === 'neville' && (pair || (suited && hiR >= 9)) && p < 0.55 && rnd < 0.5) return call('limp');
+    // neville limps his small pairs in the hope of a set instead of raising them
+    if (id === 'neville' && pair && rnd < 0.4) return call('limp');
     if (wild && p < 0.8 && rnd < 0.5) return call('wildcall');
     if (limpers && p < open * 1.6 && (pair || suited)) return call('limp');
     return fold();
@@ -1617,14 +1617,14 @@ function makeCavern(w, h, tx, ty) {
 // middle of a seat's two cards, stack and bet are the bottom middle of their
 // chips, plate is their name and stack.
 const PK_SEATS = [
-  { view: 'back', body: [0, 100], cards: [0, 46], stack: [-48, 57], bet: [38, 40], plate: [0, 108] },
-  { view: 'side', flip: false, body: [-176, 22], cards: [-118, 2], stack: [-112, 26], bet: [-86, 14], plate: [-176, 40] },
-  { view: 'front', body: [-72, -44], cards: [-72, -35], stack: [-102, -27], bet: [-56, -19], plate: [-72, -88] },
-  { view: 'front', body: [0, -48], cards: [-12, -40], stack: [-38, -31], bet: [6, -19], plate: [0, -92] },
-  { view: 'front', body: [72, -44], cards: [72, -35], stack: [102, -27], bet: [56, -19], plate: [72, -88] },
-  { view: 'side', flip: true, body: [176, 22], cards: [118, 2], stack: [112, 26], bet: [86, 14], plate: [176, 40] }
+  { view: 'back', body: [0, 100], cards: [0, 48], stack: [-48, 57], bet: [38, 40], plate: [0, 108] },
+  { view: 'side', flip: false, body: [-164, 20], cards: [-120, -2], stack: [-112, 24], bet: [-86, 12], plate: [-164, 38] },
+  { view: 'front', body: [-74, -47], cards: [-72, -35], stack: [-104, -27], bet: [-56, -19], plate: [-74, -97] },
+  { view: 'front', body: [0, -56], cards: [0, -44], stack: [-34, -34], bet: [6, -20], plate: [0, -104] },
+  { view: 'front', body: [74, -47], cards: [72, -35], stack: [104, -27], bet: [56, -19], plate: [74, -97] },
+  { view: 'side', flip: true, body: [164, 20], cards: [120, -2], stack: [112, 24], bet: [86, 12], plate: [164, 38] }
 ];
-const PK_DECK = [26, -40];
+const PK_DECK = [24, -44];
 const PK_NAMES = { you: 'You', brutus: 'Brutus', neville: 'Neville', ace: 'Ace', brock: 'Brock', sparks: 'Sparks' };
 const PK_COLOR = { you: '#ffffff', brutus: '#ff8a4a', neville: '#e8d878', ace: '#6fe0d4', brock: '#ff6a6a', sparks: '#ffb03a' };
 // what each of them looks like when nothing's happening
@@ -1641,7 +1641,7 @@ function pvLayout() {
   PS = Math.max(2, Math.floor(Math.min(pkCv.width / 410, pkCv.height / 250)));
   PW = Math.ceil(pkCv.width / PS); PH = Math.ceil(pkCv.height / PS);
   PTX = Math.round(PW / 2);
-  PTY = Math.round(clamp(PH * 0.42, 104, PH - 124));
+  PTY = Math.round(clamp(PH * 0.45, 112, PH - 124));
   POX = 0; POY = 0;
   pkCave = makeCavern(PW, PH, PTX, PTY);
   pkCtx.imageSmoothingEnabled = false;
@@ -1658,7 +1658,7 @@ function pImg(im, x, y, flip) {
     pkCtx.restore();
   } else pkCtx.drawImage(im, pX(x), pY(y), im.width * PS, im.height * PS);
 }
-const pkFont = k => `${8 * Math.max(1, Math.round((PS * k) / 4))}px Silkscreen, monospace`;
+const pkFont = k => `${Math.max(16, 8 * Math.round(PS * k * 0.6))}px Silkscreen, monospace`;
 const seatAt = (i, key) => { const p = PK_SEATS[i][key]; return { x: PTX + p[0], y: PTY + p[1] }; };
 
 // a fresh view of the table for a game in progress
@@ -1696,6 +1696,7 @@ function pvTick(dt) {
     if (o.mt < 0) continue;
     const u = Math.min(1, o.mt / o.md), e = 1 - (1 - u) ** 3;
     o.x = o.x0 + (o.x1 - o.x0) * e; o.y = o.y0 + (o.y1 - o.y0) * e - (o.arc ? Math.sin(u * Math.PI) * o.arc : 0);
+    if (o.fade) o.a = 1 - u;
     if (u >= 1) { PV.movers.splice(k, 1); if (o.mdone) o.mdone(); }
   }
   PV.seats.forEach(v => {
@@ -1732,6 +1733,7 @@ function pvTick(dt) {
   }
   for (let k = PV.bubbles.length - 1; k >= 0; k--) { PV.bubbles[k].t += dt; if (PV.bubbles[k].t > PV.bubbles[k].dur) PV.bubbles.splice(k, 1); }
   PV.shake = Math.max(0, PV.shake - dt * 8);
+  pvFlips(dt);
 }
 
 // drawing
@@ -1763,22 +1765,28 @@ function pvDrawCard(o) {
 // thick with an outline, and the hand on the end
 function pvArm(x0, y0, x1, y1, sleeve, skin) {
   const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2) + 1;
-  [[1.5, '#000000'], [1, sleeve]].forEach(([r, col]) => {
+  [[2.1, '#000000'], [1.5, sleeve]].forEach(([r, col]) => {
     pkCtx.fillStyle = col;
     for (let k = 0; k <= n; k++) {
       const x = x0 + ((x1 - x0) * k) / n, y = y0 + ((y1 - y0) * k) / n;
       pkCtx.fillRect(pX(x - r), pY(y - r), Math.round(r * 2 * PS), Math.round(r * 2 * PS));
     }
   });
-  pRect(x1 - 2, y1 - 2, 4, 4, '#000000');
-  pRect(x1 - 1, y1 - 1, 2, 2, skin);
+  pRect(x1 - 2.5, y1 - 2.5, 5, 5, '#000000');
+  pRect(x1 - 1.5, y1 - 1.5, 3, 3, skin);
 }
 // where a seat's hands are right now, for whatever they're doing
 function pvHands(v, t) {
   const S0 = PK_SEATS[v.i], c = seatAt(v.i, 'cards'), b = seatAt(v.i, 'body'), u = v.poseDur ? 1 - Math.max(0, v.poseT) / v.poseDur : 0;
   const side = S0.view === 'side', dir = S0.flip ? -1 : 1;
-  let L = { x: c.x - 8, y: c.y + 6 }, R = { x: c.x + 8, y: c.y + 6 };
-  if (side) { L = { x: c.x - dir * 4, y: c.y - 6 }; R = { x: c.x - dir * 2, y: c.y + 8 }; }
+  let L = { x: c.x - 8, y: c.y + 7 }, R = { x: c.x + 8, y: c.y + 7 };
+  if (S0.view === 'front') {
+    // resting on the table just in front of them, either side of their cards
+    const edge = PTY - PK_TRY * Math.sqrt(Math.max(0, 1 - ((b.x - PTX) / PK_TRX) ** 2));
+    L = { x: b.x - 11, y: edge + 9 }; R = { x: b.x + 11, y: edge + 9 };
+    if (v.id === 'ace') R = { x: PTX + PK_DECK[0] - 6, y: PTY + PK_DECK[1] + 4 };
+  }
+  if (side) { L = { x: b.x + dir * 22, y: b.y - 13 }; R = { x: b.x + dir * 25, y: b.y - 6 }; }
   const to = v.poseTo;
   const lerp = (a, p, k) => ({ x: a.x + (p.x - a.x) * k, y: a.y + (p.y - a.y) * k });
   const there = k => Math.sin(Math.min(1, k) * Math.PI);
@@ -1817,14 +1825,24 @@ function pvDrawArms(v, t) {
   if (v.out || v.id === 'you') return;
   const S0 = PK_SEATS[v.i], b = seatAt(v.i, 'body'), C = MINER[v.id];
   const sleeve = (C.sleeve || C.skin)[1], skin = C.skin[1];
-  const { L, R } = pvHands(v, t);
+  const hands = pvHands(v, t);
+  // (an arm only reaches so far: a hand heading further than that stops at
+  // the end of it)
+  const reach = (from, h, max) => {
+    const d = Math.hypot(h.x - from.x, h.y - from.y);
+    return d <= max ? h : { x: from.x + ((h.x - from.x) / d) * max, y: from.y + ((h.y - from.y) / d) * max };
+  };
+  let { L, R } = hands;
   if (S0.view === 'front') {
+    const e0 = { x: b.x - 7, y: b.y - 6 }, e1 = { x: b.x + 7, y: b.y - 6 };
+    L = reach(e0, L, 26); R = reach(e1, R, 30);
     // the forearms come over the table edge from the elbows
     const edge = PTY - Math.round(PK_TRY * Math.sqrt(Math.max(0, 1 - ((b.x - PTX) / PK_TRX) ** 2))) + 2;
-    pvArm(b.x - 7, Math.max(edge, L.y - 10), L.x, L.y, sleeve, skin);
-    pvArm(b.x + 7, Math.max(edge, R.y - 10), R.x, R.y, sleeve, skin);
+    pvArm(b.x - 7 + (L.x - b.x + 7) * 0.25, Math.max(edge, L.y - 10), L.x, L.y, sleeve, skin);
+    pvArm(b.x + 7 + (R.x - b.x - 7) * 0.25, Math.max(edge, R.y - 10), R.x, R.y, sleeve, skin);
   } else {
     const dir = S0.flip ? -1 : 1, sy = b.y - 13;
+    L = reach({ x: b.x + dir * 2, y: sy }, L, 28); R = reach({ x: b.x + dir * 5, y: sy }, R, 32);
     pvArm(b.x + dir * 2, sy + 1, L.x, L.y, sleeve, skin);
     pvArm(b.x + dir * 5, sy + 2, R.x, R.y, sleeve, skin);
   }
@@ -1853,8 +1871,15 @@ function pvPlate(v) {
   const p = seatAt(v.i, 'plate'), T = PV.T, s = T.seats[v.i];
   const turn = T.toAct === v.i && !T.over && !PV.T.ev.length;
   pkCtx.font = pkFont(1);
-  const name = PK_NAMES[v.id], money = v.out ? 'OUT' : v.stack <= 0 && s.allIn ? 'ALL IN' : pkDollars(v.stack);
-  const w = Math.max(pkCtx.measureText(name).width, pkCtx.measureText(money).width) / PS + 8, h = 15;
+  // (before you've sat down your plate's just your name; once you're
+  // playing it shows what your hand is too)
+  const seated = v.i || PV.started;
+  const name = PK_NAMES[v.id], money = !seated ? '' : v.out ? 'OUT' : v.stack <= 0 && s.allIn ? 'ALL IN' : pkDollars(v.stack);
+  const extra = v.i === 0 && PV.handName ? PV.handName.toUpperCase() : '';
+  pkCtx.font = pkFont(1);
+  let tw = Math.max(pkCtx.measureText(name).width, pkCtx.measureText(money).width);
+  if (extra) { pkCtx.font = pkFont(0.8); tw = Math.max(tw, pkCtx.measureText(extra).width); }
+  const w = tw / PS + 8, h = extra ? 22 : 15;
   const x = p.x - w / 2, y = p.y;
   pkCtx.globalAlpha = v.folded && !v.out ? 0.6 : 1;
   pRect(x, y, w, h, turn ? '#ffd23f' : '#000000');
@@ -1862,6 +1887,7 @@ function pvPlate(v) {
   pRect(x + 1, y + 1, w - 2, 1, '#3a2e30');
   pvText(name, p.x, y + 4.5, v.out ? '#8a8486' : PK_COLOR[v.id]);
   pvText(money, p.x, y + 10.5, v.out ? '#6a6466' : '#f6ecd0');
+  if (extra) pvText(extra, p.x, y + 17, '#bfe9a6', 0.8);
   pkCtx.globalAlpha = 1;
   // thinking dots over whoever's deciding
   if (turn && v.i !== 0 && PV.think) {
@@ -1964,8 +1990,8 @@ function pvDraw(t) {
     }
   });
   if (PV.pot > 0) {
-    pvDrawChips(PV.pot, PTX, PTY + 31, 7);
-    pvText(`POT ${pkDollars(PV.pot)}`, PTX, PTY + 14, '#ffd23f');
+    pvDrawChips(PV.pot, PTX, PTY + 28, 7);
+    pvText(`POT ${pkDollars(PV.pot)}`, PTX, PTY + 11, '#ffd23f');
   } else if (PV.T && PV.T.blinds && !PV.board.length) pvText(`BLINDS ${pkDollars(PV.T.blinds.sb)} / ${pkDollars(PV.T.blinds.bb)}`, PTX, PTY + 14, '#8a7a6a', 0.8);
   PV.board.forEach(pvDrawCard);
   PV.seats.forEach(v => v.cards.forEach(pvDrawCard));
@@ -1973,8 +1999,6 @@ function pvDraw(t) {
   // arms over the table edge and onto it
   PV.seats.forEach(v => pvDrawArms(v, t));
   pvDrawYou(t);
-  // the name of your hand under your cards
-  if (PV.handName) pvText(PV.handName, seatAt(0, 'cards').x, seatAt(0, 'cards').y + 15, '#bfe9a6', 0.8);
   PV.seats.forEach(pvPlate);
   if (PV.winText) {
     const w = PV.winText, a = Math.min(1, w.t / 0.2);
@@ -2133,6 +2157,9 @@ function pvLog(html, cls = '') {
   pkChat.scrollTop = pkChat.scrollHeight;
 }
 const pkWho = i => `<b style="color:${PK_COLOR[PK_IDS[i]]}">${PK_NAMES[PK_IDS[i]]}</b>`;
+// (you fold, brutus folds)
+const PK_YOU_VERB = { folds: 'fold', checks: 'check', calls: 'call', bets: 'bet', raises: 'raise', is: 'are', shows: 'show', wins: 'win', splits: 'split', straddles: 'straddle' };
+const pkV = (i, verb) => (i ? verb : verb.replace(/^\w+/, w => PK_YOU_VERB[w] || w));
 // someone says something over the table. force skips the cooldown that stops
 // them chattering every action.
 function pvSay(i, text, force = false, dur) {
@@ -2270,7 +2297,7 @@ const PV_EV = {
     v.stack -= ev.amount;
     pvFly(ev.amount, seatAt(ev.seat, 'stack'), seatAt(ev.seat, 'bet'), 0.3, 0, () => { v.bet += ev.amount; sfx.pkChips(ev.amount); });
     if (ev.kind === 'straddle') {
-      pvLog(`${pkWho(ev.seat)} straddles ${pkDollars(ev.amount)}`);
+      pvLog(`${pkWho(ev.seat)} ${pkV(ev.seat, 'straddles')} ${pkDollars(ev.amount)}`);
       if (ev.seat === 5 && PV.T.ai.mood.sparks.wild) pvSay(5, 'Straddle! Strawberry Jam!');
     }
     return 0.3;
@@ -2284,7 +2311,7 @@ const PV_EV = {
       const spot = pvCardSpot(i, round), d = k * 0.08;
       setTimeout(() => { if (PV) { pvPose(3, 'deal', 0.16, spot); sfx.pkCard(); } }, d * 1000 / PV.speed);
       pvTween(o, spot.x, spot.y, 0.22, d, () => {
-        if (i === 0) { o.flip = 0; o.flipTo = true; pvFlip(o); }
+        if (i === 0) { o.flipTo = true; pvFlip(o); }
       });
       k++;
     }));
@@ -2293,7 +2320,7 @@ const PV_EV = {
   act(ev) {
     const v = PV.seats[ev.seat], why = PV.lastWhy[ev.seat] || '', id = v.id;
     const say = { fold: 'folds', check: 'checks', call: `calls ${pkDollars(ev.amount)}`, bet: `bets ${pkDollars(ev.to)}`, raise: `raises to ${pkDollars(ev.to)}`, allin: `is all in for ${pkDollars(ev.to)}` }[ev.kind];
-    pvLog(`${pkWho(ev.seat)} ${say}`);
+    pvLog(`${pkWho(ev.seat)} ${pkV(ev.seat, say)}`);
     if (ev.kind === 'fold') {
       v.folded = true;
       v.cards.forEach((o, k) => { o.a = 1; pvTween(o, PTX + (k ? 3 : -3), PTY - 4, 0.35, k * 0.04, () => { o.a = 0; }); o.fade = true; });
@@ -2328,11 +2355,11 @@ const PV_EV = {
     const v = PV.seats[ev.seat];
     v.bet -= ev.amount;
     pvFly(ev.amount, seatAt(ev.seat, 'bet'), seatAt(ev.seat, 'stack'), 0.3, 0, () => { v.stack += ev.amount; });
-    pvLog(`<span class="dim">${pkDollars(ev.amount)} back to ${PK_NAMES[v.id]}</span>`);
+    pvLog(`<span class="dim">${pkDollars(ev.amount)} back to ${ev.seat ? PK_NAMES[v.id] : 'you'}</span>`);
     return 0.35;
   },
   collect(ev) {
-    const to = { x: PTX, y: PTY + 31 };
+    const to = { x: PTX, y: PTY + 28 };
     let any = false;
     PV.seats.forEach(v => {
       if (v.bet <= 0) return;
@@ -2351,7 +2378,7 @@ const PV_EV = {
       PV.board.push(o);
       const slot = { x: PTX - 32 + (start + k) * 16, y: PTY - 4 };
       setTimeout(() => { if (PV) { pvPose(3, 'deal', 0.18, slot); sfx.pkCard(); } }, k * 120 / PV.speed);
-      pvTween(o, slot.x, slot.y, 0.25, k * 0.12, () => { o.flip = 0; o.flipTo = true; pvFlip(o, () => pvUpdateHandName()); });
+      pvTween(o, slot.x, slot.y, 0.25, k * 0.12, () => { o.flipTo = true; pvFlip(o, () => pvUpdateHandName()); });
     });
     pvLog(`<span class="dim">${{ flop: 'Flop', turn: 'Turn', river: 'River' }[ev.street]}: ${ev.board.map(pkCardHtml).join(' ')}</span>`, 'sys');
     return (ev.street === 'flop' ? 1 : 0.7) + (PV.runout ? 0.7 : 0);
@@ -2363,8 +2390,8 @@ const PV_EV = {
   },
   reveal(ev) {
     const v = PV.seats[ev.seat];
-    if (ev.seat !== 0) v.cards.forEach((o, k) => { o.flip = 0; o.flipTo = true; setTimeout(() => pvFlip(o), k * 90); });
-    pvLog(`${pkWho(ev.seat)} shows ${ev.cards.map(pkCardHtml).join(' ')}`);
+    if (ev.seat !== 0) v.cards.forEach(o => { o.flipTo = true; pvFlip(o); });
+    pvLog(`${pkWho(ev.seat)} ${pkV(ev.seat, 'shows')} ${ev.cards.map(pkCardHtml).join(' ')}`);
     if (ev.seat !== 0) pvPose(ev.seat, 'reach', 0.3, seatAt(ev.seat, 'cards'));
     return PV.runout ? 0.4 : 0.6;
   },
@@ -2372,12 +2399,12 @@ const PV_EV = {
   win(ev) {
     const v = PV.seats[ev.seat];
     PV.pot = Math.max(0, PV.pot - ev.amount);
-    pvFly(ev.amount, { x: PTX, y: PTY + 31 }, seatAt(ev.seat, 'stack'), 0.5, 0.1, () => { v.stack += ev.amount; sfx.pkChips(ev.amount); });
+    pvFly(ev.amount, { x: PTX, y: PTY + 28 }, seatAt(ev.seat, 'stack'), 0.5, 0.1, () => { v.stack += ev.amount; sfx.pkChips(ev.amount); });
     PV.wins.push(ev);
     const p = seatAt(ev.seat, 'cards');
-    PV.winText = { text: `${PK_NAMES[v.id].toUpperCase()} ${ev.split ? 'SPLITS' : 'WINS'} ${pkDollars(ev.amount)}`, sub: ev.name || '', x: PTX, y: PTY - 26, t: 0 };
+    PV.winText = { text: `${PK_NAMES[v.id].toUpperCase()} ${pkV(ev.seat, ev.split ? 'splits' : 'wins').toUpperCase()} ${pkDollars(ev.amount)}`, sub: ev.name || '', x: PTX, y: PTY - 26, t: 0 };
     if (ev.name) v.cards.forEach(o => { o.glow = true; });
-    pvLog(`${pkWho(ev.seat)} ${ev.split ? 'splits' : 'wins'} ${ev.side ? 'a side pot of ' : ''}${pkDollars(ev.amount)}${ev.name ? ` with ${ev.name}` : ''}`, 'win');
+    pvLog(`${pkWho(ev.seat)} ${pkV(ev.seat, ev.split ? 'splits' : 'wins')} ${ev.side ? 'a side pot of ' : ''}${pkDollars(ev.amount)}${ev.name ? ` with ${ev.name}` : ''}`, 'win');
     if (ev.seat === 0) sfx.pkWin();
     pvMood(ev.seat, ev.seat === 5 || ev.seat === 4 ? 'grin' : 'happy', 2.5);
     void p;
@@ -2386,7 +2413,7 @@ const PV_EV = {
   bust(ev) {
     const v = PV.seats[ev.seat];
     v.out = true; v.folded = true;
-    pvLog(`${pkWho(ev.seat)} is out of the game`, 'bust');
+    pvLog(`${pkWho(ev.seat)} ${pkV(ev.seat, 'is')} out of the game`, 'bust');
     if (ev.seat !== 0) {
       pvMood(ev.seat, ev.seat === 5 ? 'grin' : ev.seat === 2 ? 'sad' : 'angry', 3);
       setTimeout(() => { if (PV) pvSayPick(ev.seat, 'bust', 1, null, true); }, 300);
@@ -2399,14 +2426,16 @@ const pkCardHtml = c => `<span class="pk-c${PK_RED(c) ? ' red' : ''}">${PK_RANKS
 // a card turning over: it narrows to nothing, swaps face, and widens again
 function pvFlip(o, done) {
   o.flip = 0;
-  const step = () => {
-    if (!PV) return;
-    o.flip += 0.12 * PV.speed;
-    if (o.flip >= 1) { o.flip = -1; o.up = o.flipTo; if (done) done(); return; }
-    requestAnimationFrame(step);
-  };
+  o.flipDone = done || null;
   sfx.pkCard();
-  requestAnimationFrame(step);
+}
+function pvFlips(dt) {
+  const all = PV.board.concat(...PV.seats.map(v => v.cards));
+  all.forEach(o => {
+    if (o.flip === undefined || o.flip < 0) return;
+    o.flip += dt / 0.22;
+    if (o.flip >= 1) { o.flip = -1; o.up = o.flipTo; if (o.flipDone) { const f = o.flipDone; o.flipDone = null; f(); } }
+  });
 }
 
 // reacting to an action: what they say (the decision's why picks the line),
@@ -2422,6 +2451,7 @@ function pvReact(ev, why) {
     else if (ev.kind === 'allin') pvSayPick(i, 'allin', 0.8);
     else if (why === 'wildbluff') pvSayPick(i, 'wildbluff', 0.8);
     else if (why === 'checkraise') pvSayPick(i, 'checkraise', 0.7);
+    else if (why === 'bluff') pvSayPick(i, 'bluff', 0.4);
     else if (ev.kind === 'raise' || ev.kind === 'bet') pvSayPick(i, 'raise', 0.25);
     else if (ev.kind === 'fold') pvSayPick(i, 'fold', 0.15);
     if (ev.kind !== 'fold' && ev.kind !== 'check') pvMood(i, M.brutus.tilt ? 'fume' : 'angry', 1.5);
@@ -2440,6 +2470,8 @@ function pvReact(ev, why) {
     if (ev.kind === 'allin') pvSayPick(i, 'allin', 0.6);
     else if (ev.kind === 'raise' || ev.kind === 'bet') pvSayPick(i, 'raise', 0.2, { x: pkDollars(ev.to) });
   }
+  // and now and then a word when they call
+  if (ev.kind === 'call' && id !== 'you' && !PV.bubbles.some(bb => bb.seat === i)) pvSayPick(i, 'call', 0.1);
   // neville gets nervous when you or ace put money in against him
   if ((i === 0 || i === 3) && (ev.kind === 'raise' || ev.kind === 'bet' || ev.kind === 'allin') && pkInHand(T.seats[2]) && !T.seats[2].allIn) {
     pvMood(2, 'scared', 2.5);
@@ -2629,7 +2661,7 @@ function pvSceneNext() {
   if (st.all) PV.seats.forEach(v => { if (v.i) { v.look = st.all; v.lookT = 2.5; } });
 }
 function pvSceneTick(dt) {
-  const sc = PV.scene;
+  const sc = PV && PV.scene;
   if (!sc) return;
   const st = sc.steps[sc.i];
   sc.t += dt;
@@ -2645,7 +2677,7 @@ function pvSceneTick(dt) {
   }
 }
 function pvSceneAdvance() {
-  const sc = PV.scene;
+  const sc = PV && PV.scene;
   if (!sc) return;
   const st = sc.steps[sc.i];
   if (st.act) return;

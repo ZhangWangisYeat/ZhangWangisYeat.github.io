@@ -1468,7 +1468,7 @@ body.is-title .hud-play { opacity: 0; pointer-events: none; }
 .poker { position: fixed; inset: 0; z-index: 35; background: #0c0808; }
 .poker[hidden] { display: none; }
 #pk-canvas { position: absolute; inset: 0; image-rendering: pixelated; }
-body.is-poker .hud-top { z-index: 38; }
+body.is-poker .hud-top { z-index: 38; justify-content: flex-end; }
 body.is-poker .hud-top .brand,
 body.is-poker .hud-top a.px-btn { display: none; }
 body.is-poker .toast { z-index: 39; }

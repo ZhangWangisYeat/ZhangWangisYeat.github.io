@@ -1048,3 +1048,330 @@ function pkAiHandEnd(T, showdown, busted) {
   A.results = res;
 }
 // poker core end
+
+// poker art start
+// the miners. they're built like you (the same chibi proportions as the
+// player sprite: a big head about thirteen pixels across on a short body, black
+// outline, lit from the top left), and each one's look comes from who they
+// are. brutus is a burly, bearded brute in a dented hard hat; neville is a
+// skinny, hunched lad drowning in a helmet two sizes too big; ace has her hair
+// down, round glasses and a neat teal hard hat tipped back; brock is a jock
+// with a blond quiff, a letterman vest and his hat shoved back on his head; and
+// sparks has spiky orange hair under a pair of welding goggles. the side seats
+// (brutus and sparks) are drawn three quarters on, like your own side frames.
+// their arms aren't in the sprite: they're drawn live, so they can deal,
+// slam, throw and shove.
+const MINER_W = 26, MINER_H = 28;
+const MINER = {
+  brutus: {
+    skin: ['#e0a27a', '#c17f58', '#93573a'], hair: ['#4a3426', '#2e1f15'], beard: ['#3b2a1f', '#22160e'],
+    hat: ['#f07a2a', '#c4561a', '#8c3a10'], cloth: ['#7a7f88', '#5a5e66', '#3e4148'], strap: ['#7a4a26', '#52301a'],
+    sleeve: null, shoulders: 8.6, headTop: 4, hatKind: 'hard', lamp: true, eyes: 'small', bald: true
+  },
+  neville: {
+    skin: ['#f3d9c0', '#dcb898', '#b48f70'], hair: ['#e8d49a', '#bfa866'], hat: ['#f6d64a', '#d4ab22', '#9a7812'],
+    cloth: ['#8a9a5a', '#6a7a40', '#4a562a'], sleeve: ['#8a9a5a', '#6a7a40'], shoulders: 5, headTop: 2, hatKind: 'big', lamp: true, eyes: 'wide', tall: true
+  },
+  ace: {
+    skin: ['#f6d2bc', '#e3ad92', '#bf8a70'], hair: ['#3a2630', '#24161e'], hat: ['#5ad0c4', '#2ea89c', '#1a7068'],
+    cloth: ['#3aa6a0', '#287c78', '#1a5452'], shirt: ['#f4f2ee', '#cfcbc4'], sleeve: ['#3aa6a0', '#287c78'],
+    shoulders: 6.2, headTop: 4, hatKind: 'tipped', lamp: true, eyes: 'lash', glasses: true
+  },
+  brock: {
+    skin: ['#e8b48a', '#cc9468', '#9e6a46'], hair: ['#f6dc7a', '#d6b24a'], hat: ['#e8e4dc', '#bdb7ac', '#8a8478'],
+    cloth: ['#c8322c', '#9a2420', '#6a1614'], shirt: ['#f4f2ee', '#cfcbc4'], sleeve: ['#f4f2ee', '#cfcbc4'],
+    shoulders: 7.8, headTop: 4, hatKind: 'back', lamp: false, eyes: 'small'
+  },
+  sparks: {
+    skin: ['#f6caa4', '#e0a67e', '#b67c58'], hair: ['#ff8a2a', '#d4561a'], goggle: ['#d6dbe2', '#8a929e', '#4a525e'],
+    cloth: ['#3a6ad0', '#2a4ea0', '#1c3470'], stripe: '#f6c83a', sleeve: ['#3a6ad0', '#2a4ea0'],
+    shoulders: 6.4, headTop: 5, hatKind: 'goggles', lamp: false, eyes: 'big', freckles: true
+  }
+};
+// one frame of a miner: turn 0 is facing you, 1 is three quarters on facing
+// right (flip it for facing left). mood picks the brows, eyes and mouth:
+// idle, happy, grin, smug, angry, fume, scared, shock, sad, think. look moves
+// the eyes (-1 left, 1 right, 2 down at the cards), blink shuts them, and talk
+// opens the mouth.
+function makeMiner(id, turn, mood = 'idle', look = 0, blink = false, talk = false) {
+  const C = MINER[id], G = pixelGrid(MINER_W, MINER_H);
+  const put = (x, y, c) => G.set(x, y, c);
+  const cx = 12.5 + turn * 0.5, top = C.headTop, hy = top + 6.5;
+  const fx = cx + turn * 1.6;
+  const [sl, sm, sd] = C.skin;
+  // the body: seated, shoulders to waist (the table or the chair hides the
+  // rest), shoulders rounded off, lit down the left
+  const by = top + 12, sw = C.shoulders;
+  for (let y = by; y < MINER_H; y++) {
+    const u = (y - by) / (MINER_H - by);
+    const half = y === by ? sw - 1.5 : y === by + 1 ? sw - 0.5 : sw - u * (id === 'neville' ? 0.6 : 1.4);
+    for (let x = Math.round(cx - half); x <= Math.round(cx + half); x++) {
+      const k = (x - (cx - half)) / (half * 2);
+      put(x, y, k < 0.22 ? C.cloth[0] : k > 0.78 ? C.cloth[2] : C.cloth[1]);
+    }
+  }
+  // what each of them wears on top
+  const mid = Math.round(cx + turn * 1.2);
+  if (id === 'brutus') {
+    // a grey vest with brown braces over his shoulders, chest hair poking out
+    // of the neck, and the buckles
+    for (let y = by + 1; y < MINER_H; y++) {
+      put(mid - 4, y, C.strap[0]); put(mid - 3, y, C.strap[1]);
+      put(mid + 3, y, C.strap[0]); put(mid + 4, y, C.strap[1]);
+    }
+    [[mid - 1, by], [mid, by], [mid + 1, by], [mid, by + 1]].forEach(([x, y]) => put(x, y, C.beard[0]));
+    put(mid - 4, by + 7, '#d8c070'); put(mid + 4, by + 7, '#d8c070');
+  } else if (id === 'neville') {
+    // a baggy jacket buttoned up wrong, a collar, and a patch on one side
+    for (let y = by + 1; y < MINER_H; y++) put(mid, y, y % 3 === 0 ? '#d8d0b0' : C.cloth[2]);
+    put(mid - 1, by, C.cloth[0]); put(mid - 2, by, C.cloth[0]); put(mid + 1, by, C.cloth[0]); put(mid + 2, by, C.cloth[1]);
+    put(mid - 3, by + 6, '#b8a878'); put(mid - 3, by + 7, '#b8a878');
+  } else if (id === 'ace') {
+    // a fitted teal vest over a white collared shirt, a pen in the pocket and
+    // a little gold pin
+    [[-2, 0], [-1, 0], [1, 0], [2, 0], [-1, 1], [1, 1], [0, 1], [0, 2]].forEach(([dx, dy]) => put(mid + dx, by + dy, dy === 0 ? C.shirt[0] : C.shirt[1]));
+    for (let y = by + 3; y < MINER_H; y++) put(mid, y, C.cloth[2]);
+    put(mid + 3, by + 4, '#e04040'); put(mid + 3, by + 5, '#2a2a3a'); put(mid + 2, by + 6, C.cloth[2]); put(mid + 3, by + 6, C.cloth[2]); put(mid + 4, by + 6, C.cloth[2]);
+    put(mid - 3, by + 7, '#f6e9a0');
+  } else if (id === 'brock') {
+    // a red letterman vest with white trim over a tee, and a big B on it
+    for (let y = by; y < MINER_H; y++) { put(mid - 1, y, C.shirt[0]); put(mid, y, C.shirt[0]); put(mid + 1, y, C.shirt[1]); }
+    for (let y = by; y < MINER_H; y++) { put(mid - 2, y, '#f4f2ee'); put(mid + 2, y, '#f4f2ee'); }
+    const bx = mid - 6, bty = by + 3;
+    [[0, 0], [1, 0], [0, 1], [2, 1], [0, 2], [1, 2], [0, 3], [2, 3], [0, 4], [1, 4]].forEach(([x, y]) => put(bx + x, bty + y, '#f4f2ee'));
+  } else if (id === 'sparks') {
+    // a blue jumpsuit with a yellow stripe across the chest, grease smudges,
+    // and the zip
+    for (let x = Math.round(cx - sw); x <= Math.round(cx + sw); x++) { if (G.get(x, by + 4)) put(x, by + 4, C.stripe); }
+    for (let y = by + 1; y < MINER_H; y++) put(mid, y, y === by + 4 ? C.stripe : C.cloth[2]);
+    put(mid - 3, by + 7, '#1a1a24'); put(mid - 2, by + 8, '#1a1a24'); put(mid + 3, by + 2, '#1a1a24');
+  }
+  // the neck (neville's is long and thin)
+  const nx = Math.round(fx), thick = id === 'brutus' ? 2 : 1;
+  for (let y = top + 10; y <= by; y++) for (let x = nx - thick; x <= nx + thick; x++) if (!G.get(x, y) || y < by) put(x, y, x > fx ? sd : sm);
+
+  // the head: the back of it in hair (or skin, for brutus, who's bald under
+  // the hat), then the face, lower and to the front
+  const R = { x: 5.7, y: 5.5 };
+  pxBlob(G, cx, hy, R.x, R.y, (dx, dy) => (C.bald ? (dx > 0.5 ? sd : dx < -0.3 && dy < -0.2 ? sl : sm) : (dx > 0.45 || dy > 0.6 ? C.hair[1] : C.hair[0])));
+  // long hair hanging down either side (ace)
+  if (id === 'ace') {
+    for (let y = Math.round(hy - 1); y <= Math.round(hy + 9); y++) {
+      const w = y > hy + 6 ? 1 : 2;
+      for (let k = 0; k < w; k++) {
+        put(Math.round(cx - R.x) + k - turn, y, k ? C.hair[0] : C.hair[1]);
+        if (!turn || y < hy + 5) put(Math.round(cx + R.x) - k + turn, y, k ? C.hair[0] : C.hair[1]);
+      }
+    }
+  }
+  // the face
+  const fr = { x: 4.4 - turn * 0.4, y: 4 };
+  const fcy = hy + 1.4;
+  pxBlob(G, fx, fcy, fr.x, fr.y, (dx, dy) => (dx > 0.62 ? sd : dx < -0.45 && dy < 0.3 ? sl : sm));
+  // a square jaw for brock and brutus
+  if (id === 'brock' || id === 'brutus') for (let x = Math.round(fx - 3); x <= Math.round(fx + 3); x++) put(x, Math.round(fcy + fr.y), x > fx + 1 ? sd : sm);
+  // the hair over the forehead
+  const fxr = Math.round(fx), fyr = Math.round(fcy);
+  if (id === 'ace') {
+    // bangs, swept to one side
+    for (let x = -4; x <= 4; x++) { put(fxr + x, fyr - 3, C.hair[0]); if (x < 2) put(fxr + x, fyr - 2, x < -1 ? C.hair[1] : C.hair[0]); }
+    put(fxr - 4, fyr - 1, C.hair[1]);
+  } else if (id === 'neville') {
+    [-3, -1, 2].forEach(x => put(fxr + x, fyr - 3, C.hair[0]));
+    put(fxr - 4, fyr - 1, C.hair[1]); put(fxr + 4, fyr - 1, C.hair[1]);
+  } else if (id === 'brock') {
+    // the quiff, swept up off his forehead
+    for (let x = -4; x <= 3; x++) put(fxr + x, fyr - 3, C.hair[x > 1 ? 1 : 0]);
+    for (let x = -3; x <= 2; x++) put(fxr + x, fyr - 4, C.hair[0]);
+    for (let x = -2; x <= 3; x++) put(fxr + x, fyr - 5, x === -2 ? C.hair[1] : C.hair[0]);
+    put(fxr + 4, fyr - 5, C.hair[0]); put(fxr + 5, fyr - 6, C.hair[0]);
+  } else if (id === 'sparks') {
+    [-4, -3, -1, 0, 2, 3].forEach(x => put(fxr + x, fyr - 3, C.hair[0]));
+  }
+
+  // hats and the like
+  if (C.hatKind === 'hard' || C.hatKind === 'big') {
+    // a hard hat: a dome, a brim all round (longer at the front when turned),
+    // and the lamp on the front. neville's is too big and sits right down
+    // over his eyebrows.
+    const big = C.hatKind === 'big', rx = big ? 7.2 : 6.4, base = big ? hy - 1.6 : hy - 2, rh = big ? 6 : 5.2;
+    const [h0, h1, h2] = C.hat;
+    for (let y = Math.floor(base - rh); y <= base; y++) for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
+      const dx = (x - cx) / rx, dy = (y - base) / rh;
+      if (dx * dx + dy * dy > 1) continue;
+      put(x, y, dx < -0.35 && dy < -0.3 ? h0 : dx > 0.5 ? h2 : h1);
+    }
+    // a ridge down the middle, and the dents (brutus)
+    for (let y = Math.floor(base - rh + 1); y < base; y++) put(Math.round(cx + turn), y, h0);
+    if (id === 'brutus') { put(Math.round(cx) - 3, Math.round(base - 3), h2); put(Math.round(cx) - 2, Math.round(base - 2), h2); put(Math.round(cx) + 3, Math.round(base - 4), h2); }
+    for (let x = Math.floor(cx - rx - 1); x <= Math.ceil(cx + rx + 1 + turn); x++) put(x, Math.round(base) + 1, x > cx + rx * 0.4 ? h2 : h1);
+    if (C.lamp) {
+      const lx = Math.round(cx + turn * 3), ly = Math.round(base - 2);
+      [[-1, 0], [1, 0], [-1, 1], [1, 1]].forEach(([dx, dy]) => put(lx + dx, ly + dy, '#4a4a52'));
+      put(lx, ly, '#fff6c4'); put(lx, ly + 1, '#ffd23f');
+    }
+  } else if (C.hatKind === 'tipped') {
+    // ace's: smaller, tipped back on her head so her bangs show
+    const [h0, h1, h2] = C.hat, base = hy - 3.5;
+    for (let y = Math.floor(base - 4); y <= base; y++) for (let x = Math.floor(cx - 5.6); x <= Math.ceil(cx + 5.6); x++) {
+      const dx = (x - cx) / 5.6, dy = (y - base) / 4.4;
+      if (dx * dx + dy * dy > 1) continue;
+      put(x, y, dx < -0.3 && dy < -0.3 ? h0 : dx > 0.5 ? h2 : h1);
+    }
+    for (let x = Math.floor(cx - 6.4); x <= Math.ceil(cx + 6.4 + turn); x++) put(x, Math.round(base) + 1, x > cx + 2 ? h2 : h1);
+    const lx = Math.round(cx + turn * 3), ly = Math.round(base - 2);
+    put(lx, ly, '#fff6c4'); put(lx, ly + 1, '#ffd23f'); put(lx - 1, ly + 1, '#2a6a64'); put(lx + 1, ly + 1, '#2a6a64');
+  } else if (C.hatKind === 'back') {
+    // brock's hat shoved right back on his head, the brim up at the back
+    const [h0, h1, h2] = C.hat, base = hy - 4.6;
+    for (let y = Math.floor(base - 4); y <= base; y++) for (let x = Math.floor(cx - 5.2); x <= Math.ceil(cx + 5.2); x++) {
+      const dx = (x - cx) / 5.2, dy = (y - base) / 4.2;
+      if (dx * dx + dy * dy > 1) continue;
+      put(x, y, dx < -0.3 && dy < -0.3 ? h0 : dx > 0.5 ? h2 : h1);
+    }
+    for (let y = Math.floor(base - 3.4); y < base; y++) put(Math.round(cx + turn), y, h0);
+    // (cocked: the brim's a pixel higher on one side)
+    for (let x = Math.floor(cx - 6); x <= Math.ceil(cx + 6 + turn); x++) put(x, Math.round(base) + (x < cx - 1 ? 1 : 0), x > cx + 2 ? h2 : h1);
+  } else if (C.hatKind === 'goggles') {
+    // spikes of hair sticking up everywhere, and welding goggles strapped
+    // round his forehead
+    const sp = [[-6, -2], [-5, -5], [-3, -7], [-1, -8], [1, -8], [3, -7], [5, -5], [6, -2], [-7, 1], [7, 1]];
+    sp.forEach(([dx, dy], k) => {
+      const bx = cx + dx * 0.8, by2 = hy + dy * 0.8, tx = cx + dx * 1.15, ty = hy + dy * 1.12 - (k % 2);
+      pxLine(G, bx, by2, tx, ty, k % 3 ? C.hair[0] : C.hair[1]);
+      pxLine(G, bx + 1, by2, tx + (dx > 0 ? 0 : 1), ty + 1, C.hair[0]);
+    });
+    const gy = fyr - 3;
+    for (let x = Math.round(cx - R.x); x <= Math.round(cx + R.x + turn); x++) put(x, gy, '#3a2a22');
+    [fxr - 2, fxr + 2].forEach((x, k) => {
+      if (turn && k === 0) x += 1;
+      [[0, -1], [-1, 0], [0, 0], [1, 0], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([dx, dy]) => put(x + dx, gy + dy, dx === 0 && dy === 0 ? '#9fe6ff' : C.goggle[(dx + dy) < 0 ? 0 : 1]));
+      put(x - 1, gy - 1, '#ffffff');
+    });
+  }
+
+  // the face itself. eyes sit on one row (two tall, like yours), brows a row
+  // or two above, the mouth below. three quarters on, the far eye is nearer the
+  // edge.
+  const ey = fyr + (C.hatKind === 'big' ? 1 : 0) - (C.glasses ? 0 : 0);
+  const eyesX = turn ? [fxr - 1, fxr + 2] : [fxr - 2, fxr + 2];
+  const dark = '#1a1014', white = '#ffffff';
+  const lx = look === -1 ? -1 : look === 1 ? 1 : 0, ly = look === 2 ? 1 : 0;
+  const wide = C.eyes === 'wide' || mood === 'scared' || mood === 'shock';
+  eyesX.forEach((x, k) => {
+    if (blink) { put(x, ey + 1, dark); if (C.eyes !== 'small') put(x + (k ? 1 : -1), ey + 1, dark); return; }
+    if (wide) {
+      // big round eyes, white with the pupil to whichever side they're looking
+      const x0 = k ? x : x - 1;
+      [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(([dx, dy]) => put(x0 + dx, ey + dy, white));
+      const px = lx < 0 ? x0 : lx > 0 ? x0 + 1 : x0 + (k ? 0 : 1);
+      put(px, ey + ly, dark); put(px, ey + 1, dark);
+    } else if (C.eyes === 'big') {
+      put(x + lx, ey + ly, dark); put(x + lx, ey + 1, dark); put(x + lx + (k ? -1 : 1), ey, white);
+    } else {
+      put(x + lx, ey + ly, dark); put(x + lx, ey + 1, dark);
+      if (C.eyes === 'lash') put(x + lx + (k ? 1 : -1), ey - 1 + ly, dark);
+    }
+  });
+  // glasses (ace): a round frame round each eye with a little bridge
+  if (C.glasses) {
+    // (a light lens over the top of each eye, so they read as glasses and not
+    // shades)
+    const gc = '#4a3a5a';
+    if (!blink) eyesX.forEach(x => { put(x + lx, ey, '#d8eeff'); put(x + lx, ey + 1, dark); });
+    eyesX.forEach(x => {
+      [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1], [-1, 2], [0, 2], [1, 2]].forEach(([dx, dy]) => put(x + dx, ey + dy, gc));
+    });
+    for (let x = eyesX[0] + 2; x <= eyesX[1] - 2; x++) put(x, ey, gc);
+    put(eyesX[0] - 1, ey - 1, '#cfe9ff');
+    put(eyesX[1] - 1, ey - 1, '#8ab8d8');
+  }
+  // brows
+  const bc = C.bald ? C.beard[1] : C.hair[1];
+  const brow = (x, y) => put(x, y, bc);
+  const bY = ey - (C.glasses ? 2 : 1) - (wide ? 1 : 0);
+  eyesX.forEach((x, k) => {
+    const inner = k === 0 ? 1 : -1, outer = -inner;
+    // (neville's helmet sits over his, unless he's terrified)
+    if (C.hatKind === 'big' && mood !== 'shock' && mood !== 'scared') return;
+    switch (mood) {
+      case 'angry': case 'fume':
+        brow(x + inner, bY + 1); brow(x, bY + 1); brow(x + outer, bY); break;
+      case 'scared': case 'sad':
+        brow(x + inner, bY - 1); brow(x, bY); brow(x + outer, bY + (mood === 'sad' ? 1 : 0)); break;
+      case 'shock':
+        brow(x, bY - 1); brow(x + outer, bY - 1); brow(x + inner, bY - 1); break;
+      case 'smug':
+        if (k === 1) { brow(x, bY - 1); brow(x + outer, bY - 1); } else { brow(x, bY); brow(x + inner, bY + 1); } break;
+      case 'think':
+        if (k === 0) { brow(x, bY - 1); brow(x + outer, bY - 1); } else { brow(x, bY); brow(x + outer, bY); } break;
+      default:
+        if (id === 'brutus') { brow(x + inner, bY + 1); brow(x, bY); brow(x + outer, bY); } else { brow(x, bY); brow(x + outer, bY); }
+    }
+  });
+  // (brutus's brows meet in the middle when he's cross)
+  if (id === 'brutus' && (mood === 'angry' || mood === 'fume')) for (let x = eyesX[0] + 1; x < eyesX[1]; x++) put(x, bY + 1, bc);
+  // the mouth
+  const mx = Math.round(fx + turn * 0.6), my = ey + 3;
+  const mc = '#5a2424', teeth = '#ffffff';
+  const open = talk || mood === 'shock' || mood === 'scared';
+  if (open && mood !== 'grin') {
+    put(mx, my, mc); put(mx + 1, my, mc); put(mx, my + 1, mood === 'shock' ? mc : '#8a3a3a'); put(mx + 1, my + 1, mc);
+    if (mood === 'scared') put(mx + 1, my + 1, teeth);
+  } else switch (mood) {
+    case 'happy':
+      put(mx - 1, my, mc); put(mx, my + 1, mc); put(mx + 1, my + 1, mc); put(mx + 2, my, mc); break;
+    case 'grin':
+      for (let x = mx - 2; x <= mx + 2; x++) put(x, my, x === mx - 2 || x === mx + 2 ? mc : teeth);
+      for (let x = mx - 1; x <= mx + 1; x++) put(x, my + 1, mc);
+      break;
+    case 'smug':
+      put(mx - 1, my + 1, mc); put(mx, my + 1, mc); put(mx + 1, my, mc); put(mx + 2, my - 1, mc); break;
+    case 'angry': case 'fume':
+      for (let x = mx - 1; x <= mx + 2; x++) put(x, my, x === mx - 1 || x === mx + 2 ? mc : teeth);
+      put(mx - 1, my + 1, mc); put(mx + 2, my + 1, mc);
+      break;
+    case 'sad':
+      put(mx - 1, my + 1, mc); put(mx, my, mc); put(mx + 1, my, mc); put(mx + 2, my + 1, mc); break;
+    case 'think':
+      put(mx, my, mc); put(mx + 1, my, mc); put(mx + 2, my - 1, mc); break;
+    default:
+      put(mx, my, mc); put(mx + 1, my, mc);
+  }
+  // beards, freckles, blush and the rest
+  if (id === 'brutus') {
+    // a full black beard round the jaw and a moustache over the mouth
+    const [b0, b1] = C.beard;
+    for (let x = Math.round(fx - 4); x <= Math.round(fx + 4); x++) {
+      for (let y = my - 1; y <= Math.round(fcy + fr.y) + 1; y++) {
+        const edge = Math.abs(x - fx) > 2.5 || y >= my + 1;
+        if (!edge || (y < my && Math.abs(x - fx) < 3.5)) continue;
+        if (G.get(x, y) === teeth || G.get(x, y) === mc) continue;
+        put(x, y, (x + y) % 3 ? b0 : b1);
+      }
+    }
+    for (let x = mx - 1; x <= mx + 2; x++) if (G.get(x, my - 1) !== teeth) put(x, my - 1, b1);
+    put(fxr - 4, ey - 1, '#b05a40');
+    if (mood === 'fume') {
+      // red in the face, and a vein standing out on his temple
+      for (let y = 0; y < MINER_H; y++) for (let x = 0; x < MINER_W; x++) {
+        const c = G.get(x, y);
+        if (c === sm) put(x, y, '#d8644a'); else if (c === sl) put(x, y, '#ec8a6a'); else if (c === sd) put(x, y, '#a83a2a');
+      }
+      put(fxr + 3, ey - 2, '#7a1010'); put(fxr + 4, ey - 3, '#7a1010'); put(fxr + 4, ey - 1, '#7a1010');
+    }
+  }
+  if (C.freckles) { put(eyesX[0] - 1, ey + 2, sd); put(eyesX[0], ey + 3, sd); put(eyesX[1] + 1, ey + 2, sd); put(eyesX[1], ey + 3, sd); }
+  if (id === 'ace' || (id === 'neville' && mood === 'scared')) { put(eyesX[0] - 1, ey + 2, '#f09a9a'); put(eyesX[1] + 1, ey + 2, '#f09a9a'); }
+  if (id === 'neville' && (mood === 'scared' || mood === 'sad')) { put(fxr + 5, ey - 1, '#9fd8ff'); put(fxr + 5, ey, '#d8f2ff'); }
+  return G.outline(() => '#000000');
+}
+// frames are cached by everything that makes them
+const MINER_CACHE = new Map();
+function minerFrame(id, turn, mood, look, blink, talk) {
+  const k = `${id}|${turn}|${mood}|${look}|${blink ? 1 : 0}|${talk ? 1 : 0}`;
+  let c = MINER_CACHE.get(k);
+  if (!c) { c = makeMiner(id, turn, mood, look, blink, talk).canvas(); MINER_CACHE.set(k, c); }
+  return c;
+}
+// poker art end

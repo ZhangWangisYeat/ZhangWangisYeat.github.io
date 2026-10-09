@@ -2578,7 +2578,7 @@ const PV_EV = {
       v.folded = true;
       if (ev.seat === 0) {
         // yours slide a little way in, as if mucked, and stay there greyed out
-        v.cards.forEach((o, k) => { const tx = o.x + (PTX - o.x) * 0.25 + (k ? 2 : -2), ty = o.y + (PTY - o.y) * 0.25; pvTween(o, tx, ty, 0.3, k * 0.04, () => { o.grey = true; }); });
+        v.cards.forEach((o, k) => { const tx = o.x + (PTX - o.x) * 0.1 + (k ? 2 : -2), ty = o.y + 4; pvTween(o, tx, ty, 0.3, k * 0.04, () => { o.grey = true; }); });
       } else v.cards.forEach((o, k) => { o.a = 1; pvTween(o, PTX + (k ? 3 : -3), PTY - 4, 0.35, k * 0.04, () => { o.a = 0; }); o.fade = true; });
       sfx.pkFold();
       pvReact(ev, why);
@@ -2727,7 +2727,7 @@ function pvReact(ev, why) {
     else if (ev.kind === 'raise' || ev.kind === 'bet') pvSayPick(i, 'raise', 0.2, { x: pkDollars(ev.to) });
   }
   // brock folding to ace in a hand the two of them are in: she can't resist
-  if (i === 4 && ev.kind === 'fold' && T.aggressor === 3 && pvTogether(3, 4) && Math.random() < 0.3) pvBanter(3, 'vsBrock', 4, 'toAce');
+  if (i === 4 && ev.kind === 'fold' && T.aggressor === 3 && T.seats[4].vol && pkInHand(T.seats[3]) && !pkInHand(T.seats[0]) && Math.random() < 0.3) pvBanter(3, 'vsBrock', 4, 'toAce');
   // and now and then a word when they call
   if (ev.kind === 'call' && id !== 'you' && !PV.bubbles.some(bb => bb.seat === i)) pvSayPick(i, 'call', 0.1);
   // neville gets nervous when you or ace put money in against him (and ace,

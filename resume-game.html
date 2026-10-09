@@ -207,6 +207,7 @@
     <div class="talk px pk-talk" id="pk-talk" hidden>
       <p class="talk-name" id="pk-talk-name"></p>
       <p class="talk-text" id="pk-talk-text"></p>
+      <div class="pk-choices" id="pk-choices"></div>
       <p class="talk-hint">Click or Space</p>
     </div>
     <div class="race-help px pk-panel" id="pk-rules" role="dialog" aria-labelledby="pk-rules-title" hidden>
@@ -220,9 +221,14 @@
         <li>On your turn: fold, check, call, bet or raise. A raise has to be at least as big as the last bet or raise. You can bet everything you have at any time.</li>
         <li>Going all in for less than a full raise doesn't reopen the betting. Side pots go to the best hand among the players in them.</li>
         <li>Best five cards win: Royal Flush, Straight Flush, Four of a Kind, Full House, Flush, Straight, Three of a Kind, Two Pair, Pair, High Card.</li>
+        <li><b>Seven deuce:</b> win a pot holding seven two off suit and everyone else pays you $1,000, even if they folded.</li>
+        <li>After a hand nobody saw your cards in, you can <b>show</b> them (S). They'll remember what you show.</li>
       </ul>
       <p class="pk-keys"><kbd>F</kbd> Fold <kbd>C</kbd> Check / Call <kbd>Enter</kbd> Raise <kbd>A</kbd> All in <kbd>&larr;</kbd><kbd>&rarr;</kbd> Size <kbd>R</kbd> Rules <kbd>S</kbd> Show your hand after one</p>
-      <button type="button" class="px-btn px px-btn-primary" id="pk-rules-go">Deal me in</button>
+      <div class="pk-buy-row">
+        <button type="button" class="px-btn px" id="pk-rules-tut">Learn with Ace</button>
+        <button type="button" class="px-btn px px-btn-primary" id="pk-rules-go">Deal me in</button>
+      </div>
     </div>
     <div class="race-help px pk-panel" id="pk-buyin" role="dialog" aria-labelledby="pk-buy-title" hidden>
       <p class="rh-eyebrow">Buy in</p>

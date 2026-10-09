@@ -2155,7 +2155,7 @@ function pvPlate(v) {
   pkCtx.font = pkFont(1);
   // (before you've sat down your plate's just your name; once you're
   // playing it shows what your hand is too)
-  const seated = v.i || PV.started;
+  const seated = v.i || PV.started || PV.tutorial;
   const name = PK_NAMES[v.id], money = !seated ? '' : v.out ? 'OUT' : v.stack <= 0 && s.allIn ? 'ALL IN' : pkDollars(v.stack);
   const extra = v.i === 0 && PV.handName ? PV.handName.toUpperCase() : '';
   pkCtx.font = pkFont(1);
@@ -2282,10 +2282,23 @@ function pvDraw(t) {
   PV.seats.forEach(v => pvDrawArms(v, t));
   pvDrawYou(t);
   PV.seats.forEach(pvPlate);
+  (PV.demoMarks || []).forEach(m => {
+    const b = seatAt(m.seat, 'bet');
+    pvText(m.label, b.x, b.y - 12, '#ffd23f', 0.8);
+  });
   if (PV.winText) {
     const w = PV.winText, a = Math.min(1, w.t / 0.2);
     pkCtx.globalAlpha = a;
-    pvText(w.text, w.x, w.y - Math.min(8, w.t * 10), '#ffd23f', 1);
+    // (on a dark panel, so it reads over whatever chips are under it)
+    const rise = Math.min(8, w.t * 10);
+    pkCtx.font = pkFont(1);
+    let tw = pkCtx.measureText(w.text).width;
+    if (w.sub) { pkCtx.font = pkFont(0.8); tw = Math.max(tw, pkCtx.measureText(w.sub).width); }
+    const bw = tw / PS + 10, bh = w.sub ? 18 : 10;
+    pkCtx.globalAlpha = a * 0.78;
+    pRect(w.x - bw / 2, w.y - rise - 6, bw, bh, '#0c0808');
+    pkCtx.globalAlpha = a;
+    pvText(w.text, w.x, w.y - rise, '#ffd23f', 1);
     if (w.sub) pvText(w.sub, w.x, w.y + 8 - Math.min(8, w.t * 10), '#f6ecd0', 0.8);
     pkCtx.globalAlpha = 1;
   }
@@ -3112,7 +3125,7 @@ function pvStep(dt) {
 // conversations at the table: a box along the bottom, typed out a letter at a
 // time in each speaker's voice, click, space or enter to go on. steps are
 // { who: seat, text, mood }, { you: text } or { act, wait }.
-const pkTalk = $('#pk-talk'), pkTalkName = $('#pk-talk-name'), pkTalkText = $('#pk-talk-text');
+const pkTalk = $('#pk-talk'), pkTalkName = $('#pk-talk-name'), pkTalkText = $('#pk-talk-text'), pkChoices = $('#pk-choices');
 function pvScene(steps, done) {
   PV.scene = { steps, i: -1, t: 0, done };
   pvHideControls();
@@ -3129,7 +3142,10 @@ function pvSceneNext() {
     return;
   }
   const st = sc.steps[sc.i];
-  sc.t = 0; sc.shown = -1;
+  sc.t = 0; sc.shown = -1; sc.choosing = false;
+  pkChoices.innerHTML = '';
+  pkTalk.classList.remove('is-choosing');
+  if (st.demo) pvDemo(st.demo);
   if (st.act) { pkTalk.hidden = true; PV.speaker = -1; st.act(); return; }
   pkTalk.hidden = false;
   pkTalk.classList.toggle('is-reply', !!st.you);
@@ -3157,6 +3173,31 @@ function pvSceneTick(dt) {
     if (!st.you && n > was && /[a-z0-9]/i.test(text[n - 1] || '') && n % 2 === 0) sfx.pkVoice(PK_IDS[st.who]);
     if (!st.you) PV.seats[st.who].talkT = n < text.length ? 0.2 : 0;
   }
+  if (st.choices && n >= text.length && !sc.choosing) {
+    sc.choosing = true;
+    pkTalk.classList.add('is-choosing');
+    st.choices.forEach((c, k) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pk-choice';
+      b.innerHTML = `<kbd>${k + 1}</kbd> ${c.label}`;
+      b.addEventListener('click', e => { e.stopPropagation(); pvChoose(k); });
+      pkChoices.appendChild(b);
+    });
+  }
+}
+// picking an answer: you say it, whatever it sets off happens, and the reply
+// to it comes next
+function pvChoose(k) {
+  const sc = PV && PV.scene, st = sc && sc.steps[sc.i];
+  if (!st || !st.choices || !sc.choosing || !st.choices[k]) return;
+  const c = st.choices[k];
+  sfx.you(c.label);
+  if (c.act) c.act();
+  const add = [];
+  if (c.reply) add.push({ who: st.who, text: c.reply, mood: c.ok ? 'happy' : 'idle' });
+  sc.steps.splice(sc.i + 1, 0, ...add);
+  pvSceneNext();
 }
 function pvSceneAdvance() {
   const sc = PV && PV.scene;
@@ -3165,6 +3206,7 @@ function pvSceneAdvance() {
   if (st.act) return;
   const text = st.text || st.you;
   if (!st.you && sc.t * 44 < text.length) { sc.t = text.length / 44; return; }
+  if (st.choices) return;
   if (st.you) sfx.you(text); else sfx.ui();
   pvSceneNext();
 }
@@ -3177,7 +3219,7 @@ function pvRules(open, then) {
   PV.rulesOpen = open;
   pkRulesEl.hidden = !open;
   PV.modal = open || !!PV.buyin;
-  if (open) { PV.rulesThen = then || PV.rulesThen || null; setTimeout(() => $('#pk-rules-go').focus(), 40); }
+  if (open) { PV.rulesThen = then || PV.rulesThen || null; $('#pk-rules-tut').hidden = !!PV.started; setTimeout(() => $('#pk-rules-go').focus(), 40); }
   else if (PV.rulesThen) { const f = PV.rulesThen; PV.rulesThen = null; f(); }
 }
 $('#pk-rules-go').addEventListener('click', () => { sfx.ui(); pvRules(false); });
@@ -3330,6 +3372,158 @@ function pvBegin() {
   });
 }
 
+// the tutorial's example tables. a demo lays out whatever a lesson needs on
+// the table without touching the real game: the board, some hands (face up
+// or down), bets, the pot, the button, labels over seats and a caption.
+const pkC = t => PK_RANKS.indexOf(t[0]) * 4 + PK_SUITS.indexOf(t[1]);
+function pvButtonSpot(seat) {
+  const b = seatAt(seat, 'stack'), S0 = PK_SEATS[seat];
+  return { x: b.x + (seat === 0 ? 30 : S0.view === 'front' ? 0 : S0.flip ? -14 : 14), y: b.y + (S0.view === 'front' ? 10 : seat === 0 ? 2 : -14) };
+}
+function pvDemo(d) {
+  PV.flights.length = 0;
+  PV.movers.length = 0;
+  PV.seats.forEach(v => { v.cards = []; v.bet = 0; v.folded = v.out; });
+  PV.board = (d.board || []).map((c, k) => ({ c: pkC(c), up: true, x: PTX - 32 + k * 16, y: PTY - 4 }));
+  const hands = Object.assign({}, d.hands);
+  if (d.deal) PV.seats.forEach(v => { if (!v.out && !hands[v.i]) hands[v.i] = v.i ? ['2c', '3c'] : ['Ah', 'Kd']; });
+  Object.entries(hands).forEach(([k, cs]) => {
+    const i = +k, up = i === 0 || d.up === 'all' || (d.up || []).includes(i);
+    PV.seats[i].cards = cs.map((c, j) => ({ c: pkC(c), up, ...pvCardSpot(i, j), glow: (d.glow || []).includes(i) }));
+  });
+  (d.fold || []).forEach(i => { PV.seats[i].folded = true; PV.seats[i].cards.forEach(o => { o.grey = true; }); });
+  Object.entries(d.bets || {}).forEach(([i, n]) => { PV.seats[i].bet = n; });
+  PV.pot = d.pot || 0;
+  PV.buttonAt = d.button !== undefined ? pvButtonSpot(d.button) : null;
+  PV.demoMarks = d.marks || [];
+  PV.winText = d.caption ? { text: d.caption, sub: d.sub || '', x: PTX, y: PTY - 26, t: 1 } : null;
+  PV.handName = d.handName || '';
+}
+// ace's poker school: every rule at the table, each with an example laid out
+// on the table, a few of the others chipping in, and questions along the way.
+// you can take it before your first game, or from the rules any time before
+// you sit down to one.
+const PK_BLINDS = { button: 5, bets: { 0: 1, 1: 2 }, marks: [{ seat: 5, label: 'BUTTON' }, { seat: 0, label: 'SMALL BLIND' }, { seat: 1, label: 'BIG BLIND' }] };
+const PK_TUTORIAL = [
+  { who: 3, text: "Alright. Poker school is in session. I'll keep it short, but I won't skip anything.", demo: {} },
+  { who: 5, text: "Ooh, school! Can I be the teacher's pet?", mood: 'grin' },
+  { who: 3, text: "No." },
+  // the goal and the chips
+  { who: 3, text: "The goal is simple: be the last one at this table with ore in front of you.", demo: { caption: 'LAST ONE STANDING' } },
+  { who: 3, text: "Our chips are ores. Iron is worth $100, gold $500, ruby $1,000, emerald $2,000, and diamond $10,000.", demo: { pot: 136, caption: 'THE CHIPS', sub: 'Iron $100 | Gold $500 | Ruby $1,000 | Emerald $2,000 | Diamond $10,000' } },
+  { who: 3, text: "Everyone starts with $20,000. That's a hundred big blinds. Which brings me to the blinds." },
+  // the button and the blinds
+  { who: 3, text: "See the little stone disc? That's the dealer button. It moves one seat to the left after every hand.", demo: { button: 5, marks: [{ seat: 5, label: 'BUTTON' }] } },
+  { who: 3, text: "The two players to its left pay the blinds before any cards come out. Here you're the small blind, $100, and Brutus is the big blind, $200.", demo: PK_BLINDS },
+  { who: 1, text: "And I'm not giving it back.", mood: 'angry' },
+  { who: 3, text: "The blinds make sure there's always something to fight for. Every 40 hands the lava rises and they go up." },
+  { who: 3, text: "When there are only two of you left, the button pays the small blind and acts first before the flop. Don't let that confuse you." },
+  // the deal and the first round
+  { who: 3, text: "Then I deal everyone two cards, face down. Only you can see yours.", demo: { ...PK_BLINDS, deal: true } },
+  { who: 3, text: "The first round of betting starts with the player on the big blind's left. That's Neville here, under the gun.", demo: { ...PK_BLINDS, deal: true, marks: [{ seat: 2, label: 'FIRST TO ACT' }] } },
+  { who: 2, text: "M-me? Already?", mood: 'scared' },
+  { who: 3, text: "When someone has bet, you have three choices: fold, call, or raise." },
+  { who: 3, text: "Fold, and you give up your cards and whatever you've already put in. Neville folds a lot.", demo: { ...PK_BLINDS, deal: true, fold: [2], marks: [{ seat: 2, label: 'FOLDS' }] } },
+  { who: 2, text: "It's a strategy!", mood: 'scared' },
+  { who: 3, text: "Call, and you match the bet. Raise, and you make it bigger, and everyone after you has to match the new amount or fold.", demo: { button: 5, deal: true, fold: [2], bets: { 0: 1, 1: 2, 3: 5, 4: 5 }, marks: [{ seat: 3, label: 'RAISES TO $500' }, { seat: 4, label: 'CALLS' }] } },
+  { who: 3, text: "If nobody has bet yet, you can check, which means passing without putting anything in, or bet." },
+  { who: 3, text: "The round's over when everyone still in has put in the same amount, or is all in. The bets go into the pot." },
+  // minimum raises and all in
+  { who: 3, text: "A raise has to be at least as big as the last bet or raise. Watch.", demo: { board: ['Kh', '9s', '4d'], pot: 12, bets: { 4: 4 }, marks: [{ seat: 4, label: 'BETS $400' }] } },
+  { who: 3, text: "Brock bets $400. The smallest raise puts another $400 on top, so it's to $800. Anything bigger is fine too.", demo: { board: ['Kh', '9s', '4d'], pot: 12, bets: { 4: 4, 5: 8 }, marks: [{ seat: 4, label: '$400' }, { seat: 5, label: 'RAISES TO $800' }] } },
+  { who: 4, text: "Or you could just fold to me. Like a smart beginner.", mood: 'smug' },
+  { who: 3, text: "No limit means you can bet everything you have, any time. That's going all in." },
+  // the streets
+  { who: 3, text: "After the first round, I turn three cards face up in the middle. That's the flop. Everyone shares them.", demo: { button: 5, deal: true, board: ['Kh', '9s', '4d'], pot: 15 } },
+  { who: 3, text: "Then another round of betting, starting with the first player still in on the button's left." },
+  { who: 3, text: "Then a fourth card, the turn, and another round.", demo: { button: 5, deal: true, board: ['Kh', '9s', '4d', '2c'], pot: 25 } },
+  { who: 3, text: "Then the last card, the river, and the last round.", demo: { button: 5, deal: true, board: ['Kh', '9s', '4d', '2c', 'Jh'], pot: 45 } },
+  { who: 3, text: "If two or more of you are still in after that, it's a showdown. Your best five cards out of your two and the five on the table. Best hand wins." },
+  // hand rankings
+  { who: 3, text: "So, the hands. From the best down." },
+  { who: 3, text: "A royal flush: ace, king, queen, jack, ten, all the same suit. You'll basically never see one.", demo: { board: ['Ah', 'Kh', 'Qh', 'Jh', 'Th'], caption: 'ROYAL FLUSH' } },
+  { who: 3, text: "A straight flush: five in a row, all one suit.", demo: { board: ['9s', '8s', '7s', '6s', '5s'], caption: 'STRAIGHT FLUSH' } },
+  { who: 3, text: "Four of a kind: four cards of the same rank.", demo: { board: ['Qd', 'Qc', 'Qs', 'Qh', '3d'], caption: 'FOUR OF A KIND' } },
+  { who: 3, text: "A full house: three of one rank and two of another. These are kings full of fours.", demo: { board: ['Kd', 'Kc', 'Ks', '4h', '4d'], caption: 'FULL HOUSE' } },
+  { who: 3, text: "A flush: any five cards of one suit.", demo: { board: ['Ad', 'Jd', '8d', '5d', '2d'], caption: 'FLUSH' } },
+  { who: 3, text: "A straight: five in a row, any suits. The ace can go high or low, so ace two three four five counts.", demo: { board: ['As', '2d', '3c', '4h', '5s'], caption: 'STRAIGHT', sub: 'The ace can play low' } },
+  { who: 3, text: "Three of a kind.", demo: { board: ['7c', '7h', '7d', 'Ks', '2c'], caption: 'THREE OF A KIND' } },
+  { who: 3, text: "Two pair.", demo: { board: ['Qd', 'Qs', '7c', '7h', '2s'], caption: 'TWO PAIR' } },
+  { who: 3, text: "One pair. And if you've got nothing, your highest card plays.", demo: { board: ['Ac', 'Ad', '9h', '6s', '3c'], caption: 'ONE PAIR', sub: 'then High Card' } },
+  { who: 3, text: "Quick test. Which wins: a flush or a straight?", demo: { caption: 'FLUSH OR STRAIGHT?' }, choices: [
+    { label: 'The flush', ok: true, reply: "Correct. A flush beats a straight." },
+    { label: 'The straight', reply: "No. A flush beats a straight. Flushes are harder to make, so they rank higher." }] },
+  { who: 3, text: "And this one. Three of a kind, or two pair?", choices: [
+    { label: 'Three of a kind', ok: true, reply: "Right. Three of a kind beats two pair." },
+    { label: 'Two pair', reply: "No. Three of a kind beats two pair. Think of it as three of the same beating two and two." }] },
+  // kickers and ties
+  { who: 3, text: "When two hands are the same kind, the higher cards win. Here Brock and Sparks both have a pair of aces.", demo: { board: ['Ad', '9c', '6s', '4h', '2c'], hands: { 4: ['Ac', 'Qd'], 5: ['As', 'Jh'] }, up: [4, 5], caption: 'PAIR OF ACES' } },
+  { who: 3, text: "Brock's queen beats Sparks's jack. That extra card is called the kicker.", demo: { board: ['Ad', '9c', '6s', '4h', '2c'], hands: { 4: ['Ac', 'Qd'], 5: ['As', 'Jh'] }, up: [4, 5], glow: [4], caption: 'BROCK WINS', sub: 'Queen kicker' } },
+  { who: 5, text: "Kicked by the kicker. Story of my life!", mood: 'grin' },
+  { who: 4, text: "That's skill, by the way.", mood: 'smug' },
+  { who: 3, text: "It wasn't. And if the best five cards are all on the table for both of you, you split the pot.", demo: { board: ['Ts', 'Js', 'Qd', 'Kc', 'Ah'], hands: { 1: ['2c', '3d'], 2: ['4s', '5h'] }, up: [1, 2], caption: 'SPLIT POT', sub: 'The board plays' } },
+  { who: 3, text: "Your turn. You hold king eight, Neville holds king seven, the board is king nine five three two. Who wins?", demo: { board: ['Kd', '9s', '5c', '3h', '2d'], hands: { 0: ['Kh', '8c'], 2: ['Ks', '7d'] }, up: [2] }, choices: [
+    { label: 'Me', ok: true, reply: "Right. You both have a pair of kings, and your eight kicks his seven." },
+    { label: 'Neville', reply: "No. You both have a pair of kings, and your eight is a better kicker than his seven." },
+    { label: 'A split', reply: "Close. But the kicker decides it: your eight beats his seven." }] },
+  { who: 2, text: "Of course it's me who loses the example.", mood: 'sad' },
+  // all in and side pots
+  { who: 3, text: "Now, all in. Say Neville goes all in for $1,000, and Brutus and Sparks both call.", demo: { board: ['8h', '8c', '3s'], bets: { 2: 10, 1: 10, 5: 10 }, marks: [{ seat: 2, label: 'ALL IN' }] } },
+  { who: 3, text: "That $3,000 is the main pot. It's all Neville can win, because it's all he could match.", demo: { board: ['8h', '8c', '3s'], pot: 30, caption: 'MAIN POT $3,000', sub: 'Neville, Brutus and Sparks' } },
+  { who: 3, text: "If Brutus and Sparks keep betting, that extra money goes into a side pot that only the two of them can win.", demo: { board: ['8h', '8c', '3s', 'Qd'], pot: 30, bets: { 1: 20, 5: 20 }, caption: 'MAIN POT $3,000', sub: 'Side pot $4,000: Brutus and Sparks only' } },
+  { who: 1, text: "And I'm taking both.", mood: 'angry' },
+  { who: 3, text: "Two more things. Going all in for less than a full raise doesn't let anyone who's already acted raise again. They can only call or fold." },
+  { who: 3, text: "And if you bet and nobody calls, whatever nobody matched comes straight back to you." },
+  { who: 3, text: "Last question on this. You have $3,000 left, and Brock bets $5,000. What can you do?", demo: { board: ['Jc', '7d', '2h'], pot: 40, bets: { 4: 50 }, marks: [{ seat: 4, label: 'BETS $5,000' }] }, choices: [
+    { label: 'Call all in', ok: true, reply: "Correct. You can always call with everything you have. If you win, you win what you matched from each player." },
+    { label: 'Nothing, I fold', reply: "No. You can always call all in for what you have. The rest of his bet goes back to him, or into a side pot if someone else calls." },
+    { label: 'Raise him', reply: "No. You don't have enough to raise. But you can call all in for your $3,000." }] },
+  // showdown order
+  { who: 3, text: "At a showdown, whoever bet or raised last on the river shows first. If it was checked all the way, the first player left of the button does." },
+  // the straddle
+  { who: 3, text: "House rules now. Under the gun, with four or more of us, you can straddle: a blind bet of twice the big blind before the cards come.", demo: { button: 5, bets: { 0: 1, 1: 2, 2: 4 }, marks: [{ seat: 0, label: 'SMALL BLIND' }, { seat: 1, label: 'BIG BLIND' }, { seat: 2, label: 'STRADDLE' }] } },
+  { who: 3, text: "The straddle makes the pot bigger, and the straddler acts last before the flop. Tick the box under your buttons if you want to do it when it's your turn under the gun." },
+  { who: 5, text: "I straddle every time I can! Strawberry Jam!", mood: 'grin' },
+  // the seven deuce game
+  { who: 3, text: "The other house rule: the seven deuce game. Seven and two, different suits, is the worst hand in poker.", demo: { hands: { 0: ['7c', '2d'] }, caption: 'SEVEN DEUCE', sub: 'Off suit' } },
+  { who: 3, text: "Win any pot holding it, and you show it, and every other player pays you $1,000. Even if they folded.", demo: { hands: { 0: ['7c', '2d'] }, caption: 'SEVEN DEUCE', sub: '$1,000 from everyone' } },
+  { who: 1, text: "Which is the stupidest rule in this cavern.", mood: 'angry' },
+  { who: 4, text: "Nobody's dumb enough to try it on me.", mood: 'smug' },
+  { who: 5, text: "I am! Every time!", mood: 'grin' },
+  // showing your hand
+  { who: 3, text: "After a hand where nobody saw your cards, you can show them, with the Show hand button or S. You don't have to.", demo: {} },
+  { who: 3, text: "But I'll remember what you show me. So will they. Show me a bluff and I'll know you bluff." },
+  { who: 3, text: "Watch what we do, too. Everyone at this table has habits." },
+  { who: 4, text: "I don't have habits. I have skills.", mood: 'smug' },
+  { who: 2, text: "I-I have a lot of habits.", mood: 'scared' },
+  // the controls
+  { who: 3, text: "Your buttons are bottom left. Fold is F. Check or call is C." },
+  { who: 3, text: "To raise, set how much with the slider, the minus and plus, the arrow keys, or the presets: the minimum, half the pot, three quarters, the pot, or everything. Then Raise, or Enter. A goes all in." },
+  { who: 3, text: "The chat on the right keeps track of everything. R brings the rules back. Fast speeds things up when you're out of a hand. Leave cashes you out after the hand you're in." },
+  { who: 3, text: "That's everything. You know the rules. Now let's see if you can play.", mood: 'smug', demo: {} },
+  { who: 5, text: "Class dismissed! Deal, deal, deal!", mood: 'grin' }
+];
+function pvTutorial(done) {
+  PV.tutorial = true;
+  pvScene(PK_TUTORIAL.map(st => ({ ...st })), () => {
+    PV.tutorial = false;
+    pvDemo({});
+    PV.demoMarks = [];
+    PV.seats = pvSeats(PV.T);
+    if (done) done();
+  });
+}
+$('#pk-rules-tut').addEventListener('click', () => {
+  if (!PV || PV.started) return;
+  sfx.ui();
+  const then = PV.rulesThen;
+  PV.rulesThen = null;
+  PV.rulesOpen = false;
+  PV.modal = false;
+  pkRulesEl.hidden = true;
+  pvTutorial(() => pvRules(true, then));
+});
+
 // the first time: they're mid argument when you walk up, notice you, and
 // sparks offers you a seat and a stack on the house
 const PK_OPENERS = [
@@ -3359,13 +3553,17 @@ function pvIntro() {
     { you: 'What do I get if I win?' },
     { who: 3, text: 'Nobody\'s beaten this table in years.', mood: 'smug' },
     { who: 3, text: 'But if you do, I have a key that opens a door nobody\'s opened in a very long time.' },
-    { who: 5, text: 'Ooooh. Spooky. Sit, sit!', mood: 'grin' }
+    { who: 5, text: 'Ooooh. Spooky. Sit, sit!', mood: 'grin' },
+    { who: 3, text: 'Before we start. Do you want me to walk you through the rules first?', choices: [
+      { label: 'Yes, teach me', ok: true, act: () => { PV.wantTut = true; }, reply: 'Good. Sit down, I\'ll show you on the table.' },
+      { label: 'No, just deal', act: () => { PV.wantTut = false; }, reply: 'Suit yourself. The rules are on R if you need them.' }] }
   ], () => {
     PQ.met = true;
     PQ.visits++;
     pvNewGame(PK.START);
     toast('On the house', pkDollars(PK.START), '1 Diamond, 1 Emerald, 4 Rubies, 6 Gold, 10 Iron');
-    pvBegin();
+    if (PV.wantTut) pvTutorial(() => pvBegin());
+    else pvBegin();
   });
 }
 // coming back: whoever knocked you out last time has something to say about
@@ -3484,7 +3682,7 @@ function pokerKey(e) {
   if (!PV) return false;
   const k = e.key.toLowerCase();
   e.preventDefault();
-  if (PV.scene) { if (k === ' ' || k === 'enter' || k === 'e') pvSceneAdvance(); return true; }
+  if (PV.scene) { if (/^[1-4]$/.test(k)) pvChoose(+k - 1); else if (k === ' ' || k === 'enter' || k === 'e') pvSceneAdvance(); return true; }
   if (PV.rulesOpen) { if (k === 'r' || k === 'escape' || k === 'enter' || k === ' ') pvRules(false); return true; }
   if (PV.buyin) { if (k === 'enter') $('#pk-buy-go').click(); if (k === 'escape') $('#pk-buy-back').click(); return true; }
   if (k === 'r') { pvRules(true); return true; }

@@ -1635,3 +1635,22 @@ body.is-poker .toast { z-index: 39; }
   .pk-chat { width: calc(100vw - 32px); left: var(--gap); }
   .pk-chat-log { height: 80px; }
 }
+.pk-choices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pk-choices:empty { display: none; }
+.pk-choice {
+  padding: 7px 10px;
+  border: 0;
+  font-family: var(--px);
+  font-size: 0.56rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--panel-2);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  cursor: pointer;
+}
+.pk-choice kbd { margin-right: 4px; color: var(--accent); }
+.pk-choice:hover, .pk-choice:focus-visible { color: #111; background: var(--accent); outline: none; }
+.pk-choice:hover kbd, .pk-choice:focus-visible kbd { color: #111; }
+.pk-talk.is-choosing .talk-hint { visibility: hidden; }
+#pk-rules-tut[hidden] { display: none; }

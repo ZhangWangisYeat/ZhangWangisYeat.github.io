@@ -2352,6 +2352,13 @@ const PK_LINES = {
     win: ['HA! That\'s MINE.', 'Get that ore over here.', 'Finally, some respect.', 'Read it and weep.'],
     lose: ['ARGH!', 'This deck is RIGGED.', 'Unbelievable.', 'Are you KIDDING me?'],
     tiltStart: ['THAT\'S IT. NO MORE MR NICE GUY.', 'Every. Single. Time.', 'I\'m gonna crush ALL of you.'],
+    tiltCardDead: ['Five hands. FIVE. I haven\'t seen a playable card all night!', 'I\'m so card dead I forgot what a pair looks like!', 'Nine three. Eight two. Every. Single. Hand!'],
+    tiltUnlucky: ['Every time! I get it in good and the river KILLS me!', 'Unbelievable luck. UNBELIEVABLE.', 'How do you all keep HITTING?!'],
+    tiltSeven: ['SEVEN DEUCE?! You beat me with SEVEN DEUCE?!', 'That\'s not poker, that\'s a CRIME!'],
+    tiltShown: ['You BLUFFED me?! That\'s IT!', 'You showed me THAT?! Oh, it\'s ON!'],
+    stillTilt: ['I\'m NOT calm. Don\'t ask.', 'One win. ONE. That doesn\'t count!'],
+    toAceExploit: ['Shut UP, Ace.', 'I\'m NOT tilting!', 'Watch me, calculator.'],
+    payOut: ['Rigged. RIGGED.', 'Take it. TAKE IT.'],
     calm: ['...Fine. I\'m calm. I\'m calm.', 'Okay. Breathing. Like Ace said.', 'Alright. Back to business.'],
     throw: ['STUPID CARDS!', 'TAKE YOUR CARDS BACK!', 'WHO SHUFFLED THIS?!'],
     bust: ['This is a JOKE!', 'Rigged. Rigged I tell you!'],
@@ -2378,6 +2385,8 @@ const PK_LINES = {
     lose: ['I knew it. I knew it.', 'Why do I even play.', 'Of course.'],
     bust: ['I\'m going to go sit by the lava and think about my choices.', 'That\'s it. I\'m out. Good game.'],
     toSparks: ['I-I\'m blinking! See?', 'Please don\'t do that.'],
+    toAceExploit: ['I-it is a bit big, yes.', 'S-sorry. I mean, okay.'],
+    payOut: ['But I folded!', 'That rule is so mean.'],
     thanks: ['R-really? Thanks, Ace!', 'Oh! Um. Thank you!'],
     beatenByYou: ['I-I knew you had it. I knew it!', 'Why do you always have it against me?', 'Okay. I\'m folding to you from now on.'],
     show: ['O-okay... here.', 'Fine. It\'s not much.'],
@@ -2399,6 +2408,11 @@ const PK_LINES = {
     toBrockLose: ['It\'s called a range, Brock.', 'Luck had nothing to do with it.'],
     toNeville: ['Nothing personal, Neville.', 'Breathe. It\'s just cards.'],
     noted: ['Noted.', 'Interesting. I\'ll remember that.', 'So that\'s how you play it.'],
+    exploit_brutus: ['You\'re tilting, Brutus. I\'ll take it.', 'Call. You\'re steaming, so you\'re bluffing.', 'Breathe, Brutus. Or don\'t. Raise.'],
+    exploit_neville: ['Too big for you, Neville?', 'Your blind, Neville. I\'ll take it.', 'Fold, Neville. You know you want to.'],
+    exploit_brock: ['Confidence isn\'t a strategy, Brock.', 'Call. You always have it, don\'t you, Brock?', 'Go on, Brock. Prove it.'],
+    exploit_sparks: ['Call. Thank you, Sparks.', 'Punting again, Sparks? I\'ll take it.', 'Every time, Sparks.'],
+    payOut: ['...Fine. A rule\'s a rule.', 'Annoying. But fair.'],
     shocked: ['...Huh. I didn\'t expect that.', 'Interesting. That shouldn\'t have worked.', 'You\'re full of surprises.', 'Wait, what?'],
     impressed: ['Okay. You\'re actually good.', 'I\'m starting to think you know exactly what you\'re doing.', 'You play like nobody I\'ve seen down here.'],
     chastise: ['Brutus. The cards did nothing to you.', 'Throw the cards at me again and you\'re dealt out.', 'Brutus! Pick those up.', 'Really, Brutus? Again?'],
@@ -2431,7 +2445,10 @@ const PK_LINES = {
     thanks: ['I know.', 'Obviously.'],
     showBluffYou: ['Nothing! I had NOTHING! Learn something, rookie.', 'Ha! Look at that. Nothing. You folded to NOTHING.'],
     showBluff: ['Ha! Nothing! You folded to NOTHING!', 'Bluffed. Get used to it.'],
-    seeShow: ['Rub it in, why don\'t you.', 'Whatever. Lucky.', 'You think that\'s funny, rookie?']
+    seeShow: ['Rub it in, why don\'t you.', 'Whatever. Lucky.', 'You think that\'s funny, rookie?'],
+    toAceExploit: ['We\'ll see who\'s confident at the river.', 'Watch it, calculator.'],
+    seven: ['SEVEN DEUCE?! On ME? You\'re dead to me, rookie!', 'Seven deuce. Against ME. Oh, it\'s ON.'],
+    payOut: ['This rule is stupid.', 'Ugh. Fine.']
   },
   sparks: {
     wildcall: ['I guess I have to call.', 'I can\'t win if I don\'t call!', 'Call! Obviously.', 'Strawberry Jam!'],
@@ -2456,7 +2473,11 @@ const PK_LINES = {
     beatenByYou: ['Ha! You got me! Strawberry Jam!', 'Nice one! I\'ll get you back!', 'Ooh, you\'re good!'],
     show: ['Read \'em and weep!', 'Just so you know, I had THIS!', 'Look! Look what I had!'],
     askNeville: ['Come on Neville, show us!', 'Show! Show! Show!', 'Neville! What did you have?'],
-    knows: ['Hahaha! This guy really knows how to play!']
+    knows: ['Hahaha! This guy really knows how to play!'],
+    toAceExploit: ['Strawberry Jam! Gotta gamble!', 'Can\'t win if I don\'t play!'],
+    seven: ['SEVEN DEUCE! HAHAHA! Pay up, everybody!', 'The seven deuce! Strawberry Jam!'],
+    sevenMine: ['The seven deuce never fails! Pay up, pay up!', 'SEVEN DEUCE, BABY! A thousand each!'],
+    payOut: ['Hahaha, worth it!', 'Here you go! Nice!']
   },
   you: {}
 };
@@ -2739,7 +2760,8 @@ const PV_EV = {
   reveal(ev) {
     const v = PV.seats[ev.seat];
     if (ev.seat !== 0) v.cards.forEach(o => { o.flipTo = true; pvFlip(o); });
-    pvLog(`${pkWho(ev.seat)} ${pkV(ev.seat, 'shows')} ${ev.cards.map(pkCardHtml).join(' ')}`);
+    if (ev.seat === 0) v.cards.forEach(o => { o.grey = false; });
+    pvLog(`${pkWho(ev.seat)} ${pkV(ev.seat, 'shows')} ${ev.cards.map(pkCardHtml).join(' ')}${ev.seven ? ' (seven deuce!)' : ''}`);
     if (ev.seat !== 0) pvPose(ev.seat, 'reach', 0.3, seatAt(ev.seat, 'cards'));
     return PV.runout ? 0.4 : 0.6;
   },
@@ -2767,6 +2789,24 @@ const PV_EV = {
       setTimeout(() => { if (PV) pvSayPick(ev.seat, 'bust', 1, null, true); }, 300);
     }
     return 1.2;
+  },
+  seven(ev) {
+    const w = PV.seats[ev.seat];
+    ev.paid.forEach(([i, n], k) => {
+      const v = PV.seats[i];
+      v.stack -= n;
+      pvFly(n, seatAt(i, 'stack'), seatAt(ev.seat, 'stack'), 0.5, 0.1 + k * 0.12, () => { w.stack += n; sfx.pkChips(n); });
+    });
+    PV.winText = { text: 'SEVEN DEUCE!', sub: `${pkDollars(PK.SEVEN_DEUCE)} from everyone | ${pkDollars(ev.total)}`, x: PTX, y: PTY - 26, t: 0 };
+    w.cards.forEach(o => { o.glow = true; o.grey = false; });
+    pvLog(`${pkWho(ev.seat)} ${pkV(ev.seat, 'wins')} the seven deuce game: ${pkDollars(PK.SEVEN_DEUCE)} from everyone, ${pkDollars(ev.total)}`, 'win');
+    if (ev.seat === 0) { sfx.pkWin(); if (!PV.T.seats[5].out) pvSayPick(5, 'seven', 1, null, true); }
+    else if (ev.seat === 5) pvSayPick(5, 'sevenMine', 1, null, true);
+    else pvSayPick(ev.seat, 'win', 1, null, true);
+    // one of the payers grumbles about it
+    const grumbler = ev.paid.map(x => x[0]).filter(i => i && i !== 5 && i !== ev.seat);
+    if (grumbler.length && Math.random() < 0.6) pvSayPick(pkAny(grumbler), 'payOut', 1, null, true);
+    return 1.6 + ev.paid.length * 0.12;
   },
   end(ev) { return pvAfterHand(ev); }
 };
@@ -2815,7 +2855,10 @@ function pvReact(ev, why) {
     else if ((ev.kind === 'raise' || ev.kind === 'bet') && T.street !== 'preflop' && pkInHand(T.seats[3]) && Math.random() < 0.3) pvSayPick(i, 'raise', 1);
     else if (ev.kind === 'raise') pvSayPick(i, 'raise', 0.2);
   } else if (id === 'ace') {
-    if (ev.kind === 'allin') pvSayPick(i, 'allin', 0.6);
+    if (why.startsWith('exploit_')) {
+      const tg = PK_IDS.indexOf(why.slice(8));
+      if (tg > 0 && !pkInHand(T.seats[0])) pvBanter(3, why, tg, 'toAceExploit');
+    } else if (ev.kind === 'allin') pvSayPick(i, 'allin', 0.6);
     else if (ev.kind === 'raise' || ev.kind === 'bet') pvSayPick(i, 'raise', 0.2, { x: pkDollars(ev.to) });
   }
   // brock folding to ace in a hand the two of them are in: she can't resist
@@ -2903,7 +2946,8 @@ function pvAfterHand() {
   if (ev.includes('brutusTilt')) {
     later(() => {
       pvMood(1, 'fume', 3);
-      pvSayPick(1, 'tiltStart', 1, null, true);
+      const why = T.ai.mood.brutus.why;
+      pvSayPick(1, { cardDead: 'tiltCardDead', unlucky: 'tiltUnlucky', seven: 'tiltSeven', shown: 'tiltShown' }[why] || 'tiltStart', 1, null, true);
       if (pvTogether(1, 3) && Math.random() < 0.7) pvBanter(3, 'tilt', 1, 'breathe');
     }, 900);
     extra += 1.2;
@@ -2913,6 +2957,14 @@ function pvAfterHand() {
     extra += 2;
   }
   if (ev.includes('brutusCalm')) later(() => pvSayPick(1, 'calm', 1, null, true), 1200);
+  else if (T.ai.mood.brutus.tilt && T.ai.mood.brutus.wins === 1 && !ev.includes('brutusTilt') && Math.random() < 0.5) later(() => pvSayPick(1, 'stillTilt', 1, null, true), 1200);
+  if (ev.includes('brockSeven') && alive(4)) {
+    later(() => {
+      pvPose(4, 'slam', 0.7); pvMood(4, 'angry', 3);
+      setTimeout(() => { if (PV) { PV.shake = 3; sfx.pkSlam(); pvSayPick(4, 'seven', 1, null, true); } }, 330 / PV.speed);
+    }, 1400);
+    extra += 0.8;
+  }
   // showing cards: you can for a moment, and some of them do
   extra += pvShowsAfter(res, top, losers);
   if (ev.includes('sparksSettle')) later(() => pvSayPick(5, 'settle', 1, null, true), 1500);
@@ -2980,7 +3032,7 @@ function pvYouShow() {
   else if (out.includes('brockShown') && alive(4)) { pvMood(4, 'angry', 2.5); pvSayPick(4, 'seeShow', 1, null, true); }
   else if (alive(2) && info.lost.concat(info.folded).includes(2)) { pvMood(2, 'scared', 2.5); pvSayPick(2, info.bluff ? 'seeBluff' : 'seeValue', 1, null, true); }
   if (alive(3) && Math.random() < 0.6) pvSayPick(3, 'noted', 1, null, true);
-  if (out.includes('brutusTilt')) pvSayPick(1, 'tiltStart', 1, null, true);
+  if (out.includes('brutusTilt')) pvSayPick(1, 'tiltShown', 1, null, true);
   PQ.grudge = PV.T.ai.mood.brock.grudge;
   PV.wait = Math.max(PV.wait, 2.2);
   markDirty();

@@ -14,17 +14,24 @@
 // poker core start
 // the chips are ores, counted in iron (one iron is $100). the blinds are one and
 // two iron, and a straddle is four. every seat starts at 200 iron, 100 big blinds.
-const PK = { SB: 1, BB: 2, STRADDLE: 4, START: 200, MIN_BUYIN: 2, MAX_BUYIN: 200, DOLLARS: 100, LEVEL_HANDS: 40, SEVEN_DEUCE: 10 };
+const PK = { SB: 1, BB: 2, STRADDLE: 4, START: 200, MIN_BUYIN: 2, MAX_BUYIN: 200, DOLLARS: 100, LEVEL_SECS: 300, LEVEL_HANDS: 40, SEVEN_DEUCE: 10 };
 // the seven deuce game (a house rule): win a pot holding seven deuce off suit
 // and everyone else at the table pays you SEVEN_DEUCE iron ($1,000), whether
 // they were in the hand or not. set it to 0 to turn the rule off.
 const pkIs72 = c => !!c && c.length === 2 && ((c[0] >> 2) + (c[1] >> 2) === 5) && ((c[0] >> 2) === 5 || (c[0] >> 2) === 0) && (c[0] & 3) !== (c[1] & 3);
-// the blinds go up every LEVEL_HANDS hands ("the lava rises"). at one and two
-// for good, a last one standing game between six players runs to about 700
-// hands, which is hours. set LEVEL_HANDS to 0 to keep them at one and two.
+// the blinds go up as the game goes on ("the lava rises"). at one and two for
+// good, a last one standing game between six players runs to about 700 hands,
+// which is hours. at the table they go up every LEVEL_SECS seconds of real
+// play (alex: every 5 minutes, not sped up by Fast), counted on T.clock while
+// a game's actually running. without a clock (the bots playing each other in
+// node) it's every LEVEL_HANDS hands. 0 for either keeps them at one and two.
 const PK_LEVELS = [[1, 2], [2, 4], [3, 6], [5, 10], [8, 16], [10, 20], [15, 30], [25, 50], [40, 80], [60, 120], [100, 200]];
+function pkLevel(T) {
+  const k = T.clock !== undefined ? (PK.LEVEL_SECS ? Math.floor(T.clock / PK.LEVEL_SECS) : 0) : (PK.LEVEL_HANDS ? Math.floor((T.hand - 1) / PK.LEVEL_HANDS) : 0);
+  return Math.min(PK_LEVELS.length - 1, k);
+}
 function pkBlinds(T) {
-  const L = PK_LEVELS[Math.min(PK_LEVELS.length - 1, PK.LEVEL_HANDS ? Math.floor((T.hand - 1) / PK.LEVEL_HANDS) : 0)];
+  const L = PK_LEVELS[pkLevel(T)];
   return { sb: L[0], bb: L[1], straddle: L[1] * 2 };
 }
 const PK_IDS = ['you', 'brutus', 'neville', 'ace', 'brock', 'sparks'];
@@ -299,7 +306,8 @@ function pkStartHand(T, wantsStraddle) {
   T.hand++;
   T.ev = [];
   T.over = false;
-  const B = T.blinds = pkBlinds(T);
+  const B = T.blinds = pkBlinds(T), level = pkLevel(T), levelUp = T.hand > 1 && level > (T.level || 0);
+  T.level = level;
   T.seats.forEach(s => Object.assign(s, { cards: null, folded: s.out, allIn: false, bet: 0, total: 0, acted: -1, need: false, won: 0, vol: 0, shown: false, foldedPre: false }));
   T.seven = null;
   Object.assign(T, { board: [], pot: 0, bet: B.bb, lastRaise: B.bb, raises: 0, fullId: 0, street: 'preflop', aggressor: -1, prevAggressor: -1, straddle: -1 });
@@ -309,7 +317,7 @@ function pkStartHand(T, wantsStraddle) {
   const heads = live.length === 2;
   T.sb = heads ? T.button : pkNext(T, T.button);
   T.bb = pkNext(T, T.sb);
-  T.ev.push({ t: 'hand', hand: T.hand, button: T.button, sb: T.sb, bb: T.bb, blinds: B, stacks: T.seats.map(s => s.stack), levelUp: PK.LEVEL_HANDS > 0 && T.hand > 1 && (T.hand - 1) % PK.LEVEL_HANDS === 0 });
+  T.ev.push({ t: 'hand', hand: T.hand, button: T.button, sb: T.sb, bb: T.bb, blinds: B, stacks: T.seats.map(s => s.stack), levelUp });
   T.ev.push({ t: 'post', seat: T.sb, amount: pkPut(T, T.seats[T.sb], B.sb), kind: 'sb' });
   T.ev.push({ t: 'post', seat: T.bb, amount: pkPut(T, T.seats[T.bb], B.bb), kind: 'bb' });
   let first = pkNext(T, T.bb);
@@ -2666,7 +2674,11 @@ const PV_EV = {
     if (!PV.buttonAt) PV.buttonAt = { ...bt };
     pvTween(PV.buttonAt, bt.x, bt.y, 0.4);
     pvLog(`<span class="dim">Hand ${ev.hand} | Blinds ${pkDollars(ev.blinds.sb)} / ${pkDollars(ev.blinds.bb)}</span>`, 'sys');
-    if (ev.levelUp) { pvSayPick(3, 'level', 1, { sb: pkDollars(ev.blinds.sb), bb: pkDollars(ev.blinds.bb) }, true); return 1.6; }
+    if (ev.levelUp) {
+      pvSayPick(3, 'level', 1, { sb: pkDollars(ev.blinds.sb), bb: pkDollars(ev.blinds.bb) }, true);
+      pvLog(`<span class="dim">The lava rises. Blinds are now ${pkDollars(ev.blinds.sb)} / ${pkDollars(ev.blinds.bb)}</span>`, 'sys');
+      return 1.6;
+    }
     if (!T.seats[3].out && Math.random() < 0.08) pvSayPick(3, 'deal', 1);
     pvChatter();
     return 0.45;
@@ -2986,7 +2998,7 @@ function pvAfterHand() {
   // save where the game's at, unless it's over
   const live = T.seats.filter(s => !s.out);
   if (T.seats[0].out || live.length <= 1) PQ.table = null;
-  else PQ.table = { stacks: T.seats.map(s => s.stack), button: T.button, hand: T.hand, mood: T.ai.mood, stats: T.ai.stats };
+  else PQ.table = { stacks: T.seats.map(s => s.stack), button: T.button, hand: T.hand, mood: T.ai.mood, stats: T.ai.stats, clock: T.clock || 0, level: T.level || 0 };
   markDirty();
   if (T.seats[0].out) { PV.gameOver = 'bust'; PV.beater = top > 0 ? top : 3; }
   else if (live.length === 1) PV.gameOver = 'win';
@@ -3332,7 +3344,11 @@ function pvLoop(ts) {
   const dt = raw * PV.speed;
   pvTick(dt);
   pvSceneTick(raw);
-  if (PV && PV.started) pvStep(dt);
+  if (PV && PV.started) {
+    if (!PV.scene && !PV.modal && !PV.gameOverRun) PV.T.clock = (PV.T.clock || 0) + raw;
+    pvStep(dt);
+  }
+  if (PV) pvLevelChip();
   if (PV) pvDraw(ts);
   if (PV && PV.speaker >= 0) {
     // a little marker over whoever's talking in a conversation
@@ -3343,10 +3359,30 @@ function pvLoop(ts) {
 }
 window.addEventListener('resize', () => { if (PV) pvLayout(); });
 
+// the chip by the top buttons: the blinds now and how long until they go up
+let pkLevelText = '';
+function pvLevelChip() {
+  const T = PV.T, el = $('#pk-level');
+  let text = '';
+  if (PV.started && T.clock !== undefined) {
+    const k = pkLevel(T), L = PK_LEVELS[k];
+    text = `Blinds ${pkDollars(L[0])} / ${pkDollars(L[1])}`;
+    if (PK.LEVEL_SECS && k < PK_LEVELS.length - 1) {
+      const left = Math.max(0, Math.ceil(PK.LEVEL_SECS * (k + 1) - T.clock));
+      text += ` | Up in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    }
+  }
+  if (text === pkLevelText) return;
+  pkLevelText = text;
+  el.textContent = text;
+  el.hidden = !text;
+}
+
 // a game: you in seat 0 with what you brought, everyone else at 200 iron (or
 // where they were if you're picking up a game you left)
 function pvNewGame(youStack) {
   const T = pkTable(PK_IDS.map((_, i) => (i ? PK.START : youStack)));
+  T.clock = 0;
   const mood = pkMood();
   mood.brock.grudge = Math.min(4, PQ.grudge * 0.5);
   mood.ace.respect = PQ.respect;
@@ -3359,6 +3395,7 @@ function pvNewGame(youStack) {
 function pvResume(saved) {
   const T = pkTable(saved.stacks);
   T.button = saved.button; T.hand = saved.hand;
+  T.clock = +saved.clock || 0; T.level = +saved.level || 0;
   pkAiInit(T, Object.assign(pkMood(), saved.mood));
   if (Array.isArray(saved.stats) && saved.stats.length === 6) T.ai.stats = saved.stats;
   PV.T = T;
@@ -3416,7 +3453,7 @@ const PK_TUTORIAL = [
   { who: 3, text: "See the little stone disc? That's the dealer button. It moves one seat to the left after every hand.", demo: { button: 5, marks: [{ seat: 5, label: 'BUTTON' }] } },
   { who: 3, text: "The two players to its left pay the blinds before any cards come out. Here you're the small blind, $100, and Brutus is the big blind, $200.", demo: PK_BLINDS },
   { who: 1, text: "And I'm not giving it back.", mood: 'angry' },
-  { who: 3, text: "The blinds make sure there's always something to fight for. Every 40 hands the lava rises and they go up." },
+  { who: 3, text: "The blinds make sure there's always something to fight for. Every five minutes the lava rises and they go up. The timer's up by the buttons." },
   { who: 3, text: "When there are only two of you left, the button pays the small blind and acts first before the flop. Don't let that confuse you." },
   // the deal and the first round
   { who: 3, text: "Then I deal everyone two cards, face down. Only you can see yours.", demo: { ...PK_BLINDS, deal: true } },

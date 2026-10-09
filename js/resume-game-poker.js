@@ -528,18 +528,25 @@ const PK_PERSONA = {
 const PK_OPEN = [0.9, 0.42, 0.44, 0.28, 0.2, 0.155, 0.14];
 function pkMood() {
   return {
-    brutus: { tilt: false, losses: 0, wins: 0 },
-    neville: {},
-    ace: { respect: 0 },
+    brutus: { tilt: false, losses: 0, wins: 0, folds: 0, quiet: 0 },
+    neville: { comfort: [0, 0, 0, 0, 0, 0], read: { l: 1, b: 1 } },
+    ace: { respect: 0, read: { l: 1, b: 1 } },
     brock: { grudge: 0, target: false },
-    sparks: { wild: true, losses: 0 }
+    sparks: { wild: true, losses: 0, read: { l: 1, b: 1 } }
   };
+}
+// a saved mood from an older game, filled in with anything it's missing
+function pkMoodFix(m) {
+  const d = pkMood();
+  Object.keys(d).forEach(k => { d[k] = Object.assign(d[k], m && m[k]); });
+  if (!Array.isArray(d.neville.comfort) || d.neville.comfort.length !== 6) d.neville.comfort = [0, 0, 0, 0, 0, 0];
+  return d;
 }
 // the bots' state for a game: moods (kept between hands), what they've seen
 // everyone do lately (for the adaptive ranges), and this hand's ranges
 function pkAiInit(T, mood) {
   T.ai = {
-    mood: mood || pkMood(),
+    mood: pkMoodFix(mood),
     stats: T.seats.map(() => ({ vpip: 0.24, pfr: 0.17, agg: 0.4, ftb: 0.42, n: 0 })),
     std: [], adp: [], str: null, lastSaw: [], hand: {}, results: null
   };
@@ -650,7 +657,9 @@ function pkAiSaw(T, seat, kind, before) {
   if (kind === 'check' && T.street !== 'preflop') A.hand.checked[seat] = true;
   const frac = before.pot ? Math.max(0, (T.seats[seat].bet - before.mine) / before.pot) : 1;
   [true, false].forEach(std => {
-    const R = std ? A.std[seat] : A.adp[seat], est = pkEst(T, seat, std);
+    // (ace's textbook ranges for you bend to what you've shown her)
+    const r = A.mood.ace.read;
+    const R = std ? A.std[seat] : A.adp[seat], est = std && seat === 0 ? { l: r.l, a: r.b, b: r.b, f: 1 } : pkEst(T, seat, std);
     if (before.street === 'preflop') {
       const behind = pkBehind(T, seat);
       for (let i = 0; i < 1326; i++) if (R[i] > 0) R[i] *= Math.max(0.01, pkPreLikelihood(PK_CPCT[i], kind, before.level, behind, est));
@@ -703,7 +712,11 @@ function pkRangeFor(T, me, them) {
   if (PK_PERSONA[T.seats[me].id].gto && (them === 0 || them === 5)) return T.ai.std[them];
   return T.ai.adp[them];
 }
-const pkEstFor = (T, me, them) => pkEst(T, them, PK_PERSONA[T.seats[me].id].gto && (them === 0 || them === 5));
+function pkEstFor(T, me, them) {
+  const e = pkEst(T, them, PK_PERSONA[T.seats[me].id].gto && (them === 0 || them === 5));
+  const r = them === 0 && T.ai.mood[T.seats[me].id] && T.ai.mood[T.seats[me].id].read;
+  return r ? { ...e, l: e.l * r.l, a: e.a * r.b, b: e.b * r.b } : e;
+}
 // who's still in against seat, and their ranges as seat sees them
 function pkOpps(T, s) {
   const opp = T.seats.filter(o => o.i !== s.i && pkInHand(o));
@@ -738,6 +751,7 @@ function pkDecidePre(T, s, id, P, M, L) {
     return clampN(eq + pkGauss() * P.skill, 0, 1);
   };
   const lastRaiseTo = T.bet;
+  if (id === 'neville') return pkNevillePre(T, s, M, L, { p, level, pair, suited, hiR, unit, limpers, call, raise, lastRaiseTo });
 
   // the straddler or big blind with nothing to call: check, or raise the limpers
   if (level === 0 && L.canCheck) {
@@ -770,8 +784,6 @@ function pkDecidePre(T, s, id, P, M, L) {
       return fold();
     }
     if (p < open) return raise(size, tilt ? 'tilt' : wild ? 'wild' : 'open');
-    // neville limps his small pairs in the hope of a set instead of raising them
-    if (id === 'neville' && pair && rnd < 0.4) return call('limp');
     if (wild && p < 0.8 && rnd < 0.5) return call('wildcall');
     if (limpers && p < open * 1.6 && (pair || suited)) return call('limp');
     return fold();
@@ -814,14 +826,6 @@ function pkDecidePre(T, s, id, P, M, L) {
     if (p < 0.5 + 0.05 * g && commit < 0.3 + 0.04 * g) return call('grudgecall');
   }
 
-  // neville facing a three bet or more: he only carries on with the very top,
-  // and he's even jumpier when it's you or ace raising
-  if (id === 'neville' && level >= 2) {
-    const scared = agg.i === 0 || agg.i === 3 ? 0.7 : 1;
-    if (p < 0.009 * scared) return raise(L.maxTo <= lastRaiseTo * 3 ? L.maxTo : lastRaiseTo * 2.3, 'value');
-    if (p < 0.03 * scared && commit < 0.3) return call('call');
-    return fold();
-  }
   // a solid player: value raises off the top of the range (wider against a
   // loose raiser), the odd bluff with hands that block the top or play well,
   // and calls when the price is right
@@ -835,7 +839,6 @@ function pkDecidePre(T, s, id, P, M, L) {
   if (p < vThr) {
     // ace mixes in a call now and then with the top so she's never only raising it
     if (P.gto && level <= 2 && p > 0.01 && rnd < 0.18) return call('trap');
-    if (id === 'neville' && level === 1 && rnd < 0.4) return call('trap');
     return raise(raiseTo, level >= 3 ? 'jam' : 'value');
   }
   if (level <= 2 && bluffBand && rnd < bluffP) return raise(raiseTo, 'bluff3');
@@ -850,9 +853,41 @@ function pkDecidePre(T, s, id, P, M, L) {
   const real = (ip ? 0.9 : 0.76) - 0.04 * callers - (blind || level >= 2 ? 0 : 0.05) + (pair || suited ? 0.05 : 0) * (stackBB > 60 && level <= 1 ? 1 : 0);
   let margin = P.callAdj + (commit > 0.4 ? 0.02 : 0);
   if (id === 'brock') margin += 0.015 + 0.02 * g;
-  if (id === 'neville' && commit > 0.15) margin -= 0.05;
   if (eq * real + margin >= needed) return call(level >= 3 ? 'calljam' : 'call');
   return fold();
+}
+
+// neville is a nervous beginner (alex): he plays on fear, not on the maths.
+// before the flop he limps and calls a lot of hands he likes the look of and
+// only raises his very best, small. what makes him fold is the size of a
+// raise, not his cards: an open bigger than about three and a half big blinds,
+// or any three bet, and he lets go of hands he'd happily call smaller. he's
+// jumpier still against you and ace, tighter against anyone who's been beating
+// him, and looser against anyone he's been beating (comfort).
+function pkNevillePre(T, s, M, L, h) {
+  const { p, level, pair, suited, hiR, unit, limpers, call, raise, lastRaiseTo } = h;
+  const rnd = Math.random();
+  const nope = why => (L.canCheck ? { type: 'check', why: 'check' } : { type: 'fold', why });
+  if (level === 0) {
+    if (L.canCheck) return p < 0.035 ? raise(T.bet + unit * 2 * (1 + limpers), 'raise') : { type: 'check', why: 'check' };
+    if (p < 0.06) return raise(unit * 2 + unit * limpers, 'raise');
+    if (p < 0.36 || pair || (suited && hiR >= 8) || (hiR >= 10 && p < 0.5)) return call('limp');
+    return nope('fold');
+  }
+  const agg = T.aggressor >= 0 ? T.aggressor : T.bb;
+  const comfort = M.neville.comfort[agg] || 0, jumpy = agg === 0 || agg === 3 ? 0.82 : 1;
+  const big = level >= 2 || T.bet / T.blinds.bb > 3.5;
+  const commit = L.toCall / (s.stack + s.bet);
+  if (level === 1) {
+    if (p < 0.02 && rnd < 0.6) return raise(lastRaiseTo * 2.4, 'raise');
+    const width = (big ? 0.07 : 0.3) * (1 + 0.5 * comfort) * jumpy;
+    if (p < width && commit < 0.3) return call('call');
+    return nope(p < 0.3 ? 'scaredfold' : 'fold');
+  }
+  // a three bet or more: only the very top goes on, and aces get it in
+  if (p < 0.008) return rnd < 0.5 && L.toCall < s.stack * 0.5 ? call('call') : raise(L.maxTo, 'allin');
+  if (p < 0.03 * (1 + 0.5 * comfort) * jumpy && commit < 0.35) return call('call');
+  return nope(p < 0.06 ? 'scaredfold' : 'fold');
 }
 
 function pkDecidePost(T, s, id, P, M, L) {
@@ -880,13 +915,6 @@ function pkDecidePost(T, s, id, P, M, L) {
   const hasAce = s.cards.some(c => pkRank(c) === 12), kick = Math.min(...s.cards.map(pkRank));
   const topPair = (myVal >> 20) === 1 && ((myVal >> 16) & 15) === topBoard;
   const pot = L.pot, toCall = L.toCall, needed = toCall / (pot + toCall);
-  if (id === 'neville') {
-    if (hasAce && kick >= 7 && boardPaired && wet && (myVal >> 20) <= 2) perceived += 0.2;
-    else if (topPair || ((myVal >> 20) === 1 && ((myVal >> 16) & 15) > topBoard)) perceived += 0.09;
-    // otherwise a big bet scares him: the bigger it is, the worse he thinks
-    // his hand is
-    else if (toCall) perceived *= 1 - 0.28 * Math.min(1.5, toCall / Math.max(1, pot - toCall));
-  }
   const ip = pkInPosition(T, s.i);
   const eff = Math.min(s.stack + s.bet, Math.max(...opp.map(o => o.stack + o.bet)));
   const spr = eff / Math.max(1, pot);
@@ -929,6 +957,37 @@ function pkDecidePost(T, s, id, P, M, L) {
     return wet ? 0.66 : 0.5;
   };
   const valueT = 0.6 + 0.07 * (nOpp - 1) + (street === 'river' ? 0.03 : 0);
+
+  // neville after the flop. big bets frighten him, on the turn most of all,
+  // so he lets go of top pair and second pair he should call down with. small
+  // bets he calls with any pair, like a beginner. and he overrates his weaker
+  // strong hands: top pair on a wet board or a paired one, a straight with a
+  // flush possible, a flush on a double paired board. with those he feels
+  // safe, calls anything and even raises. he bets small when he likes his
+  // hand, and never bluffs.
+  if (id === 'neville') {
+    const cat = myVal >> 20;
+    const counts = {};
+    board.forEach(c => { counts[pkRank(c)] = (counts[pkRank(c)] || 0) + 1; });
+    const doublePaired = Object.values(counts).filter(n => n >= 2).length >= 2;
+    const overrated = (topPair && (wet || boardPaired)) || (cat === 4 && flushy) || (cat === 5 && doublePaired);
+    const agg = T.aggressor >= 0 && T.aggressor !== s.i ? T.aggressor : -1;
+    const comfort = agg >= 0 ? M.neville.comfort[agg] || 0 : 0;
+    const feel = overrated ? Math.max(eq, 0.82) : eq;
+    if (L.canCheck) {
+      if (feel > 0.7 && rnd < 0.75) return bet(0.4 + Math.random() * 0.15, overrated && eq < 0.7 ? 'overvalue' : 'value');
+      return check();
+    }
+    const bf = toCall / Math.max(1, pot - toCall);
+    const fear = bf >= 0.7 ? (street === 'turn' ? 0.55 : street === 'river' ? 0.72 : 0.78) : bf <= 0.5 ? 1.12 : 1;
+    let f = overrated ? feel : feel * fear * (agg === 0 || agg === 3 ? 0.92 : 1);
+    f *= 1 + 0.15 * comfort;
+    if (bf <= 0.5 && myS > 0.45 && !overrated) f = Math.max(f, needed + 0.05);
+    if ((overrated || eq > 0.86) && L.canRaise && rnd < (overrated ? 0.35 : 0.6)) return raiseTo(2.6, overrated && eq < 0.7 ? 'overvalue' : 'value');
+    const nreal = (ip ? 1 : 0.9) * (street === 'river' ? 1 : 0.96);
+    if (f * nreal >= needed) return call(overrated && eq * nreal < needed + 0.1 ? 'overvalue' : 'call');
+    return fold(eq * nreal >= needed ? 'scaredfold' : 'fold');
+  }
 
   if (L.canCheck) {
     // checked to us: bet for value, bluff some, check the rest
@@ -990,13 +1049,6 @@ function pkDecidePost(T, s, id, P, M, L) {
   const real = (ip ? 1 : 0.9) * (street === 'river' ? 1 : 0.96);
   const implied = draw >= 2 && street !== 'river' && spr > 1.5 ? 0.04 : 0;
   let margin = P.callAdj;
-  if (id === 'neville') {
-    // he folds more and more as the hand goes on, folds to raises, and folds
-    // to you and ace most of all
-    margin += { flop: -0.03, turn: -0.07, river: -0.09 }[street] + (betFrac > 0.8 ? -0.05 : 0);
-    if (T.raises >= 2 || (T.raises >= 1 && A.hand.postAgg[s.i])) margin -= 0.1;
-    if (T.aggressor === 0 || T.aggressor === 3) margin -= 0.04;
-  }
   if (wild) margin += 0.04;
   if (tilt) margin += 0.05;
   if (target) margin += 0.05 * g;
@@ -1091,16 +1143,28 @@ function pkAiHandEnd(T, showdown, busted) {
   // brutus
   const b = T.seats[1];
   if (b.cards && !b.out || busted.includes(1)) {
-    const bm = M.brutus, lost = net[1] < 0 && (invested[1] >= T.blinds.bb * 2 || showdown && invested[1] > 0) && b.vol, won = net[1] > 0;
-    if (won) { bm.wins++; bm.losses = 0; }
-    else if (lost) { bm.losses++; bm.wins = 0; }
+    const bm = M.brutus, lost = net[1] < 0 && b.vol, won = net[1] > 0, foldedPre = !won && !b.vol && b.cards;
+    if (won) { bm.wins++; bm.losses = 0; bm.folds = 0; }
+    else if (lost) { bm.losses++; bm.wins = 0; bm.folds = 0; }
+    else if (foldedPre) bm.folds = (bm.folds || 0) + 1;
     // (a couple of pots without losing one in between calms him down, or a
     // good while without losing anything)
     bm.quiet = lost ? 0 : (bm.quiet || 0) + 1;
-    if (!bm.tilt && bm.losses >= 2) { bm.tilt = true; res.events.push('brutusTilt'); }
-    else if (bm.tilt && (bm.wins >= 2 || bm.quiet >= 10)) { bm.tilt = false; bm.losses = 0; bm.wins = 0; res.events.push('brutusCalm'); }
+    if (!bm.tilt && (bm.losses >= 3 || bm.folds >= 5)) { bm.tilt = true; res.events.push('brutusTilt'); }
+    else if (bm.tilt && (bm.wins >= 2 || bm.quiet >= 10)) { bm.tilt = false; bm.losses = 0; bm.wins = 0; bm.folds = 0; res.events.push('brutusCalm'); }
     if (lost && (bm.tilt || busted.includes(1))) res.events.push('brutusThrow');
   }
+  // neville: losing pots to someone makes him more scared of them, winning
+  // them makes him a bit braver against them, and it fades slowly
+  const nv = T.seats[2], nm = M.neville;
+  if (nv.cards && invested[2] >= T.blinds.bb * 2) {
+    T.seats.forEach((o, j) => {
+      if (j === 2 || !o.cards || invested[j] < T.blinds.bb * 2) return;
+      if (net[2] < 0 && o.won > 0) nm.comfort[j] = clampN(nm.comfort[j] - 0.2, -1, 1);
+      else if (net[2] > 0 && net[j] < 0) nm.comfort[j] = clampN(nm.comfort[j] + 0.15, -1, 1);
+    });
+  }
+  nm.comfort = nm.comfort.map(c => c * 0.985);
   // sparks
   const sp = T.seats[5];
   if (!sp.out || busted.includes(5)) {
@@ -1123,6 +1187,38 @@ function pkAiHandEnd(T, showdown, busted) {
   // ace's respect for you grows when you take a pot off her
   if (net[0] > 0 && net[3] < 0 && invested[3] >= T.blinds.bb * 2) { M.ace.respect++; res.events.push('aceBeaten'); }
   A.results = res;
+}
+// you've shown your cards after a hand (bluff says whether it was one, lost
+// is everyone who lost chips in it, folded everyone who folded). ace takes it
+// to heart and bends her reads of you; sparks does too, a bit, because he
+// doesn't care that much; neville gets more scared of you and learns only a
+// tiny bit; brock, if he lost to you, takes it personally; and brutus, if you
+// bluffed him off his hand, is that much closer to tilting.
+function pkAiYouShowed(T, bluff, lost, folded) {
+  const M = T.ai.mood, out = [];
+  const lean = (r, k) => {
+    r.b = clampN(r.b * (bluff ? 1 + 0.3 * k : 1 - 0.15 * k), 0.6, 2.4);
+    r.l = clampN(r.l * (bluff ? 1 + 0.12 * k : 1 - 0.05 * k), 0.6, 2);
+  };
+  lean(M.ace.read, 1);
+  lean(M.sparks.read, 0.4);
+  lean(M.neville.read, 0.1);
+  M.neville.comfort[0] = clampN(M.neville.comfort[0] - 0.15, -1, 1);
+  if (lost.includes(4)) { M.brock.grudge = Math.min(7, M.brock.grudge + 1); out.push('brockShown'); }
+  if (bluff && folded.includes(1)) {
+    const bm = M.brutus;
+    bm.losses++;
+    out.push('brutusShown');
+    if (!bm.tilt && bm.losses >= 3) { bm.tilt = true; out.push('brutusTilt'); }
+  }
+  return out;
+}
+// how weak a hand was by the end (for telling bluffs from value when it's
+// shown): before the flop by where it sits in the starting hands, after it by
+// how far up the made hands on the board it is
+function pkWeak(cards, board) {
+  if (board.length < 3) return pkPct(cards[0], cards[1]) > 0.45;
+  return pkStrengths(board).s[pkComboIndex(cards[0], cards[1])] < 0.45;
 }
 // poker core end
 
@@ -1514,6 +1610,21 @@ function makeCardBack() {
   return G.canvas();
 }
 const PK_FACE = Array.from({ length: 52 }, (_, c) => makeCardFace(c));
+// a card greyed out (your cards after you fold): no colour, and darker
+const PK_GREY = new Map();
+function pkGrey(im) {
+  if (PK_GREY.has(im)) return PK_GREY.get(im);
+  const c = mk(im.width, im.height), g = c.getContext('2d');
+  g.drawImage(im, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height);
+  for (let i = 0; i < d.data.length; i += 4) {
+    const v = (d.data[i] * 0.3 + d.data[i + 1] * 0.59 + d.data[i + 2] * 0.11) * 0.55;
+    d.data[i] = d.data[i + 1] = d.data[i + 2] = v;
+  }
+  g.putImageData(d, 0, 0);
+  PK_GREY.set(im, c);
+  return c;
+}
 const PK_BACK = makeCardBack();
 
 // the chips are the ores themselves in little stacks: ingots for iron and
@@ -1695,11 +1806,11 @@ function makeCavern(w, h, tx, ty) {
 // chips, plate is their name and stack.
 const PK_SEATS = [
   { view: 'back', body: [0, 100], cards: [0, 48], stack: [-48, 57], bet: [38, 40], plate: [0, 108] },
-  { view: 'side', flip: false, body: [-164, 20], cards: [-120, -2], stack: [-112, 24], bet: [-86, 12], plate: [-164, 38] },
+  { view: 'side', flip: false, body: [-151, 20], cards: [-120, -2], stack: [-112, 24], bet: [-86, 12], plate: [-151, 38] },
   { view: 'front', body: [-74, -47], cards: [-72, -35], stack: [-104, -27], bet: [-56, -19], plate: [-74, -97] },
   { view: 'front', body: [0, -56], cards: [0, -44], stack: [-34, -34], bet: [6, -20], plate: [0, -104] },
   { view: 'front', body: [74, -47], cards: [72, -35], stack: [104, -27], bet: [56, -19], plate: [74, -97] },
-  { view: 'side', flip: true, body: [164, 20], cards: [120, -2], stack: [112, 24], bet: [86, 12], plate: [164, 38] }
+  { view: 'side', flip: true, body: [151, 20], cards: [120, -2], stack: [112, 24], bet: [86, 12], plate: [151, 38] }
 ];
 const PK_DECK = [24, -44];
 const PK_NAMES = { you: 'You', brutus: 'Brutus', neville: 'Neville', ace: 'Ace', brock: 'Brock', sparks: 'Sparks' };
@@ -1809,6 +1920,7 @@ function pvTick(dt) {
     if (pkCave.lava.length) PV.parts.push({ x: pkCave.lava[k], y: pkCave.lava[k + 1], vx: (Math.random() - 0.5) * 8, vy: -10 - Math.random() * 14, g: 0, life: 1.2 + Math.random(), t: 0, col: Math.random() < 0.5 ? '#ffd23f' : '#ff8a1c', size: 1, ember: true });
   }
   for (let k = PV.bubbles.length - 1; k >= 0; k--) { PV.bubbles[k].t += dt; if (PV.bubbles[k].t > PV.bubbles[k].dur) PV.bubbles.splice(k, 1); }
+  pvSayTick();
   PV.shake = Math.max(0, PV.shake - dt * 8);
   pvFlips(dt);
 }
@@ -1827,7 +1939,7 @@ function pvDrawCard(o) {
   if (o.a !== undefined && o.a < 1) pkCtx.globalAlpha = Math.max(0, o.a);
   let up = o.up, sx = 1;
   if (o.flip !== undefined && o.flip >= 0 && o.flip < 1) { sx = Math.abs(1 - o.flip * 2); up = o.flip >= 0.5 ? o.flipTo : !o.flipTo; }
-  const im = up ? PK_FACE[o.c] : PK_BACK;
+  const im = o.grey ? pkGrey(up ? PK_FACE[o.c] : PK_BACK) : up ? PK_FACE[o.c] : PK_BACK;
   const w = PK_CARD_W * big, h = PK_CARD_H * big;
   pkCtx.fillStyle = 'rgba(0,0,0,0.35)';
   pkCtx.fillRect(pX(o.x - w / 2 + 1), pY(o.y - h / 2 + 2), Math.round(w * PS * sx), h * PS);
@@ -1863,7 +1975,7 @@ function pvHands(v, t) {
     L = { x: b.x - 11, y: edge + 9 }; R = { x: b.x + 11, y: edge + 9 };
     if (v.id === 'ace') R = { x: PTX + PK_DECK[0] - 6, y: PTY + PK_DECK[1] + 4 };
   }
-  if (side) { L = { x: b.x + dir * 22, y: b.y - 13 }; R = { x: b.x + dir * 25, y: b.y - 6 }; }
+  if (side) { L = { x: b.x + dir * 15, y: b.y - 6 }; R = { x: b.x + dir * 18, y: b.y - 1 }; }
   const to = v.poseTo;
   const lerp = (a, p, k) => ({ x: a.x + (p.x - a.x) * k, y: a.y + (p.y - a.y) * k });
   const there = k => Math.sin(Math.min(1, k) * Math.PI);
@@ -1918,10 +2030,11 @@ function pvDrawArms(v, t) {
     pvArm(b.x - 7 + (L.x - b.x + 7) * 0.25, Math.max(edge, L.y - 10), L.x, L.y, sleeve, skin);
     pvArm(b.x + 7 + (R.x - b.x - 7) * 0.25, Math.max(edge, R.y - 10), R.x, R.y, sleeve, skin);
   } else {
-    const dir = S0.flip ? -1 : 1, sy = b.y - 13;
-    L = reach({ x: b.x + dir * 2, y: sy }, L, 28); R = reach({ x: b.x + dir * 5, y: sy }, R, 32);
-    pvArm(b.x + dir * 2, sy + 1, L.x, L.y, sleeve, skin);
-    pvArm(b.x + dir * 5, sy + 2, R.x, R.y, sleeve, skin);
+    // (from the shoulders, below the chin, and no longer than the others' arms)
+    const dir = S0.flip ? -1 : 1, sy = b.y - 9;
+    L = reach({ x: b.x + dir * 3, y: sy }, L, 16); R = reach({ x: b.x + dir * 6, y: sy }, R, 18);
+    pvArm(b.x + dir * 3, sy, L.x, L.y, sleeve, skin);
+    pvArm(b.x + dir * 6, sy + 1, R.x, R.y, sleeve, skin);
   }
 }
 // you, from behind, in the seat at the bottom: your own sprite's facing away
@@ -2151,7 +2264,14 @@ const PK_LINES = {
     throw: ['STUPID CARDS!', 'TAKE YOUR CARDS BACK!', 'WHO SHUFFLED THIS?!'],
     bust: ['This is a JOKE!', 'Rigged. Rigged I tell you!'],
     vsSparks: ['Shut it, Sparks.', 'Keep laughing, matchstick.', 'One more word, Sparks.'],
-    beatSparks: ['Who\'s laughing now, Sparks?', 'Take THAT, matchstick!']
+    beatSparks: ['Who\'s laughing now, Sparks?', 'Take THAT, matchstick!'],
+    toSparksLoss: ['Laugh it up, matchstick.', 'Next time, Sparks. NEXT TIME.'],
+    sorry: ['...Sorry, Ace.', 'Hmph. Fine.', 'They slipped.'],
+    breathe: ['I AM breathing!', 'Don\'t tell me to breathe!'],
+    thanks: ['Hmph. Obviously.', 'Course it was.'],
+    beatenByYou: ['You got lucky. Next one\'s MINE.', 'Don\'t get comfortable over there.', 'I\'ll remember that, newbie.'],
+    show: ['LOOK AT IT! LOOK!', 'Read it and weep!'],
+    seeBluff: ['YOU HAD THAT?!', 'You bluffed ME? With THAT?!']
   },
   neville: {
     fold: ['I-I fold.', 'Too rich for me.', 'Nope. Nope nope.', 'I\'ll sit this one out.'],
@@ -2164,14 +2284,29 @@ const PK_LINES = {
     vsAce: ['Ace, please, not again...', 'She knows. She always knows.', 'Why is it always you, Ace?'],
     win: ['Oh! I won? I won!', 'Phew.', 'Sorry! Sorry. But I won.'],
     lose: ['I knew it. I knew it.', 'Why do I even play.', 'Of course.'],
-    bust: ['I\'m going to go sit by the lava and think about my choices.', 'That\'s it. I\'m out. Good game.']
+    bust: ['I\'m going to go sit by the lava and think about my choices.', 'That\'s it. I\'m out. Good game.'],
+    toSparks: ['I-I\'m blinking! See?', 'Please don\'t do that.'],
+    thanks: ['R-really? Thanks, Ace!', 'Oh! Um. Thank you!'],
+    beatenByYou: ['I-I knew you had it. I knew it!', 'Why do you always have it against me?', 'Okay. I\'m folding to you from now on.'],
+    show: ['O-okay... here.', 'Fine. It\'s not much.'],
+    seeBluff: ['S-so you DO bluff...', 'That\'s... that\'s mean.'],
+    seeValue: ['I knew you had it. I always fold to you for a reason.']
   },
   ace: {
     raise: ['Raise.', 'I\'ll make it {x}.', 'Raise to {x}.'],
     call: ['Call.', 'I\'ll call.'],
     allin: ['All in.', 'I\'m all in.'],
     win: ['Nice hand.', 'As expected.', 'The numbers rarely lie.'],
-    praise: { brutus: ['Well played, Brutus.', 'Good hand, Brutus. Don\'t let it go to your head.'], neville: ['Nice hand, Neville. Really.', 'See, Neville? You can do it.'], brock: ['Fine. Good hand, Brock.', 'Well played. Don\'t make it weird, Brock.'], sparks: ['Good call, Sparks. Annoyingly good.', 'That shouldn\'t work. And yet.'] },
+    praise_brutus: ['Well played, Brutus.', 'Good hand, Brutus. Don\'t let it go to your head.'],
+    praise_neville: ['Nice hand, Neville. Really.', 'See, Neville? You can do it.'],
+    praise_brock: ['Fine. Good hand, Brock.', 'Well played. Don\'t make it weird, Brock.'],
+    praise_sparks: ['Good call, Sparks. Annoyingly good.', 'That shouldn\'t work. And yet.'],
+    beatenByYou: ['Hm. Well played.', 'I\'ll adjust.', 'You found the one line I didn\'t account for.'],
+    toSparks: ['Done. It\'s still a losing play, Sparks.', 'I did the math. You\'re still behind.'],
+    toBrockWin: ['Enjoy it. Variance evens out.', 'Long run, Brock. Long run.'],
+    toBrockLose: ['It\'s called a range, Brock.', 'Luck had nothing to do with it.'],
+    toNeville: ['Nothing personal, Neville.', 'Breathe. It\'s just cards.'],
+    noted: ['Noted.', 'Interesting. I\'ll remember that.', 'So that\'s how you play it.'],
     shocked: ['...Huh. I didn\'t expect that.', 'Interesting. That shouldn\'t have worked.', 'You\'re full of surprises.', 'Wait, what?'],
     impressed: ['Okay. You\'re actually good.', 'I\'m starting to think you know exactly what you\'re doing.', 'You play like nobody I\'ve seen down here.'],
     chastise: ['Brutus. The cards did nothing to you.', 'Throw the cards at me again and you\'re dealt out.', 'Brutus! Pick those up.', 'Really, Brutus? Again?'],
@@ -2197,7 +2332,14 @@ const PK_LINES = {
     slam: ['ARE YOU KIDDING ME?!', 'NO WAY. NO WAY!', 'UNREAL!'],
     win: ['Too easy.', 'And that\'s why they call me the best.', 'Ship it.'],
     lose: ['Whatever.', 'I let you have that one.'],
-    bust: ['Whatever. I let you win.', 'This game is so rigged.']
+    bust: ['Whatever. I let you win.', 'This game is so rigged.'],
+    beatenByYou: ['Beginner\'s luck doesn\'t last forever!', 'You won\'t get that lucky twice, rookie.'],
+    toSparks: ['Laugh it up, Sparks.', 'At least I look at my cards.'],
+    toAce: ['Nobody asked, Ace.', 'Numbers don\'t win pots. I do.'],
+    thanks: ['I know.', 'Obviously.'],
+    showBluffYou: ['Nothing! I had NOTHING! Learn something, rookie.', 'Ha! Look at that. Nothing. You folded to NOTHING.'],
+    showBluff: ['Ha! Nothing! You folded to NOTHING!', 'Bluffed. Get used to it.'],
+    seeShow: ['Rub it in, why don\'t you.', 'Whatever. Lucky.', 'You think that\'s funny, rookie?']
   },
   sparks: {
     wildcall: ['I guess I have to call.', 'I can\'t win if I don\'t call!', 'Call! Obviously.', 'Strawberry Jam!'],
@@ -2216,7 +2358,13 @@ const PK_LINES = {
     tauntBrock: ['Nice hand, champ. Oh wait.', 'Brock, buddy, maybe try a different game?'],
     tauntNeville: ['Neville, you can blink, you know.', 'Boo! Hehe.'],
     tauntAce: ['Ace, do the math on THAT.', 'Calculate this!'],
-    bust: ['Strawberry Jam... Good game, everybody!', 'Out! That was fun though.']
+    bust: ['Strawberry Jam... Good game, everybody!', 'Out! That was fun though.'],
+    toBrutus: ['Ooh, scary!', 'Love you too, big guy!', 'Hehe, he\'s steaming!'],
+    thanks: ['Strawberry Jam! Thanks, Ace!', 'Aw, shucks.'],
+    beatenByYou: ['Ha! You got me! Strawberry Jam!', 'Nice one! I\'ll get you back!', 'Ooh, you\'re good!'],
+    show: ['Read \'em and weep!', 'Just so you know, I had THIS!', 'Look! Look what I had!'],
+    askNeville: ['Come on Neville, show us!', 'Show! Show! Show!', 'Neville! What did you have?'],
+    knows: ['Hahaha! This guy really knows how to play!']
   },
   you: {}
 };
@@ -2242,16 +2390,42 @@ const pkV = (i, verb) => (i ? verb : verb.replace(/^\w+/, w => PK_YOU_VERB[w] ||
 function pvSay(i, text, force = false, dur) {
   if (!PV || !text) return;
   const v = PV.seats[i];
-  const now = PV.time;
-  if (!force && v.saidAt && now - v.saidAt < 5) return;
-  v.saidAt = now;
-  const k = PV.bubbles.findIndex(b => b.seat === i);
-  if (k >= 0) PV.bubbles.splice(k, 1);
-  PV.bubbles.push({ seat: i, text, t: 0, dur: dur || 2.2 + text.length * 0.045 });
-  v.talkT = Math.min(1.6, 0.3 + text.length * 0.035);
-  pvLog(`${pkWho(i)}: ${text.replace(/</g, '&lt;')}`, 'talk');
-  const n = Math.min(8, Math.ceil(text.length / 3));
-  for (let k2 = 0; k2 < n; k2++) setTimeout(() => sfx.pkVoice(PK_IDS[i]), k2 * 70);
+  if (!force && v.saidAt && PV.time - v.saidAt < 5) return;
+  v.saidAt = PV.time;
+  if (PV.sayQ.length > 4 && !force) return;
+  PV.sayQ.push({ i, text, dur, force, at: PV.time });
+}
+function pvSpeak(q) {
+  const v = PV.seats[q.i];
+  PV.bubbles.length = 0;
+  PV.bubbles.push({ seat: q.i, text: q.text, t: 0, dur: q.dur || 1.9 + q.text.length * 0.04 });
+  v.talkT = Math.min(1.6, 0.3 + q.text.length * 0.035);
+  pvLog(`${pkWho(q.i)}: ${q.text.replace(/</g, '&lt;')}`, 'talk');
+  const n = Math.min(8, Math.ceil(q.text.length / 3));
+  for (let k2 = 0; k2 < n; k2++) setTimeout(() => sfx.pkVoice(PK_IDS[q.i]), k2 * 70);
+  if (q.then) q.then();
+}
+function pvSayTick() {
+  const b = PV.bubbles[0];
+  if (b && b.t < b.dur - 0.15) return;
+  while (PV.sayQ.length && !PV.sayQ[0].force && PV.time - PV.sayQ[0].at > 3.5) PV.sayQ.shift();
+  if (PV.sayQ.length) pvSpeak(PV.sayQ.shift());
+}
+// a line at someone else, and their answer straight after it: nobody gets
+// talked at and says nothing back
+function pvBanter(from, key, to, replyKey, o) {
+  const L = PK_LINES[PK_IDS[from]][key], R = PK_LINES[PK_IDS[to]][replyKey];
+  if (!L || !R || PV.seats[from].out || PV.seats[to].out) return false;
+  pvSay(from, pkFill(pkAny(L), o), true);
+  pvSay(to, pkFill(pkAny(R), o), true);
+  return true;
+}
+// the miners only bicker with each other about a hand they were both in, and
+// not while you're playing one (you've got enough to think about)
+function pvTogether(a, b) {
+  const T = PV.T, inIt = i => T.seats[i].cards && !T.seats[i].out && (T.over ? T.seats[i].total > 0 && (T.seats[i].vol || T.seats[i].won > 0 || !T.seats[i].folded) : pkInHand(T.seats[i]));
+  const youIn = T.seats[0].cards && !T.seats[0].folded && !T.seats[0].out;
+  return inIt(a) && inIt(b) && !youIn;
 }
 function pvSayPick(i, key, chance = 1, o, force) {
   const L = PK_LINES[PK_IDS[i]][key];
@@ -2264,7 +2438,7 @@ function pvSayPick(i, key, chance = 1, o, force) {
 const pkUI = {
   actions: $('#pk-actions'), fold: $('#pk-fold'), call: $('#pk-call'), raise: $('#pk-raise'), allin: $('#pk-allin'),
   slider: $('#pk-slider'), amount: $('#pk-amount'), minus: $('#pk-minus'), plus: $('#pk-plus'), presets: $('#pk-presets'),
-  straddle: $('#pk-straddle'), fast: $('#pk-fast'), leave: $('#pk-leave'), rulesBtn: $('#pk-rules-btn'), status: $('#pk-status')
+  straddle: $('#pk-straddle'), fast: $('#pk-fast'), leave: $('#pk-leave'), rulesBtn: $('#pk-rules-btn'), status: $('#pk-status'), show: $('#pk-show')
 };
 function pvRaiseVal() { return clamp(Math.round(+pkUI.slider.value), +pkUI.slider.min, +pkUI.slider.max); }
 function pvSetRaise(v) {
@@ -2332,6 +2506,7 @@ pkUI.fast.addEventListener('click', () => {
   pkUI.fast.setAttribute('aria-pressed', String(PV.fast));
 });
 pkUI.leave.addEventListener('click', () => pvAskLeave());
+pkUI.show.addEventListener('click', () => pvYouShow());
 pkUI.rulesBtn.addEventListener('click', () => pvRules(!PV.rulesOpen));
 
 // what your two cards are called before the flop
@@ -2360,6 +2535,7 @@ const PV_EV = {
       v.cards = []; v.bet = 0; v.out = T.seats[v.i].out; v.folded = v.out; v.stack = ev.stacks[v.i]; v.pushing = false;
     });
     PV.board = []; PV.pot = 0; PV.handName = ''; PV.winText = null; PV.deck = true; PV.wins = []; PV.runout = false;
+    PV.showInfo = null; pkUI.show.disabled = true; pkUI.show.hidden = true;
     const b = seatAt(ev.button, 'stack'), bt = { x: b.x + (ev.button === 0 ? 30 : PK_SEATS[ev.button].view === 'front' ? 0 : PK_SEATS[ev.button].flip ? -14 : 14), y: b.y + (PK_SEATS[ev.button].view === 'front' ? 10 : ev.button === 0 ? 2 : -14) };
     if (!PV.buttonAt) PV.buttonAt = { ...bt };
     pvTween(PV.buttonAt, bt.x, bt.y, 0.4);
@@ -2400,7 +2576,10 @@ const PV_EV = {
     pvLog(`${pkWho(ev.seat)} ${pkV(ev.seat, say)}`);
     if (ev.kind === 'fold') {
       v.folded = true;
-      v.cards.forEach((o, k) => { o.a = 1; pvTween(o, PTX + (k ? 3 : -3), PTY - 4, 0.35, k * 0.04, () => { o.a = 0; }); o.fade = true; });
+      if (ev.seat === 0) {
+        // yours slide a little way in, as if mucked, and stay there greyed out
+        v.cards.forEach((o, k) => { const tx = o.x + (PTX - o.x) * 0.25 + (k ? 2 : -2), ty = o.y + (PTY - o.y) * 0.25; pvTween(o, tx, ty, 0.3, k * 0.04, () => { o.grey = true; }); });
+      } else v.cards.forEach((o, k) => { o.a = 1; pvTween(o, PTX + (k ? 3 : -3), PTY - 4, 0.35, k * 0.04, () => { o.a = 0; }); o.fade = true; });
       sfx.pkFold();
       pvReact(ev, why);
       if (ev.seat === 0) PV.handName = '';
@@ -2547,29 +2726,30 @@ function pvReact(ev, why) {
     if (ev.kind === 'allin') pvSayPick(i, 'allin', 0.6);
     else if (ev.kind === 'raise' || ev.kind === 'bet') pvSayPick(i, 'raise', 0.2, { x: pkDollars(ev.to) });
   }
+  // brock folding to ace in a hand the two of them are in: she can't resist
+  if (i === 4 && ev.kind === 'fold' && T.aggressor === 3 && pvTogether(3, 4) && Math.random() < 0.3) pvBanter(3, 'vsBrock', 4, 'toAce');
   // and now and then a word when they call
   if (ev.kind === 'call' && id !== 'you' && !PV.bubbles.some(bb => bb.seat === i)) pvSayPick(i, 'call', 0.1);
-  // neville gets nervous when you or ace put money in against him
+  // neville gets nervous when you or ace put money in against him (and ace,
+  // if he says so, answers him)
   if ((i === 0 || i === 3) && (ev.kind === 'raise' || ev.kind === 'bet' || ev.kind === 'allin') && pkInHand(T.seats[2]) && !T.seats[2].allIn) {
     pvMood(2, 'scared', 2.5);
-    if (Math.random() < 0.4) setTimeout(() => PV && pvSayPick(2, i === 0 ? 'vsYou' : 'vsAce', 1), 500);
+    if (Math.random() < 0.4) {
+      if (i === 0) pvSayPick(2, 'vsYou', 1);
+      else if (pvTogether(2, 3)) pvBanter(2, 'vsAce', 3, 'toNeville');
+    }
   }
-  // sparks can't help needling brutus
-  if (i === 1 && big && pkInHand(T.seats[5]) && Math.random() < 0.35) setTimeout(() => PV && pvSayPick(5, 'tauntBrutus', 1), 650);
-  if (i === 5 && big && pkInHand(T.seats[1]) && Math.random() < 0.3) setTimeout(() => PV && pvSayPick(1, 'vsSparks', 1), 650);
+  // sparks needles brutus whenever he's steaming, and they go at each other
+  // when they're in a hand together
+  if (i === 1 && big && Math.random() < 0.35 && (M.brutus.tilt || pvTogether(1, 5))) pvBanter(5, 'tauntBrutus', 1, 'vsSparks');
+  else if (i === 5 && big && Math.random() < 0.3 && pvTogether(1, 5)) pvBanter(1, 'vsSparks', 5, 'toBrutus');
 }
 // a bit of table talk now and then at the start of a hand
+// between hands the only one who can't keep quiet is sparks, and only when
+// brutus is steaming (who answers him, every time)
 function pvChatter() {
   const T = PV.T;
-  if (Math.random() > 0.12) return;
-  const alive = i => !T.seats[i].out;
-  const opts = [];
-  if (alive(5) && alive(1)) opts.push(() => pvSayPick(5, 'tauntBrutus', 1), () => { pvSayPick(5, 'tauntBrutus', 1); setTimeout(() => PV && pvSayPick(1, 'vsSparks', 1, null, true), 1400); });
-  if (alive(5) && alive(4)) opts.push(() => pvSayPick(5, 'tauntBrock', 1));
-  if (alive(5) && alive(2)) opts.push(() => pvSayPick(5, 'tauntNeville', 1));
-  if (alive(5) && alive(3)) opts.push(() => pvSayPick(5, 'tauntAce', 1));
-  if (alive(3) && alive(4)) opts.push(() => pvSayPick(3, 'vsBrock', 1));
-  if (opts.length) pkAny(opts)();
+  if (T.ai.mood.brutus.tilt && !T.seats[1].out && !T.seats[5].out && Math.random() < 0.25) pvBanter(5, 'tauntBrutus', 1, 'vsSparks');
 }
 // after a hand: winners and losers react, moods change (with brutus's steam,
 // brock's slam, and cards thrown at ace), and the game's saved
@@ -2582,38 +2762,58 @@ function pvAfterHand() {
   const bigPot = Math.max(...net.map(Math.abs)) >= T.blinds.bb * 10;
   const ev = res.events;
   const later = (fn, ms) => setTimeout(() => { if (PV && !PV.closing) fn(); }, ms / PV.speed);
-  // the winner, when it's a decent pot
-  if (top > 0 && bigPot) {
-    const id = PK_IDS[top];
-    if (id === 'brock' && losers.includes(0)) pvSayPick(top, 'beatYou', 0.7, null, true);
-    else if (id === 'brock' && losers.includes(3)) pvSayPick(top, 'beatAce', 0.8, null, true);
-    else if (id === 'brutus' && losers.includes(5)) pvSayPick(top, 'beatSparks', 0.8, null, true);
-    else if (id === 'sparks' && losers.includes(1)) pvSayPick(top, 'beatBrutus', 0.8, null, true);
-    else pvSayPick(top, 'win', 0.5, null, true);
-  }
-  // ace: praise for whoever beat her, and surprise (then respect) when it's you
-  if (losers.includes(3) && top >= 0 && top !== 3 && bigPot && !T.seats[3].out) {
-    if (top === 0) {
+  const alive = i => !T.seats[i].out;
+  // the biggest loser among the miners, for who reacts
+  const victim = losers.find(i => i > 0 && alive(i));
+  if (top === 0 && bigPot && victim !== undefined) {
+    // you beat them: whoever lost the most to you has something to say to you,
+    // and only them, so they don't all talk at once
+    if (victim === 4) {
+      later(() => {
+        pvPose(4, 'slam', 0.7);
+        pvMood(4, 'angry', 3);
+        setTimeout(() => { if (PV) { PV.shake = 3; sfx.pkSlam(); pvSayPick(4, Math.random() < 0.5 ? 'loseYou' : 'beatenByYou', 1, null, true); } }, 330 / PV.speed);
+      }, 600);
+      extra += 0.8;
+    } else if (victim === 3) {
       PQ.respect = T.ai.mood.ace.respect;
-      later(() => { pvMood(3, 'shock', 2.5); pvSayPick(3, T.ai.mood.ace.respect >= 3 ? 'impressed' : 'shocked', 1, null, true); }, 900);
-    } else later(() => pvSay(3, pkAny(PK_LINES.ace.praise[PK_IDS[top]]), true), 900);
+      pvMood(3, 'shock', 2.5);
+      pvSayPick(3, T.ai.mood.ace.respect >= 3 ? 'impressed' : Math.random() < 0.5 ? 'shocked' : 'beatenByYou', 1, null, true);
+    } else {
+      pvMood(victim, victim === 2 ? 'sad' : victim === 1 ? (T.ai.mood.brutus.tilt ? 'fume' : 'angry') : 'grin', 2.5);
+      pvSayPick(victim, 'beatenByYou', victim === 5 ? 0.7 : 0.9, null, true);
+    }
+  } else if (top > 0 && bigPot) {
+    // a miner won it. if you weren't in it, the two of them might have words
+    // (and the other one always answers); otherwise the winner just crows
+    const id = PK_IDS[top], beat = victim;
+    let said = false;
+    if (beat !== undefined && pvTogether(top, beat)) {
+      if (id === 'brock' && beat === 3) said = pvBanter(4, 'beatAce', 3, 'toBrockWin');
+      else if (id === 'ace' && beat === 4) {
+        pvPose(4, 'slam', 0.7); setTimeout(() => { if (PV) { PV.shake = 3; sfx.pkSlam(); } }, 330 / PV.speed);
+        said = pvBanter(4, 'loseAce', 3, 'toBrockLose'); extra += 0.6;
+      } else if (id === 'brutus' && beat === 5) said = pvBanter(1, 'beatSparks', 5, 'toBrutus');
+      else if (id === 'sparks' && beat === 1) said = pvBanter(5, 'beatBrutus', 1, 'toSparksLoss');
+      else if (id === 'sparks' && beat === 4) said = pvBanter(5, 'tauntBrock', 4, 'toSparks');
+      else if (id === 'sparks' && beat === 2) said = pvBanter(5, 'tauntNeville', 2, 'toSparks');
+      else if (id === 'sparks' && beat === 3 && Math.random() < 0.5) said = pvBanter(5, 'tauntAce', 3, 'toSparks');
+      else if (beat === 3) said = pvBanter(3, 'praise_' + id, top, 'thanks');
+    }
+    if (!said) {
+      if (id === 'brock' && losers.includes(0)) pvSayPick(top, 'beatYou', 0.7, null, true);
+      else pvSayPick(top, 'win', 0.45, null, true);
+    }
   }
-  // brock: furious when he loses to you or ace, and he slams the table
-  if (losers.includes(4) && (top === 0 || top === 3) && bigPot && !T.seats[4].out) {
-    later(() => {
-      pvPose(4, 'slam', 0.7);
-      pvMood(4, 'angry', 3);
-      setTimeout(() => { if (PV) { PV.shake = 3; sfx.pkSlam(); pvSay(4, pkAny(PK_LINES.brock[top === 0 ? 'loseYou' : 'loseAce']), true); } }, 330 / PV.speed);
-    }, 700);
-    extra += 0.8;
-  } else if (losers.includes(4) && bigPot && !T.seats[4].out && Math.random() < 0.3) later(() => pvSayPick(4, 'lose', 1, null, true), 800);
-  if (losers.includes(2) && bigPot && !T.seats[2].out) { pvMood(2, 'sad', 2.5); if (Math.random() < 0.4) later(() => pvSayPick(2, 'lose', 1, null, true), 1000); }
-  if (losers.includes(5) && bigPot && !T.seats[5].out && Math.random() < 0.5) later(() => pvSayPick(5, 'lose', 1, null, true), 1000);
-  if (losers.includes(1) && bigPot && !T.seats[1].out && !ev.includes('brutusThrow')) { pvMood(1, T.ai.mood.brutus.tilt ? 'fume' : 'angry', 2); if (Math.random() < 0.5) later(() => pvSayPick(1, 'lose', 1, null, true), 700); }
+  if (losers.includes(2) && bigPot && alive(2)) pvMood(2, 'sad', 2.5);
+  if (losers.includes(1) && bigPot && alive(1)) pvMood(1, T.ai.mood.brutus.tilt ? 'fume' : 'angry', 2);
   // brutus's moods
   if (ev.includes('brutusTilt')) {
-    later(() => { pvMood(1, 'fume', 3); pvSayPick(1, 'tiltStart', 1, null, true); }, 1300);
-    later(() => pvSayPick(3, 'tilt', 0.7, null, true), 2600);
+    later(() => {
+      pvMood(1, 'fume', 3);
+      pvSayPick(1, 'tiltStart', 1, null, true);
+      if (pvTogether(1, 3) && Math.random() < 0.7) pvBanter(3, 'tilt', 1, 'breathe');
+    }, 900);
     extra += 1.2;
   }
   if (ev.includes('brutusThrow') && !PV.seats[3].out) {
@@ -2621,6 +2821,8 @@ function pvAfterHand() {
     extra += 2;
   }
   if (ev.includes('brutusCalm')) later(() => pvSayPick(1, 'calm', 1, null, true), 1200);
+  // showing cards: you can for a moment, and some of them do
+  extra += pvShowsAfter(res, top, losers);
   if (ev.includes('sparksSettle')) later(() => pvSayPick(5, 'settle', 1, null, true), 1500);
   if (ev.includes('sparksWild')) later(() => pvSayPick(5, 'goWild', 1, null, true), 1500);
   if (ev.includes('brockGrudge')) PQ.grudge = T.ai.mood.brock.grudge;
@@ -2633,6 +2835,65 @@ function pvAfterHand() {
   else if (live.length === 1) PV.gameOver = 'win';
   return 1.5 + extra;
 }
+function pvShowsAfter(res, top, losers) {
+  const T = PV.T, net = res.net, board = T.board.slice();
+  const you = T.seats[0];
+  PV.showInfo = null;
+  if (you.cards && !you.shown && !you.out) {
+    PV.showInfo = { cards: you.cards.slice(), board, bluff: pkWeak(you.cards, board) && net[0] > 0,
+      lost: losers.filter(i => i > 0), folded: T.seats.filter(o => o.i && o.cards && o.folded && o.total > 0).map(o => o.i) };
+    pkUI.show.disabled = false;
+    pkUI.show.hidden = false;
+  }
+  // one of them shows, at most, and only when nobody saw it at a showdown
+  if (res.showdown || top <= 0) return PV.showInfo ? 0.8 : 0;
+  const w = T.seats[top], id = w.id, M = T.ai.mood, weak = pkWeak(w.cards, board);
+  let shows = false, line = null;
+  if (id === 'sparks') shows = Math.random() < 0.45;
+  else if (id === 'brock' && weak) { shows = true; line = losers.includes(0) || T.seats[0].folded && T.seats[0].total > 0 ? 'showBluffYou' : 'showBluff'; }
+  else if (id === 'brutus') shows = !M.brutus.tilt && w.stack >= PK.START * 1.4 && Math.random() < 0.5;
+  else if (id === 'neville' && !T.seats[5].out && Math.random() < 0.6) {
+    pvSayPick(5, 'askNeville', 1, null, true);
+    shows = Math.random() < 0.8;
+  }
+  if (!shows) return PV.showInfo ? 0.8 : 0;
+  pvShowCards(top);
+  pvSayPick(top, line || 'show', 1, null, true);
+  return 1.2;
+}
+// someone turns their cards over after the hand
+function pvShowCards(i) {
+  const v = PV.seats[i], c = PV.T.seats[i].cards;
+  if (!c) return;
+  if (i === 0) {
+    v.cards.forEach(o => { o.grey = false; o.a = 1; o.glow = true; });
+    pvTween(v.cards[0], v.cards[0].x, v.cards[0].y - 3, 0.2);
+    pvTween(v.cards[1], v.cards[1].x, v.cards[1].y - 3, 0.2);
+  } else v.cards.forEach(o => { if (!o.up) { o.flipTo = true; pvFlip(o); } });
+  pvLog(`${pkWho(i)} ${pkV(i, 'shows')} ${c.map(pkCardHtml).join(' ')}`);
+}
+// you show yours: the table takes notice (see pkAiYouShowed), and they let
+// you know what they think of it
+function pvYouShow() {
+  const info = PV && PV.showInfo;
+  if (!info) return;
+  PV.showInfo = null;
+  pkUI.show.disabled = true;
+  sfx.ui();
+  pvShowCards(0);
+  const out = pkAiYouShowed(PV.T, info.bluff, info.lost, info.folded);
+  const alive = i => !PV.T.seats[i].out;
+  if (alive(5)) pvSayPick(5, 'knows', 1, null, true);
+  if (out.includes('brutusShown') && alive(1)) { pvMood(1, 'fume', 3); pvSayPick(1, 'seeBluff', 1, null, true); }
+  else if (out.includes('brockShown') && alive(4)) { pvMood(4, 'angry', 2.5); pvSayPick(4, 'seeShow', 1, null, true); }
+  else if (alive(2) && info.lost.concat(info.folded).includes(2)) { pvMood(2, 'scared', 2.5); pvSayPick(2, info.bluff ? 'seeBluff' : 'seeValue', 1, null, true); }
+  if (alive(3) && Math.random() < 0.6) pvSayPick(3, 'noted', 1, null, true);
+  if (out.includes('brutusTilt')) pvSayPick(1, 'tiltStart', 1, null, true);
+  PQ.grudge = PV.T.ai.mood.brock.grudge;
+  PV.wait = Math.max(PV.wait, 2.2);
+  markDirty();
+}
+
 // brutus, on tilt and losing, throws his cards at ace, and she tells him off
 function pvThrow() {
   const b = seatAt(1, 'body'), a = seatAt(3, 'body');
@@ -2648,7 +2909,7 @@ function pvThrow() {
     if (!PV) return;
     pvMood(3, 'angry', 2.5);
     PV.shake = 1;
-    pvSayPick(3, 'chastise', 1, null, true);
+    pvBanter(3, 'chastise', 1, 'sorry');
   }, 650);
 }
 
@@ -2845,12 +3106,13 @@ function pvOpen() {
   PV = {
     T: pkTable(PK_IDS.map((_, i) => (i ? PK.START : 0))), seats: null, board: [], pot: 0, movers: [], flights: [], bubbles: [], parts: [], wait: 0.4,
     think: null, human: false, scene: null, modal: false, lastWhy: [], speed: 1, fast: false, shake: 0, time: 0, deck: true, buttonAt: null,
-    speaker: -1, wins: [], started: false, youStraddle: false
+    speaker: -1, wins: [], started: false, youStraddle: false, sayQ: []
   };
   pkAiInit(PV.T);
   PV.seats = pvSeats(PV.T);
   pkChat.innerHTML = '';
   pkUI.straddle.checked = false;
+  pkUI.show.hidden = true;
   pkUI.fast.classList.remove('is-on');
   pvHideControls();
   pkRoot.hidden = false;
@@ -3082,6 +3344,7 @@ function pokerKey(e) {
   if (PV.rulesOpen) { if (k === 'r' || k === 'escape' || k === 'enter' || k === ' ') pvRules(false); return true; }
   if (PV.buyin) { if (k === 'enter') $('#pk-buy-go').click(); if (k === 'escape') $('#pk-buy-back').click(); return true; }
   if (k === 'r') { pvRules(true); return true; }
+  if (k === 's' && PV.showInfo) { pvYouShow(); return true; }
   if (!PV.human) return true;
   const L = PV.legal;
   if (k === 'f' && !L.canCheck) pvHuman('fold');

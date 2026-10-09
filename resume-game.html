@@ -175,7 +175,10 @@
       <button type="button" class="px-btn px" id="pk-leave">Leave</button>
     </div>
     <div class="pk-actions px" id="pk-actions">
-      <p class="pk-status" id="pk-status"></p>
+      <div class="pk-status-row">
+        <p class="pk-status" id="pk-status"></p>
+        <button type="button" class="pk-show" id="pk-show" hidden disabled>Show hand <kbd>S</kbd></button>
+      </div>
       <div class="pk-raise-row">
         <button type="button" class="pk-step" id="pk-minus" aria-label="Less">&minus;</button>
         <input type="range" id="pk-slider" min="2" max="200" value="4" aria-label="Raise amount" />
@@ -198,7 +201,7 @@
       <label class="rh-skip pk-straddle"><input type="checkbox" id="pk-straddle" /><span>Straddle when under the gun</span></label>
     </div>
     <div class="pk-chat px" aria-label="Table chat">
-      <p class="pk-chat-title">Table</p>
+      <p class="pk-chat-title"><i aria-hidden="true"></i>Table talk</p>
       <div class="pk-chat-log" id="pk-chat-log" aria-live="polite"></div>
     </div>
     <div class="talk px pk-talk" id="pk-talk" hidden>
@@ -218,7 +221,7 @@
         <li>Going all in for less than a full raise doesn't reopen the betting. Side pots go to the best hand among the players in them.</li>
         <li>Best five cards win: Royal Flush, Straight Flush, Four of a Kind, Full House, Flush, Straight, Three of a Kind, Two Pair, Pair, High Card.</li>
       </ul>
-      <p class="pk-keys"><kbd>F</kbd> Fold <kbd>C</kbd> Check / Call <kbd>Enter</kbd> Raise <kbd>A</kbd> All in <kbd>&larr;</kbd><kbd>&rarr;</kbd> Size <kbd>R</kbd> Rules</p>
+      <p class="pk-keys"><kbd>F</kbd> Fold <kbd>C</kbd> Check / Call <kbd>Enter</kbd> Raise <kbd>A</kbd> All in <kbd>&larr;</kbd><kbd>&rarr;</kbd> Size <kbd>R</kbd> Rules <kbd>S</kbd> Show your hand after one</p>
       <button type="button" class="px-btn px px-btn-primary" id="pk-rules-go">Deal me in</button>
     </div>
     <div class="race-help px pk-panel" id="pk-buyin" role="dialog" aria-labelledby="pk-buy-title" hidden>

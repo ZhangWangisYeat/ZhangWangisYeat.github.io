@@ -14,7 +14,11 @@
 // poker core start
 // the chips are ores, counted in iron (one iron is $100). the blinds are one and
 // two iron, and a straddle is four. every seat starts at 200 iron, 100 big blinds.
-const PK = { SB: 1, BB: 2, STRADDLE: 4, START: 200, MIN_BUYIN: 2, MAX_BUYIN: 200, DOLLARS: 100, LEVEL_HANDS: 40 };
+const PK = { SB: 1, BB: 2, STRADDLE: 4, START: 200, MIN_BUYIN: 2, MAX_BUYIN: 200, DOLLARS: 100, LEVEL_HANDS: 40, SEVEN_DEUCE: 10 };
+// the seven deuce game (a house rule): win a pot holding seven deuce off suit
+// and everyone else at the table pays you SEVEN_DEUCE iron ($1,000), whether
+// they were in the hand or not. set it to 0 to turn the rule off.
+const pkIs72 = c => !!c && c.length === 2 && ((c[0] >> 2) + (c[1] >> 2) === 5) && ((c[0] >> 2) === 5 || (c[0] >> 2) === 0) && (c[0] & 3) !== (c[1] & 3);
 // the blinds go up every LEVEL_HANDS hands ("the lava rises"). at one and two
 // for good, a last one standing game between six players runs to about 700
 // hands, which is hours. set LEVEL_HANDS to 0 to keep them at one and two.
@@ -296,7 +300,8 @@ function pkStartHand(T, wantsStraddle) {
   T.ev = [];
   T.over = false;
   const B = T.blinds = pkBlinds(T);
-  T.seats.forEach(s => Object.assign(s, { cards: null, folded: s.out, allIn: false, bet: 0, total: 0, acted: -1, need: false, won: 0, vol: 0, shown: false }));
+  T.seats.forEach(s => Object.assign(s, { cards: null, folded: s.out, allIn: false, bet: 0, total: 0, acted: -1, need: false, won: 0, vol: 0, shown: false, foldedPre: false }));
+  T.seven = null;
   Object.assign(T, { board: [], pot: 0, bet: B.bb, lastRaise: B.bb, raises: 0, fullId: 0, street: 'preflop', aggressor: -1, prevAggressor: -1, straddle: -1 });
   const live = pkLive(T);
   if (T.button < 0 || T.seats[T.button].out) T.button = T.button < 0 ? live[(Math.random() * live.length) | 0].i : pkNext(T, T.button);
@@ -367,6 +372,7 @@ function pkAct(T, seat, a) {
   const before = { pot: pkPotNow(T), toCall: L.toCall, level: T.raises, street: T.street, bet: T.bet, mine: s.bet };
   if (type === 'fold') {
     s.folded = true;
+    if (T.street === 'preflop') s.foldedPre = true;
     T.ev.push({ t: 'act', seat, kind: 'fold' });
   } else if (type === 'check') {
     T.ev.push({ t: 'act', seat, kind: 'check' });
@@ -476,6 +482,7 @@ function pkShowdown(T) {
 }
 function pkAward(T, showdown, inH) {
   const pots = showdown ? pkPots(T) : [{ amount: T.pot, elig: T.seats.filter(pkInHand).map(s => s.i) }];
+  let mainWin = [];
   pots.forEach((p, k) => {
     const el = p.elig.map(i => T.seats[i]);
     let best = -1;
@@ -487,6 +494,7 @@ function pkAward(T, showdown, inH) {
       const j = win.indexOf(T.seats[(T.button + k2) % 6]);
       if (j >= 0) { share[j]++; odd--; }
     }
+    if (k === 0) mainWin = win;
     win.forEach((s, j) => {
       s.stack += share[j]; s.won += share[j];
       T.ev.push({ t: 'win', seat: s.i, amount: share[j], pot: k, side: k > 0, value: showdown ? s.value : null, name: showdown ? pkHandName(s.value) : null, split: win.length > 1 });
@@ -496,6 +504,19 @@ function pkAward(T, showdown, inH) {
   T.over = true;
   T.toAct = -1;
   T.runout = false;
+  if (PK.SEVEN_DEUCE && mainWin.length === 1 && pkIs72(mainWin[0].cards)) {
+    const w = mainWin[0], paid = [];
+    if (!w.shown) { w.shown = true; T.ev.push({ t: 'reveal', seat: w.i, cards: w.cards.slice(), seven: true }); }
+    T.seats.forEach(o => {
+      if (o.i === w.i || o.out) return;
+      const n = Math.min(PK.SEVEN_DEUCE, o.stack);
+      if (n <= 0) return;
+      o.stack -= n; w.stack += n; w.won += n;
+      paid.push([o.i, n]);
+    });
+    T.seven = { seat: w.i, paid };
+    T.ev.push({ t: 'seven', seat: w.i, paid, total: paid.reduce((a, b) => a + b[1], 0) });
+  }
   const busted = [];
   T.seats.forEach(s => { if (!s.out && s.stack <= 0) { s.out = true; busted.push(s.i); T.ev.push({ t: 'bust', seat: s.i }); } });
   if (T.ai) pkAiHandEnd(T, showdown, busted);
@@ -520,6 +541,9 @@ const PK_PERSONA = {
   brutus: { skill: 0.05, loose: 1.05, aggro: 1.3, bluff: 1.35, cr: 2.4, callAdj: 0, slow: 0, wildSize: 0.32, straddle: 0.08 },
   neville: { skill: 0.05, loose: 0.6, aggro: 0.45, bluff: 0.03, cr: 0.1, callAdj: -0.08, slow: 0.3, wildSize: 0, straddle: 0 },
   ace: { skill: 0.015, loose: 1, aggro: 1, bluff: 1, cr: 1, callAdj: 0, slow: 0.15, wildSize: 0, straddle: 0, gto: true },
+  // ace against the miners: still precise, but reading them and leaning on
+  // their leaks instead of balancing (pkAceTarget picks the leak)
+  aceExploit: { skill: 0.015, loose: 1.2, aggro: 1.1, bluff: 1, cr: 0.9, callAdj: 0, slow: 0.1, wildSize: 0, straddle: 0, exploit: true },
   brock: { skill: 0.06, loose: 1.25, aggro: 1.2, bluff: 1.2, cr: 1.2, callAdj: 0.02, slow: 0.1, wildSize: 0.08, straddle: 0.12 },
   sparks: { skill: 0.035, loose: 1.05, aggro: 1.05, bluff: 1.05, cr: 1.1, callAdj: 0, slow: 0.1, wildSize: 0.05, straddle: 0.05 }
 };
@@ -699,8 +723,35 @@ function pkRaiseTo(L, to, me) {
 // a decision for whoever's to act. returns { type, to, why } where why is a
 // tag the game uses to pick something for them to say.
 function pkDecide(T, seat) {
-  const s = T.seats[seat], id = s.id, P = PK_PERSONA[id], M = T.ai.mood, L = pkLegal(T, seat);
-  return T.street === 'preflop' ? pkDecidePre(T, s, id, P, M, L) : pkDecidePost(T, s, id, P, M, L);
+  const s = T.seats[seat], id = s.id, M = T.ai.mood, L = pkLegal(T, seat);
+  let P = PK_PERSONA[id];
+  T.ai.aceExploit = null;
+  if (id === 'ace') {
+    // she respects you: if you're in the hand she plays strictly by the book,
+    // unless you've shown her enough of your cards to read you (two shows and
+    // she starts treating you like the rest of them)
+    const youIn = pkInHand(T.seats[0]);
+    if (!youIn || (M.ace.shown || 0) >= 2) {
+      T.ai.aceExploit = pkAceTarget(T);
+      P = PK_PERSONA.aceExploit;
+    }
+  }
+  const d = T.street === 'preflop' ? pkDecidePre(T, s, id, P, M, L) : pkDecidePost(T, s, id, P, M, L);
+  // (and now and then she says so, to whoever she's going after)
+  const tg = T.ai.aceExploit;
+  if (tg && tg.weak && (d.type === 'raise' || d.type === 'call') && Math.random() < 0.3) d.why = 'exploit_' + T.seats[tg.seat].id;
+  return d;
+}
+// who ace is up against and how soft they are right now: brutus on tilt,
+// neville any time, brock with a grudge or out to prove himself, sparks when
+// he's wild
+function pkAceTarget(T) {
+  const M = T.ai.mood;
+  const opp = T.seats.filter(o => o.i !== 3 && pkInHand(o) && (T.street !== 'preflop' || o.vol || o.i === T.aggressor));
+  const soft = o => (o.i === 1 && M.brutus.tilt) || o.i === 2 || (o.i === 4 && (M.brock.grudge >= 2 || T.ai.hand.brockTarget)) || (o.i === 5 && M.sparks.wild);
+  const main = T.aggressor >= 0 && T.aggressor !== 3 ? T.seats[T.aggressor] : opp[0];
+  const seat = main ? main.i : -1;
+  return { seat, weak: !!main && soft(main), all: opp.length > 0 && opp.every(soft), opp: opp.map(o => o.i) };
 }
 // the range one player puts another on. ace knows the other miners inside
 // out after all these years and reads brutus, neville and brock off how
@@ -709,6 +760,7 @@ function pkDecide(T, seat) {
 // random for her charts. that's her weakness (alex): a crazy line from either
 // of you gets read as the textbook hand it represents.
 function pkRangeFor(T, me, them) {
+  if (me === 3 && T.ai.aceExploit && them !== 0) return T.ai.adp[them];
   if (PK_PERSONA[T.seats[me].id].gto && (them === 0 || them === 5)) return T.ai.std[them];
   return T.ai.adp[them];
 }
@@ -752,6 +804,10 @@ function pkDecidePre(T, s, id, P, M, L) {
   };
   const lastRaiseTo = T.bet;
   if (id === 'neville') return pkNevillePre(T, s, M, L, { p, level, pair, suited, hiR, unit, limpers, call, raise, lastRaiseTo });
+  if (PK.SEVEN_DEUCE && pkIs72(s.cards) && level <= 1) {
+    const go = { sparks: M.sparks.wild ? 0.55 : 0.1, brutus: M.brutus.tilt ? 0.35 : 0, brock: 0.15 }[id] || 0;
+    if (Math.random() < go) return level === 0 && !L.canCheck ? raise(unit * 2.5 + unit * limpers, 'seven') : level === 1 ? raise(lastRaiseTo * 3, 'seven') : raise(T.bet + unit * 3, 'seven');
+  }
 
   // the straddler or big blind with nothing to call: check, or raise the limpers
   if (level === 0 && L.canCheck) {
@@ -777,6 +833,11 @@ function pkDecidePre(T, s, id, P, M, L) {
     let size = unit * (behind === 1 && T.sb === s.i ? 3 : 2.5) + unit * limpers;
     if (tilt) { open = 0.55; size = unit * (5 + Math.random() * 4) + unit * limpers; }
     if (wild) { open = 0.62; if (rnd < 0.3) size = unit * (4 + Math.random() * 3); }
+    if (P.exploit) {
+      const soft = i => (i === 1 && M.brutus.tilt) || i === 2 || (i === 5 && M.sparks.wild);
+      if (T.seats.some(o => o.i !== s.i && pkCanAct(o) && !o.vol && soft(o.i))) open *= 1.3;
+      if (limpers && T.seats.some(o => o.i === 2 && o.vol && pkInHand(o))) { open = Math.max(open, 0.38); size += unit; }
+    }
     if (id === 'ace') {
       // a mixed strategy at the edge of the range, like a solver: hands just
       // outside it open some of the time
@@ -853,6 +914,8 @@ function pkDecidePre(T, s, id, P, M, L) {
   const real = (ip ? 0.9 : 0.76) - 0.04 * callers - (blind || level >= 2 ? 0 : 0.05) + (pair || suited ? 0.05 : 0) * (stackBB > 60 && level <= 1 ? 1 : 0);
   let margin = P.callAdj + (commit > 0.4 ? 0.02 : 0);
   if (id === 'brock') margin += 0.015 + 0.02 * g;
+  if (P.exploit && T.ai.aceExploit && T.ai.aceExploit.weak && T.ai.aceExploit.seat !== 2) margin += 0.04;
+  if (P.exploit && agg.i === 2) margin -= 0.04;
   if (eq * real + margin >= needed) return call(level >= 3 ? 'calljam' : 'call');
   return fold();
 }
@@ -944,6 +1007,8 @@ function pkDecidePost(T, s, id, P, M, L) {
   // sizes, by who they are and what the board looks like
   const sizeFor = kind => {
     if (id === 'neville') return 0.5;
+    if (X === 'neville') return kind === 'value' ? 0.4 : street === 'flop' ? 0.66 : 1.1;
+    if (X && kind === 'value') return 0.8;
     if (id === 'brutus' && kind === 'bluff' && adv > 0 && rnd < P.wildSize * (tilt ? 1.6 : 1)) return 2 + Math.random() * 2.5;
     if (target && kind === 'bluff' && rnd < 0.45) return 1.2 + Math.random() * 1.3;
     if (P.gto) {
@@ -956,7 +1021,15 @@ function pkDecidePost(T, s, id, P, M, L) {
     if (id === 'brock') return 0.66;
     return wet ? 0.66 : 0.5;
   };
-  const valueT = 0.6 + 0.07 * (nOpp - 1) + (street === 'river' ? 0.03 : 0);
+  let valueT = 0.6 + 0.07 * (nOpp - 1) + (street === 'river' ? 0.03 : 0);
+  // ace going after a leak: against neville she bets thin and small for value
+  // (he calls small bets with any pair) and bluffs big, the turn most of all
+  // (big bets scare him off his hand); against a tilting brutus, a cocky brock
+  // or a punting sparks she bets thinner for value, hardly bluffs (they call)
+  // and calls them down lighter
+  const X = P.exploit && T.ai.aceExploit && T.ai.aceExploit.weak ? T.seats[T.ai.aceExploit.seat].id : null;
+  if (X === 'neville') valueT -= 0.08;
+  else if (X) valueT -= 0.07;
 
   // neville after the flop. big bets frighten him, on the turn most of all,
   // so he lets go of top pair and second pair he should call down with. small
@@ -1038,7 +1111,10 @@ function pkDecidePost(T, s, id, P, M, L) {
       if (id === 'brutus') bp *= adv > 0.03 ? 2.1 : adv < -0.03 ? 0.25 : 1;
       if (tilt) bp *= 1.8;
       if (target) bp += 0.08 * g;
+      if (PK.SEVEN_DEUCE && pkIs72(s.cards)) bp = Math.min(0.85, bp * 2.5);
       if (myS > 0.45 && myS < 0.75 && street !== 'river') bp *= 0.5;
+      if (X === 'neville') bp = Math.min(0.9, bp * (street === 'turn' ? 2.6 : 2));
+      else if (X) bp *= 0.35;
     }
     if (rnd < bp) return bet(size, id === 'brutus' && size > 1.6 ? 'wildbluff' : target ? 'grudgebluff' : 'bluff');
     return check();
@@ -1051,6 +1127,9 @@ function pkDecidePost(T, s, id, P, M, L) {
   let margin = P.callAdj;
   if (wild) margin += 0.04;
   if (tilt) margin += 0.05;
+  if (X && X !== 'neville') margin += 0.06;
+  // (and when neville raises, he has it)
+  if (X === 'neville' && T.aggressor === 2 && T.raises >= 1 && A.hand.postAgg[2]) margin -= 0.08;
   if (target) margin += 0.05 * g;
   const raiseT = (id === 'neville' ? 0.88 : 0.8) + 0.04 * (nOpp - 1) + (street === 'river' ? 0.04 : 0);
   if (eq > raiseT && L.canRaise) {
@@ -1143,15 +1222,17 @@ function pkAiHandEnd(T, showdown, busted) {
   // brutus
   const b = T.seats[1];
   if (b.cards && !b.out || busted.includes(1)) {
-    const bm = M.brutus, lost = net[1] < 0 && b.vol, won = net[1] > 0, foldedPre = !won && !b.vol && b.cards;
+    const won = b.won > 0;
+    const bm = M.brutus, lost = !won && b.vol && b.total > 0, foldedPre = !won && !b.vol && b.cards;
     if (won) { bm.wins++; bm.losses = 0; bm.folds = 0; }
     else if (lost) { bm.losses++; bm.wins = 0; bm.folds = 0; }
     else if (foldedPre) bm.folds = (bm.folds || 0) + 1;
-    // (a couple of pots without losing one in between calms him down, or a
-    // good while without losing anything)
-    bm.quiet = lost ? 0 : (bm.quiet || 0) + 1;
-    if (!bm.tilt && (bm.losses >= 3 || bm.folds >= 5)) { bm.tilt = true; res.events.push('brutusTilt'); }
-    else if (bm.tilt && (bm.wins >= 2 || bm.quiet >= 10)) { bm.tilt = false; bm.losses = 0; bm.wins = 0; bm.folds = 0; res.events.push('brutusCalm'); }
+    // (on tilt he only calms down by winning two hands in a row: any hand he
+    // doesn't win, folded or lost, starts the count again, so a bad run can
+    // keep him on tilt for the rest of the game)
+    if (bm.tilt && !won && b.cards) bm.wins = 0;
+    if (!bm.tilt && (bm.losses >= 3 || bm.folds >= 5)) { bm.tilt = true; bm.why = bm.folds >= 5 ? 'cardDead' : 'unlucky'; res.events.push('brutusTilt'); }
+    else if (bm.tilt && bm.wins >= 2) { bm.tilt = false; bm.losses = 0; bm.wins = 0; bm.folds = 0; res.events.push('brutusCalm'); }
     if (lost && (bm.tilt || busted.includes(1))) res.events.push('brutusThrow');
   }
   // neville: losing pots to someone makes him more scared of them, winning
@@ -1184,6 +1265,16 @@ function pkAiHandEnd(T, showdown, busted) {
       res.events.push('brockGrudge');
     } else if (net[4] > 0 && net[0] < 0) M.brock.grudge = Math.max(0, M.brock.grudge - 0.5);
   }
+  // seven deuce: if you won with it, brutus starts steaming and brock wants
+  // blood, as long as they were in the hand past the first round of betting
+  if (T.seven) {
+    res.seven = T.seven;
+    if (T.seven.seat === 0) {
+      const stayed = i => T.seats[i].cards && !T.seats[i].foldedPre && T.seats[i].total > 0;
+      if (stayed(1) && !M.brutus.tilt) { M.brutus.tilt = true; M.brutus.wins = 0; M.brutus.why = 'seven'; res.events.push('brutusTilt'); }
+      if (stayed(4)) { M.brock.grudge = Math.min(7, M.brock.grudge + 2); res.events.push('brockSeven'); }
+    }
+  }
   // ace's respect for you grows when you take a pot off her
   if (net[0] > 0 && net[3] < 0 && invested[3] >= T.blinds.bb * 2) { M.ace.respect++; res.events.push('aceBeaten'); }
   A.results = res;
@@ -1201,6 +1292,7 @@ function pkAiYouShowed(T, bluff, lost, folded) {
     r.l = clampN(r.l * (bluff ? 1 + 0.12 * k : 1 - 0.05 * k), 0.6, 2);
   };
   lean(M.ace.read, 1);
+  M.ace.shown = (M.ace.shown || 0) + 1;
   lean(M.sparks.read, 0.4);
   lean(M.neville.read, 0.1);
   M.neville.comfort[0] = clampN(M.neville.comfort[0] - 0.15, -1, 1);
@@ -1209,7 +1301,7 @@ function pkAiYouShowed(T, bluff, lost, folded) {
     const bm = M.brutus;
     bm.losses++;
     out.push('brutusShown');
-    if (!bm.tilt && bm.losses >= 3) { bm.tilt = true; out.push('brutusTilt'); }
+    if (!bm.tilt && bm.losses >= 3) { bm.tilt = true; bm.why = 'shown'; bm.wins = 0; out.push('brutusTilt'); }
   }
   return out;
 }

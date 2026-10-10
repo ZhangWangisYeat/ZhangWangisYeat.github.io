@@ -562,7 +562,7 @@ function pkMood() {
   return {
     brutus: { tilt: false, losses: 0, wins: 0, folds: 0, quiet: 0 },
     neville: { comfort: [0, 0, 0, 0, 0, 0], read: { l: 1, b: 1 } },
-    ace: { respect: 0, read: { l: 1, b: 1 } },
+    ace: { respect: 0, read: { l: 1, b: 1 }, shown: 0, sd: 0 },
     brock: { grudge: 0, target: false },
     sparks: { wild: true, losses: 0, read: { l: 1, b: 1 } }
   };
@@ -770,14 +770,34 @@ function pkAceTarget(T) {
 // plays you and sparks strictly by the book: you're new, and sparks is too
 // random for her charts. that's her weakness (alex): a crazy line from either
 // of you gets read as the textbook hand it represents.
+// how far ace has stopped playing you by the book, 0 to 1. she starts strictly
+// gto against you, and every hand of yours she sees (a showdown with her, or
+// one you show) moves her a fifth of the rest of the way towards reading you
+// off how you've actually been playing
+function pkAceAdapt(M) {
+  return 1 - Math.pow(0.8, (M.ace.shown || 0) + (M.ace.sd || 0));
+}
 function pkRangeFor(T, me, them) {
+  if (me === 3 && them === 0) {
+    const a = pkAceAdapt(T.ai.mood);
+    if (a <= 0) return T.ai.std[0];
+    const S = T.ai.std[0], D = T.ai.adp[0], R = new Float32Array(1326);
+    let ss = 0, sd = 0;
+    for (let i = 0; i < 1326; i++) { ss += S[i]; sd += D[i]; }
+    for (let i = 0; i < 1326; i++) R[i] = (1 - a) * S[i] / (ss || 1) + a * D[i] / (sd || 1);
+    return R;
+  }
   if (me === 3 && T.ai.aceExploit && them !== 0) return T.ai.adp[them];
   if (PK_PERSONA[T.seats[me].id].gto && (them === 0 || them === 5)) return T.ai.std[them];
   return T.ai.adp[them];
 }
 function pkEstFor(T, me, them) {
   // (ace reads every miner off how they've been playing, sparks included)
-  const e = pkEst(T, them, PK_PERSONA[T.seats[me].id].gto && (them === 0 || (them === 5 && me !== 3)));
+  let e = pkEst(T, them, PK_PERSONA[T.seats[me].id].gto && (them === 0 || (them === 5 && me !== 3)));
+  if (me === 3 && them === 0) {
+    const a = pkAceAdapt(T.ai.mood), d = pkEst(T, 0, false);
+    e = { l: 1 + a * (d.l - 1), a: 1 + a * (d.a - 1), b: 1 + a * (d.b - 1), f: 1 + a * (d.f - 1) };
+  }
   const r = them === 0 && T.ai.mood[T.seats[me].id] && T.ai.mood[T.seats[me].id].read;
   return r ? { ...e, l: e.l * r.l, a: e.a * r.b, b: e.b * r.b } : e;
 }
@@ -1296,6 +1316,15 @@ function pkAiHandEnd(T, showdown, busted) {
       if (stayed(4)) { M.brock.grudge = Math.min(7, M.brock.grudge + 2); res.events.push('brockSeven'); }
     }
   }
+  // a showdown between you and ace: she's seen what you play and how, and
+  // reads you a bit more off that from now on (see pkAceAdapt). a weak hand
+  // you got there with counts as you being loose, a strong one as you being
+  // honest. she learns a bit less from a showdown than from a hand you chose
+  // to show her.
+  if (showdown && you.cards && you.shown && T.seats[3].shown && invested[0] > 0 && invested[3] > 0) {
+    M.ace.sd = (M.ace.sd || 0) + 1;
+    pkLean(M.ace.read, pkWeak(you.cards, T.board), 0.6);
+  }
   // ace's respect for you grows when you take a pot off her
   if (net[0] > 0 && net[3] < 0 && invested[3] >= T.blinds.bb * 2) { M.ace.respect++; res.events.push('aceBeaten'); }
   A.results = res;
@@ -1306,12 +1335,13 @@ function pkAiHandEnd(T, showdown, busted) {
 // doesn't care that much; neville gets more scared of you and learns only a
 // tiny bit; brock, if he lost to you, takes it personally; and brutus, if you
 // bluffed him off his hand, is that much closer to tilting.
+function pkLean(r, bluff, k) {
+  r.b = clampN(r.b * (bluff ? 1 + 0.3 * k : 1 - 0.15 * k), 0.6, 2.4);
+  r.l = clampN(r.l * (bluff ? 1 + 0.12 * k : 1 - 0.05 * k), 0.6, 2);
+}
 function pkAiYouShowed(T, bluff, lost, folded) {
   const M = T.ai.mood, out = [];
-  const lean = (r, k) => {
-    r.b = clampN(r.b * (bluff ? 1 + 0.3 * k : 1 - 0.15 * k), 0.6, 2.4);
-    r.l = clampN(r.l * (bluff ? 1 + 0.12 * k : 1 - 0.05 * k), 0.6, 2);
-  };
+  const lean = (r, k) => pkLean(r, bluff, k);
   lean(M.ace.read, 1);
   M.ace.shown = (M.ace.shown || 0) + 1;
   lean(M.sparks.read, 0.4);

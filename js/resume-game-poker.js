@@ -787,9 +787,21 @@ function pkRangeFor(T, me, them) {
     for (let i = 0; i < 1326; i++) R[i] = (1 - a) * S[i] / (ss || 1) + a * D[i] / (sd || 1);
     return R;
   }
-  if (me === 3 && T.ai.aceExploit && them !== 0) return T.ai.adp[them];
+  if (me === 3 && T.ai.aceExploit && them !== 0) return pkAceView(T, them);
   if (PK_PERSONA[T.seats[me].id].gto && (them === 0 || them === 5)) return T.ai.std[them];
   return T.ai.adp[them];
+}
+// a miner's range the way ace sees it, bent by what she knows about them right
+// now. raising a range to a power under 1 flattens it (more of the weak hands
+// stay in, so more of what they bet reads as a bluff); over 1 sharpens it.
+function pkAceView(T, them) {
+  const R = T.ai.adp[them], M = T.ai.mood;
+  // (steam coming out of brutus's head: he's betting and raising with anything)
+  const k = them === 1 && M.brutus.tilt ? 0.6 : 1;
+  if (k === 1) return R;
+  const O = new Float32Array(1326);
+  for (let i = 0; i < 1326; i++) O[i] = R[i] > 0 ? Math.pow(R[i], k) : 0;
+  return O;
 }
 function pkEstFor(T, me, them) {
   // (ace reads every miner off how they've been playing, sparks included)
@@ -890,6 +902,10 @@ function pkDecidePre(T, s, id, P, M, L) {
   const callers = T.seats.filter(o => o.i !== s.i && o.i !== agg.i && pkInHand(o) && o.bet === T.bet).length;
   const aggEst = pkEstFor(T, s.i, agg.i);
   const commit = L.toCall / (s.stack + s.bet);
+  const raiseToFor = lv => {
+    const sizeUp = lv === 1 ? (ip ? 3 : 3.8) : lv === 2 ? 2.3 : 10;
+    return lv >= 3 || stackBB < 40 ? L.maxTo : lastRaiseTo * sizeUp + L.toCall * callers;
+  };
 
   // brutus on tilt: crazy raises before the flop, and he barely folds
   if (tilt) {
@@ -922,13 +938,18 @@ function pkDecidePre(T, s, id, P, M, L) {
   // a solid player: value raises off the top of the range (wider against a
   // loose raiser), the odd bluff with hands that block the top or play well,
   // and calls when the price is right
+  // ace against a steaming brutus's raise: he's raising over half his hands
+  // with silly sizes, so she re-raises a much wider value range to isolate him
+  // and gets it in light when he comes back over the top
+  const steam = id === 'ace' && T.ai.aceExploit && agg.i === 1 && M.brutus.tilt;
+  if (steam && level === 1 && p < 0.17) return raise(raiseToFor(level), 'value');
+  if (steam && level >= 2 && p < 0.12) return shove('jam');
   const looser = Math.max(1, aggEst.a * 0.85);
   const vThr = [0, 0.062, 0.03, 0.031, 0.012][Math.min(level, 4)] * P.aggro * looser * (id === 'neville' ? 0.5 : 1);
   const bluffBand = (level === 1 && ((suited && (hiR === 12 || (hiR - loR <= 2 && loR >= 3))) || (hiR === 12 && loR <= 3)))
     || (level === 2 && hiR === 12 && loR <= 3 && suited);
   const bluffP = (level === 1 ? 0.5 : level === 2 ? 0.55 : 0) * P.bluff * (id === 'neville' ? 0 : 1);
-  const sizeUp = level === 1 ? (ip ? 3 : 3.8) : level === 2 ? 2.3 : 10;
-  const raiseTo = level >= 3 || stackBB < 40 ? L.maxTo : lastRaiseTo * sizeUp + L.toCall * callers;
+  const raiseTo = raiseToFor(level);
   if (p < vThr) {
     // ace mixes in a call now and then with the top so she's never only raising it
     if (P.gto && level <= 2 && p > 0.01 && rnd < 0.18) return call('trap');
@@ -947,6 +968,7 @@ function pkDecidePre(T, s, id, P, M, L) {
   let margin = P.callAdj + (commit > 0.4 ? 0.02 : 0);
   if (id === 'brock') margin += 0.015 + 0.02 * g;
   if (T.ai.aceExploit && T.ai.aceExploit.weak && T.ai.aceExploit.seat !== 2) margin += 0.04;
+  if (steam) margin += 0.04;
   if (T.ai.aceExploit && agg.i === 2) margin -= 0.04;
   if (eq * real + margin >= needed) return call(level >= 3 ? 'calljam' : 'call');
   return fold();
@@ -1040,6 +1062,7 @@ function pkDecidePost(T, s, id, P, M, L) {
   const sizeFor = kind => {
     if (id === 'neville') return 0.5;
     if (X === 'neville') return kind === 'value' ? 0.4 : street === 'flop' ? 0.66 : 1.1;
+    if (X === 'brutus' && kind === 'value') return 0.95;
     if (X && kind === 'value') return 0.8;
     if (id === 'brutus' && kind === 'bluff' && adv > 0 && rnd < P.wildSize * (tilt ? 1.6 : 1)) return 2 + Math.random() * 2.5;
     if (target && kind === 'bluff' && rnd < 0.45) return 1.2 + Math.random() * 1.3;
@@ -1113,6 +1136,10 @@ function pkDecidePost(T, s, id, P, M, L) {
       const eqCall = pkEquity(s.cards, board, callers, 420);
       strongEnough = eqCall > 0.52 || eq > 0.9;
     }
+    // a strong hand against a steaming brutus who's still to act: check it
+    // and let him fire, he will
+    const brutusBehind = X === 'brutus' && !pkInPosition(T, s.i) && pkCanAct(T.seats[1]);
+    if (brutusBehind && eq > 0.78 && street !== 'river' && rnd < 0.45) return check('trap');
     if (perceived > valueT && strongEnough) {
       if (rnd < P.slow * (eq > 0.88 ? 1 : 0.3) && street !== 'river' && !tilt) return check('slowplay');
       return bet(sizeFor('value'), 'value');

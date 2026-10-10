@@ -4171,7 +4171,9 @@ function updateNightSpawns(dt) {
   if (nightAmount() < 0.5 && !underground) { hostileT = 4; return; }
   hostileT -= dt;
   if (hostileT > 0) return;
-  hostileT = 7 + Math.random() * 6;
+  // (a bit quicker in the meadows, so there are more forest guardians about to
+  // hunt for the forest's heart)
+  hostileT = regionAt(player.x / TILE, player.y / TILE) === 'meadows' ? 5 + Math.random() * 4 : 7 + Math.random() * 6;
   if (creatures.filter(c => c.def.nightly && !c.dead).length >= HOSTILE_CAP) return;
   const px = player.x / TILE, py = player.y / TILE;
   for (let tries = 0; tries < 40; tries++) {
@@ -4180,9 +4182,10 @@ function updateNightSpawns(dt) {
     if (!inside(tx, ty) || solidTile(tx, ty) || !reach[idx(tx, ty)] || tiles[idx(tx, ty)] === T.WATER) continue;
     const where = regionAt(tx + 0.5, ty + 0.5);
     if (where === 'camp' || !pitchDark(tx, ty)) continue;
-    // (two in three of the meadows' night spawns are forest guardians, it was
-    // two in five; alex wanted more of them about. the mines only get zombies.)
-    spawnHostile(where === 'meadows' && Math.random() < 0.65 ? 'guardian' : 'zombie', tx, ty);
+    // (four in five of the meadows' night spawns are forest guardians, it was
+    // two in five and then two in three; alex wanted more of them about. the
+    // mines only get zombies.)
+    spawnHostile(where === 'meadows' && Math.random() < 0.8 ? 'guardian' : 'zombie', tx, ty);
     return;
   }
 }

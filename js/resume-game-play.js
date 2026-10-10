@@ -50,7 +50,13 @@ const ARMORS = {
 // dmg is in hearts, cd is seconds between swings, reach is in tiles, dur is how
 // many hits or blocks a tool lasts.
 const ITEMS = {
-  wood:          { name: 'Wood', fuel: 2 },
+  // each biome's trees give their own wood (alex): oak in the meadows (the
+  // plain 'wood' id, so older saves keep theirs), spruce off the tundra's pines
+  // and dried willow off the dunes' dead trees. any of them works wherever a
+  // recipe wants wood, and they all burn the same.
+  wood:          { name: 'Oak Wood', fuel: 2, wood: true },
+  'spruce-wood': { name: 'Spruce Wood', fuel: 2, wood: true },
+  'willow-wood': { name: 'Willow Wood', fuel: 2, wood: true },
   stick:         { name: 'Stick', fuel: 0.5 },
   stone:         { name: 'Stone' },
   marble:        { name: 'Marble' },
@@ -204,6 +210,8 @@ TIER_ORDER.forEach(m => RECIPES.push({ out: `${m}-arrow`, n: 4, shape: ['M', 'S'
 RECIPES.push({ out: 'string', n: 3, shape: ['W'], key: { W: 'wool' } });
 RECIPES.push({ out: 'bow', shape: ['.WS', 'W.S', '.WS'], key: { W: 'wood', S: 'string' } });
 RECIPES.forEach(r => { r.n = r.n || 1; r.mats = [...new Set(Object.values(r.key))]; });
+// whether an item can go where a recipe asks for key ('wood' takes any wood)
+const fitsKey = (key, id) => key === id || (key === 'wood' && !!ITEMS[id] && !!ITEMS[id].wood);
 
 const COOK_RATE = 0.5;        // meat per second while the furnace has fuel
 
@@ -650,9 +658,19 @@ function makeIcon(id) {
   else if (it.arrow) arrowIcon(G, MAT_PAL[it.arrow]);
   else switch (id) {
     case 'wood':
-      for (let y = 6; y <= 11; y++) for (let x = 2; x <= 12; x++) G.set(x, y, y === 7 || y === 10 ? '#6e3a1e' : '#9a5230');
-      pxBlob(G, 13, 8.5, 2, 3, (dx, dy) => (dx * dx + dy * dy < 0.35 ? '#a8703f' : '#dba56b'));
+    case 'spruce-wood':
+    case 'willow-wood': {
+      // a log: bark down its length and the cut end with its rings. oak is the
+      // warm brown one, spruce darker and redder, dried willow grey and bleached
+      const [bark, groove, ring, core] = {
+        wood: ['#9a5230', '#6e3a1e', '#dba56b', '#a8703f'],
+        'spruce-wood': ['#5e3622', '#3c2214', '#c98f5a', '#8a5a34'],
+        'willow-wood': ['#8d8371', '#665d4e', '#e2d6b8', '#b3a587']
+      }[id];
+      for (let y = 6; y <= 11; y++) for (let x = 2; x <= 12; x++) G.set(x, y, y === 7 || y === 10 ? groove : bark);
+      pxBlob(G, 13, 8.5, 2, 3, (dx, dy) => (dx * dx + dy * dy < 0.35 ? core : ring));
       break;
+    }
     case 'stick':
       pxLine(G, 3, 13, 12, 3, '#a0663a');
       pxLine(G, 4, 13, 13, 3, '#734522');
@@ -1666,7 +1684,7 @@ const rand = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 // needs (any amount) or crafted it, and then it stays for good
 function checkRecipeUnlocks() {
   const have = new Set([...inv.slots, ...Object.values(inv.armor)].filter(Boolean).map(s => s.id));
-  const fresh = RECIPES.filter(r => !quest.recipes.includes(r.out) && r.mats.every(m => have.has(m)));
+  const fresh = RECIPES.filter(r => !quest.recipes.includes(r.out) && r.mats.every(m => [...have].some(id => fitsKey(m, id))));
   if (!fresh.length) return;
   fresh.forEach(r => quest.recipes.push(r.out));
   const first = ITEMS[fresh[0].out].name;
@@ -4948,6 +4966,8 @@ function mineStep(tgt, dt) {
   if (mining.t >= info.time) breakTarget(tgt, info);
 }
 
+// which wood each kind of tree gives
+const TREE_WOOD = { tree: 'wood', pine: 'spruce-wood', deadtree: 'willow-wood' };
 function breakTarget(tgt, info) {
   if (tgt.thing) tgt.thing.shake = 0;
   mining = null;
@@ -4974,8 +4994,8 @@ function breakTarget(tgt, info) {
       things.splice(things.indexOf(o), 1);
       quest.chopped.push(o.id);
       const dead = o.tree === 'deadtree';
-      gain('wood', dead ? rand(0, 1) : rand(2, 4), o.x, o.y - 30);
-      gain('stick', dead ? rand(2, 4) : rand(1, 2), o.x, o.y - 20);
+      gain(TREE_WOOD[o.tree] || 'wood', dead ? rand(1, 2) : rand(2, 4), o.x, o.y - 30);
+      gain('stick', dead ? rand(1, 3) : rand(1, 2), o.x, o.y - 20);
       burst(o.x, o.y - 16, o.tree === 'pine' ? '47,109,81' : dead ? '154,77,49' : '98,178,64', 16);
     }
   } else if (tgt.type === 'racetile') {
@@ -5228,7 +5248,7 @@ function matchRecipe() {
       for (let y = 0; y < h && ok; y++) for (let x = 0; x < w && ok; x++) {
         const ch = r.shape[y][mirror ? w - 1 - x : x] || '.';
         const s = craftGrid[(y0 + y) * 5 + x0 + x];
-        ok = ch === '.' ? !s : !!s && s.id === r.key[ch];
+        ok = ch === '.' ? !s : !!s && fitsKey(r.key[ch], s.id);
       }
       if (ok) return r;
     }
@@ -5264,23 +5284,30 @@ function recipeNeeds(r) {
 // grid in the right shape
 function fillRecipe(r) {
   craftGrid.forEach((s, i) => { if (s) { craftGrid[i] = null; addStack(s); } });
-  const missing = Object.entries(recipeNeeds(r)).filter(([id, n]) => countItem(id) < n);
+  const missing = Object.entries(recipeNeeds(r)).filter(([id, n]) => countMat(id) < n);
   if (missing.length) {
-    hint(`Missing ${missing.map(([id, n]) => `${n - countItem(id)} ${ITEMS[id].name}`).join(', ')}`);
+    hint(`Missing ${missing.map(([id, n]) => `${n - countMat(id)} ${id === 'wood' ? 'Wood' : ITEMS[id].name}`).join(', ')}`);
     sfx.deny();
     renderUI();
     return;
   }
   r.shape.forEach((row, y) => [...row].forEach((ch, x) => {
     if (ch === '.') return;
-    takeItem(r.key[ch], 1);
-    craftGrid[y * 5 + x] = { id: r.key[ch], n: 1 };
+    // (wood comes off whichever kind you have the most of)
+    const id = matFor(r.key[ch]);
+    takeItem(id, 1);
+    craftGrid[y * 5 + x] = { id, n: 1 };
   }));
   bookOpen = false;
   sfx.ui();
   renderUI();
 }
 function countItem(id) { return inv.slots.reduce((n, s) => n + (s && s.id === id ? s.n : 0), 0); }
+function countMat(key) { return inv.slots.reduce((n, s) => n + (s && fitsKey(key, s.id) ? s.n : 0), 0); }
+function matFor(key) {
+  if (key !== 'wood') return key;
+  return Object.keys(ITEMS).filter(id => ITEMS[id].wood).sort((a, b) => countItem(b) - countItem(a))[0];
+}
 function takeItem(id, n) {
   for (let i = inv.slots.length - 1; i >= 0 && n > 0; i--) {
     const s = inv.slots[i];
@@ -5531,7 +5558,7 @@ function bookHTML() {
   if (!known.length) return '<p class="rb-empty">Nothing yet. A recipe shows up here once you\'ve held every material it needs.</p>';
   return `<ul class="rb-list">${known.map(r => {
     const need = recipeNeeds(r);
-    const ready = Object.entries(need).every(([id, n]) => countItem(id) >= n);
+    const ready = Object.entries(need).every(([id, n]) => countMat(id) >= n);
     const w = Math.max(...r.shape.map(row => row.length));
     const cells = [];
     for (let y = 0; y < r.shape.length; y++) for (let x = 0; x < w; x++) {

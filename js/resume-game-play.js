@@ -1443,8 +1443,12 @@ const chestSlots = new Array(18).fill(null);
 const PASSIVE_CAP = 12;
 const SPAWN_WEIGHTS = [['cow', 0.35], ['sheep', 0.35], ['chicken', 0.3]];
 let spawnT = 30;
-// day and night: 4 minutes of light, 2 of dark. clock is seconds into the day.
-const DAY_LEN = 360;
+// day and night: about four and a half minutes of light and two and a quarter
+// of dark (alex wanted both a bit longer, it was 4 and 2). clock is seconds
+// into the day. DUSK is when it starts getting dark, NIGHT when it's fully
+// dark, DAWN when it starts getting light again.
+const DAY_LEN = 450;
+const DUSK = 275, NIGHT = 312, DAWN = 425;
 let clock = 30;
 let ui = null;               // null, 'inv', 'craft' or 'furnace'
 let bookOpen = false;
@@ -5102,10 +5106,10 @@ function useRight() {
 
 // 0 at full day, 1 at full night, with a half-minute dusk and a short dawn
 function nightAmount() {
-  if (clock < 220) return 0;
-  if (clock < 250) return smooth((clock - 220) / 30);
-  if (clock < 340) return 1;
-  return 1 - smooth((clock - 340) / 20);
+  if (clock < DUSK) return 0;
+  if (clock < NIGHT) return smooth((clock - DUSK) / (NIGHT - DUSK));
+  if (clock < DAWN) return 1;
+  return 1 - smooth((clock - DAWN) / (DAY_LEN - DAWN));
 }
 function playNight() { return started ? nightAmount() : 0; }
 let wasNight = false;

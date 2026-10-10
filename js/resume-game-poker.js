@@ -796,8 +796,10 @@ function pkRangeFor(T, me, them) {
 // stay in, so more of what they bet reads as a bluff); over 1 sharpens it.
 function pkAceView(T, them) {
   const R = T.ai.adp[them], M = T.ai.mood;
-  // (steam coming out of brutus's head: he's betting and raising with anything)
-  const k = them === 1 && M.brutus.tilt ? 0.6 : 1;
+  // (steam coming out of brutus's head: he's betting and raising with anything.
+  // neville betting or raising after the flop only ever means he has it)
+  const nevBets = them === 2 && T.street !== 'preflop' && (T.aggressor === 2 || T.ai.hand.betThis[2] === T.street);
+  const k = them === 1 && M.brutus.tilt ? 0.6 : nevBets ? 1.5 : 1;
   if (k === 1) return R;
   const O = new Float32Array(1326);
   for (let i = 0; i < 1326; i++) O[i] = R[i] > 0 ? Math.pow(R[i], k) : 0;
@@ -880,7 +882,9 @@ function pkDecidePre(T, s, id, P, M, L) {
     if (T.ai.aceExploit) {
       const soft = i => (i === 1 && M.brutus.tilt) || i === 2 || (i === 5 && M.sparks.wild);
       if (T.seats.some(o => o.i !== s.i && pkCanAct(o) && !o.vol && soft(o.i))) open *= 1.3;
-      if (limpers && T.seats.some(o => o.i === 2 && o.vol && pkInHand(o))) { open = Math.max(open, 0.38); size += unit; }
+      // neville limped: raise him off it. anything over three and a half big
+      // blinds and he lets go of most of what he limps with
+      if (limpers && T.seats.some(o => o.i === 2 && o.vol && pkInHand(o))) { open = Math.max(open, 0.62); size = Math.max(size, unit * (4.5 + limpers)); }
     }
     if (id === 'ace') {
       // a mixed strategy at the edge of the range, like a solver: hands just
@@ -944,6 +948,13 @@ function pkDecidePre(T, s, id, P, M, L) {
   const steam = id === 'ace' && T.ai.aceExploit && agg.i === 1 && M.brutus.tilt;
   if (steam && level === 1 && p < 0.17) return raise(raiseToFor(level), 'value');
   if (steam && level >= 2 && p < 0.12) return shove('jam');
+  // neville raised: it's a strong hand, but he folds all but the very top of
+  // it to a re-raise, so ace re-raises a lot of her playable hands at him and
+  // folds the rest (and gives up after the flop if he calls)
+  if (id === 'ace' && T.ai.aceExploit && agg.i === 2 && level === 1 && !callers) {
+    if (p < 0.02) return raise(raiseToFor(1), 'value');
+    if (p < 0.45 && rnd < 0.45) return raise(lastRaiseTo * 4, 'bluff3');
+  }
   const looser = Math.max(1, aggEst.a * 0.85);
   const vThr = [0, 0.062, 0.03, 0.031, 0.012][Math.min(level, 4)] * P.aggro * looser * (id === 'neville' ? 0.5 : 1);
   const bluffBand = (level === 1 && ((suited && (hiR === 12 || (hiR - loR <= 2 && loR >= 3))) || (hiR === 12 && loR <= 3)))

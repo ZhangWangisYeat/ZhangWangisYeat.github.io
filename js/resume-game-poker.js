@@ -735,14 +735,12 @@ function pkDecide(T, seat) {
   let P = PK_PERSONA[id];
   T.ai.aceExploit = null;
   if (id === 'ace') {
-    // she respects you: if you're in the hand she plays strictly by the book,
-    // unless you've shown her enough of your cards to read you (two shows and
-    // she starts treating you like the rest of them)
-    const youIn = pkInHand(T.seats[0]);
-    if (!youIn || (M.ace.shown || 0) >= 2) {
-      T.ai.aceExploit = pkAceTarget(T);
-      P = PK_PERSONA.aceExploit;
-    }
+    // she always plays the miners' leaks, whoever else is in the hand (alex:
+    // even with you in it). against you she keeps to the book, so with you in
+    // the hand her lines stay solver shaped and only her reads of the miners
+    // bend them. with you out of it she drops the balance altogether.
+    T.ai.aceExploit = pkAceTarget(T);
+    if (!pkInHand(T.seats[0])) P = PK_PERSONA.aceExploit;
   }
   const d = T.street === 'preflop' ? pkDecidePre(T, s, id, P, M, L) : pkDecidePost(T, s, id, P, M, L);
   // (and now and then she says so, to whoever she's going after)
@@ -752,14 +750,19 @@ function pkDecide(T, seat) {
 }
 // who ace is up against and how soft they are right now: brutus on tilt,
 // neville any time, brock with a grudge or out to prove himself, sparks when
-// he's wild
-function pkAceTarget(T) {
+// he's wild. you never count: she only goes after the miners. the target is
+// whoever's leading the betting if they're soft, otherwise the softest miner
+// still in, so a leak gets played even when someone else made the last raise.
+function pkAceSoft(T, i) {
   const M = T.ai.mood;
-  const opp = T.seats.filter(o => o.i !== 3 && pkInHand(o) && (T.street !== 'preflop' || o.vol || o.i === T.aggressor));
-  const soft = o => (o.i === 1 && M.brutus.tilt) || o.i === 2 || (o.i === 4 && (M.brock.grudge >= 2 || T.ai.hand.brockTarget)) || (o.i === 5 && M.sparks.wild);
-  const main = T.aggressor >= 0 && T.aggressor !== 3 ? T.seats[T.aggressor] : opp[0];
+  return (i === 1 && M.brutus.tilt) || i === 2 || (i === 4 && (M.brock.grudge >= 2 || T.ai.hand.brockTarget)) || (i === 5 && M.sparks.wild);
+}
+function pkAceTarget(T) {
+  const opp = T.seats.filter(o => o.i !== 3 && o.i !== 0 && pkInHand(o) && (T.street !== 'preflop' || o.vol || o.i === T.aggressor));
+  const lead = T.aggressor > 0 && T.aggressor !== 3 && pkInHand(T.seats[T.aggressor]) ? T.seats[T.aggressor] : null;
+  const main = lead && pkAceSoft(T, lead.i) ? lead : opp.find(o => pkAceSoft(T, o.i)) || lead || opp[0];
   const seat = main ? main.i : -1;
-  return { seat, weak: !!main && soft(main), all: opp.length > 0 && opp.every(soft), opp: opp.map(o => o.i) };
+  return { seat, weak: !!main && pkAceSoft(T, main.i), all: opp.length > 0 && opp.every(o => pkAceSoft(T, o.i)), opp: opp.map(o => o.i) };
 }
 // the range one player puts another on. ace knows the other miners inside
 // out after all these years and reads brutus, neville and brock off how
@@ -773,7 +776,8 @@ function pkRangeFor(T, me, them) {
   return T.ai.adp[them];
 }
 function pkEstFor(T, me, them) {
-  const e = pkEst(T, them, PK_PERSONA[T.seats[me].id].gto && (them === 0 || them === 5));
+  // (ace reads every miner off how they've been playing, sparks included)
+  const e = pkEst(T, them, PK_PERSONA[T.seats[me].id].gto && (them === 0 || (them === 5 && me !== 3)));
   const r = them === 0 && T.ai.mood[T.seats[me].id] && T.ai.mood[T.seats[me].id].read;
   return r ? { ...e, l: e.l * r.l, a: e.a * r.b, b: e.b * r.b } : e;
 }
@@ -841,7 +845,7 @@ function pkDecidePre(T, s, id, P, M, L) {
     let size = unit * (behind === 1 && T.sb === s.i ? 3 : 2.5) + unit * limpers;
     if (tilt) { open = 0.55; size = unit * (5 + Math.random() * 4) + unit * limpers; }
     if (wild) { open = 0.62; if (rnd < 0.3) size = unit * (4 + Math.random() * 3); }
-    if (P.exploit) {
+    if (T.ai.aceExploit) {
       const soft = i => (i === 1 && M.brutus.tilt) || i === 2 || (i === 5 && M.sparks.wild);
       if (T.seats.some(o => o.i !== s.i && pkCanAct(o) && !o.vol && soft(o.i))) open *= 1.3;
       if (limpers && T.seats.some(o => o.i === 2 && o.vol && pkInHand(o))) { open = Math.max(open, 0.38); size += unit; }
@@ -922,8 +926,8 @@ function pkDecidePre(T, s, id, P, M, L) {
   const real = (ip ? 0.9 : 0.76) - 0.04 * callers - (blind || level >= 2 ? 0 : 0.05) + (pair || suited ? 0.05 : 0) * (stackBB > 60 && level <= 1 ? 1 : 0);
   let margin = P.callAdj + (commit > 0.4 ? 0.02 : 0);
   if (id === 'brock') margin += 0.015 + 0.02 * g;
-  if (P.exploit && T.ai.aceExploit && T.ai.aceExploit.weak && T.ai.aceExploit.seat !== 2) margin += 0.04;
-  if (P.exploit && agg.i === 2) margin -= 0.04;
+  if (T.ai.aceExploit && T.ai.aceExploit.weak && T.ai.aceExploit.seat !== 2) margin += 0.04;
+  if (T.ai.aceExploit && agg.i === 2) margin -= 0.04;
   if (eq * real + margin >= needed) return call(level >= 3 ? 'calljam' : 'call');
   return fold();
 }
@@ -1035,7 +1039,7 @@ function pkDecidePost(T, s, id, P, M, L) {
   // (big bets scare him off his hand); against a tilting brutus, a cocky brock
   // or a punting sparks she bets thinner for value, hardly bluffs (they call)
   // and calls them down lighter
-  const X = P.exploit && T.ai.aceExploit && T.ai.aceExploit.weak ? T.seats[T.ai.aceExploit.seat].id : null;
+  const X = T.ai.aceExploit && T.ai.aceExploit.weak ? T.seats[T.ai.aceExploit.seat].id : null;
   if (X === 'neville') valueT -= 0.08;
   else if (X) valueT -= 0.07;
 
@@ -1079,7 +1083,7 @@ function pkDecidePost(T, s, id, P, M, L) {
     // call? that's her equity against just the part of your range that would
     // call this size, and it has to be better than even
     let strongEnough = true;
-    if (P.gto && perceived > valueT) {
+    if (P.gto && perceived > valueT && !(X && X !== 'neville')) {
       const cT = 0.32 + 0.14 * Math.min(sizeFor('value'), 2);
       const callers = ranges.map(R => {
         const C = new Float32Array(1326);
@@ -1100,7 +1104,7 @@ function pkDecidePost(T, s, id, P, M, L) {
     // more at anyone they've seen folding too much (neville, mostly).
     let bp;
     const size = sizeFor('bluff');
-    if (P.gto && myS > 0.45 && draw < 2) return check('pot control');
+    if (P.gto && myS > 0.45 && draw < 2 && X !== 'neville') return check('pot control');
     if (P.gto) {
       const R = A.adp[s.i];
       let w = 0, v = 0;
@@ -1110,6 +1114,10 @@ function pkDecidePost(T, s, id, P, M, L) {
       // she bluffs with her worst hands and her draws, and checks the middle
       bp *= draw >= 2 ? 1.6 : myS < 0.3 ? 1.1 : 0.25;
       if (nOpp > 1) bp *= 0.5;
+      // (the miners' leaks still count with you in the hand: neville folds to
+      // pressure, the others call too much to be worth bluffing)
+      if (X === 'neville') bp = Math.min(0.85, bp * (street === 'turn' ? 2.2 : 1.7));
+      else if (X) bp *= 0.4;
     } else {
       bp = (street === 'flop' ? 0.24 : street === 'turn' ? 0.17 : 0.12) * P.bluff;
       if (wasAggressor) bp *= 1.5;
@@ -1168,7 +1176,12 @@ function pkDecidePost(T, s, id, P, M, L) {
     // the river still to come (tens on a paired ace high board facing a big
     // check raise used to call here)
     const raised = !!(A.hand.betThis && A.hand.betThis[s.i] === street);
-    const defend = mdf * (betFrac > 1.5 ? 0.85 : 1) * (raised ? 0.75 : 1);
+    // a soft miner leading the betting changes the maths: a steaming brutus,
+    // a wild sparks or a brock out to make a point are betting far more than
+    // their share of bluffs, and neville betting means he has it
+    const lead = T.aggressor > 0 && T.aggressor !== 3 ? T.seats[T.aggressor].id : null;
+    const leak = lead && X === lead ? (lead === 'neville' ? 0.55 : 1.3) : 1;
+    const defend = Math.min(0.95, mdf * (betFrac > 1.5 ? 0.85 : 1) * (raised ? 0.75 : 1) * leak);
     const price = raised ? needed + (street === 'river' ? 0 : 0.03) : needed * 0.8;
     if (draw >= 2 && street !== 'river' && rank < defend && Math.random() < 0.18 && L.canRaise) return raiseTo(3, 'semibluff');
     if (rank < defend && eq * real > price) return call('defend');

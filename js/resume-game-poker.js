@@ -713,6 +713,11 @@ function pkAiSaw(T, seat, kind, before) {
     if (kind === 'raise') { A.hand.postAgg[seat]++; A.hand.betThis[seat] = before.street; }
   }
 }
+// a pot big enough to scare someone: a quarter of a starting stack in big
+// blinds, or about a third of what they had at the start of the hand
+function pkBigPot(T, potBefore, seat) {
+  return potBefore >= 25 * T.blinds.bb || potBefore >= 0.35 * (T.seats[seat].stack + T.seats[seat].total);
+}
 // a weighted average of strength over a range (for range advantage)
 function pkRangeMean(R, S) {
   let w = 0, t = 0, nut = 0;
@@ -1099,13 +1104,13 @@ function pkDecidePost(T, s, id, P, M, L) {
   if (X === 'neville') valueT -= 0.08;
   else if (X) valueT -= 0.07;
 
-  // neville after the flop. big bets frighten him, on the turn most of all,
-  // so he lets go of top pair and second pair he should call down with. small
-  // bets he calls with any pair, like a beginner. and he overrates his weaker
-  // strong hands: top pair on a wet board or a paired one, a straight with a
-  // flush possible, a flush on a double paired board. with those he feels
-  // safe, calls anything and even raises. he bets small when he likes his
-  // hand, and never bluffs.
+  // neville after the flop plays like a fish (alex): he overvalues mediocre
+  // hands, so any pair or any draw calls a normal bet in a normal pot, and he
+  // overrates his weaker strong hands too (top pair on a wet board or a paired
+  // one, a straight with a flush possible, a flush on a double paired board):
+  // with those he calls anything and even raises. but once the pot's big, a
+  // big bet scares him off everything that isn't the nuts, sets and flushes
+  // included. he bets small when he likes his hand, and never bluffs.
   if (id === 'neville') {
     const cat = myVal >> 20;
     const counts = {};
@@ -1114,19 +1119,22 @@ function pkDecidePost(T, s, id, P, M, L) {
     const overrated = (topPair && (wet || boardPaired)) || (cat === 4 && flushy) || (cat === 5 && doublePaired);
     const agg = T.aggressor >= 0 && T.aggressor !== s.i ? T.aggressor : -1;
     const comfort = agg >= 0 ? M.neville.comfort[agg] || 0 : 0;
-    const feel = overrated ? Math.max(eq, 0.82) : eq;
+    // (a pair feels better to him than it is, the better the pair the more)
+    const feel = overrated ? Math.max(eq, 0.82) : cat >= 1 ? Math.max(eq, 0.42 + 0.25 * myS) : draw >= 1 && street !== 'river' ? Math.max(eq, 0.4) : eq;
     if (L.canCheck) {
-      if (feel > 0.7 && rnd < 0.75) return bet(0.4 + Math.random() * 0.15, overrated && eq < 0.7 ? 'overvalue' : 'value');
+      if (feel > 0.62 && rnd < 0.7) return bet(0.4 + Math.random() * 0.15, eq < 0.6 ? 'overvalue' : 'value');
       return check();
     }
     const bf = toCall / Math.max(1, pot - toCall);
-    const fear = bf >= 0.7 ? (street === 'turn' ? 0.55 : street === 'river' ? 0.72 : 0.78) : bf <= 0.5 ? 1.12 : 1;
-    let f = overrated ? feel : feel * fear * (agg === 0 || agg === 3 ? 0.92 : 1);
+    const nuts = mySe > 0.95 || eq > 0.93;
+    if (pkBigPot(T, pot - toCall, s.i) && bf >= 0.6 && !nuts && rnd < (cat >= 2 ? 0.8 : 0.95)) return fold('scaredfold');
+    const fear = bf >= 0.7 ? (street === 'turn' ? 0.82 : street === 'river' ? 0.88 : 0.92) : 1.08;
+    let f = overrated ? feel : feel * fear * (agg === 0 || agg === 3 ? 0.95 : 1);
     f *= 1 + 0.15 * comfort;
-    if (bf <= 0.5 && myS > 0.45 && !overrated) f = Math.max(f, needed + 0.05);
-    if ((overrated || eq > 0.86) && L.canRaise && rnd < (overrated ? 0.35 : 0.6)) return raiseTo(2.6, overrated && eq < 0.7 ? 'overvalue' : 'value');
+    if (bf <= 0.6 && (cat >= 1 || draw >= 1) && !overrated) f = Math.max(f, needed + 0.05);
+    if ((overrated || eq > 0.88) && L.canRaise && rnd < (overrated ? 0.35 : 0.6)) return raiseTo(2.6, overrated && eq < 0.7 ? 'overvalue' : 'value');
     const nreal = (ip ? 1 : 0.9) * (street === 'river' ? 1 : 0.96);
-    if (f * nreal >= needed) return call(overrated && eq * nreal < needed + 0.1 ? 'overvalue' : 'call');
+    if (f * nreal >= needed) return call(eq * nreal < needed ? 'overvalue' : 'call');
     return fold(eq * nreal >= needed ? 'scaredfold' : 'fold');
   }
 

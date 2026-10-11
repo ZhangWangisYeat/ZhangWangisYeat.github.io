@@ -986,7 +986,8 @@ function pkDecidePre(T, s, id, P, M, L) {
   return fold();
 }
 
-// neville is a nervous beginner (alex): he plays on fear, not on the maths.
+// neville is a nervous beginner (alex): he plays on fear, not on the maths,
+// though he's a little braver than he was.
 // before the flop he limps and calls a lot of hands he likes the look of and
 // only raises his very best, small. what makes him fold is the size of a
 // raise, not his cards: an open bigger than about three and a half big blinds,
@@ -1004,18 +1005,18 @@ function pkNevillePre(T, s, M, L, h) {
     return nope('fold');
   }
   const agg = T.aggressor >= 0 ? T.aggressor : T.bb;
-  const comfort = M.neville.comfort[agg] || 0, jumpy = agg === 0 || agg === 3 ? 0.82 : 1;
+  const comfort = M.neville.comfort[agg] || 0, jumpy = agg === 0 || agg === 3 ? 0.9 : 1;
   const big = level >= 2 || T.bet / T.blinds.bb > 3.5;
   const commit = L.toCall / (s.stack + s.bet);
   if (level === 1) {
     if (p < 0.02 && rnd < 0.6) return raise(lastRaiseTo * 2.4, 'raise');
-    const width = (big ? 0.07 : 0.3) * (1 + 0.5 * comfort) * jumpy;
-    if (p < width && commit < 0.3) return call('call');
+    const width = (big ? 0.13 : 0.36) * (1 + 0.5 * comfort) * jumpy;
+    if (p < width && commit < 0.35) return call('call');
     return nope(p < 0.3 ? 'scaredfold' : 'fold');
   }
   // a three bet or more: only the very top goes on, and aces get it in
   if (p < 0.008) return rnd < 0.5 && L.toCall < s.stack * 0.5 ? call('call') : raise(L.maxTo, 'allin');
-  if (p < 0.03 * (1 + 0.5 * comfort) * jumpy && commit < 0.35) return call('call');
+  if (p < 0.05 * (1 + 0.5 * comfort) * jumpy && commit < 0.4) return call('call');
   return nope(p < 0.06 ? 'scaredfold' : 'fold');
 }
 

@@ -62,6 +62,12 @@ const ITEMS = {
   'oak-sapling':    { name: 'Oak Sapling', sapling: 'tree' },
   'spruce-sapling': { name: 'Spruce Sapling', sapling: 'pine' },
   'willow-sapling': { name: 'Willow Sapling', sapling: 'deadtree' },
+  // your own crafting tables, furnaces and chests (alex). right click the
+  // ground to put one down, out in the world or at home, and right click it
+  // again to pick it back up (empty it first)
+  'crafting-table': { name: 'Crafting Table', station: 'craft' },
+  furnace:          { name: 'Furnace', station: 'furnace' },
+  chest:            { name: 'Chest', station: 'chest' },
   stick:         { name: 'Stick', fuel: 0.5 },
   stone:         { name: 'Stone' },
   marble:        { name: 'Marble' },
@@ -208,6 +214,11 @@ Object.keys(ARMORS).forEach(m => Object.entries(ARMOR_SHAPES).forEach(([piece, s
   RECIPES.push({ out: `prismasteel-${k}`, shape: ['PXP'], key: { P: 'prismasteel', X: `diamond-${k}` } }));
 RECIPES.push({ out: 'bed', shape: ['WWW', 'PPP'], key: { W: 'wool', P: 'wood' } });
 RECIPES.push({ out: 'stick', n: 4, shape: ['W'], key: { W: 'wood' } });
+// the stations, the way minecraft makes them: four wood in a square for a
+// table, a ring of stone for a furnace, a ring of wood for a chest
+RECIPES.push({ out: 'crafting-table', shape: ['WW', 'WW'], key: { W: 'wood' } });
+RECIPES.push({ out: 'furnace', shape: ['SSS', 'S.S', 'SSS'], key: { S: 'stone' } });
+RECIPES.push({ out: 'chest', shape: ['WWW', 'W.W', 'WWW'], key: { W: 'wood' } });
 // four arrows a craft (it was two, alex): the material on the tip, a stick, a feather
 TIER_ORDER.forEach(m => RECIPES.push({ out: `${m}-arrow`, n: 4, shape: ['M', 'S', 'F'], key: { M: m, S: 'stick', F: 'feather' } }));
 // pulling a bit of wool apart on the table gives string, and string on a
@@ -680,6 +691,25 @@ function makeIcon(id) {
     case 'spruce-sapling':
     case 'willow-sapling':
       saplingArt(G, ITEMS[id].sapling, 8, 14);
+      break;
+    case 'crafting-table':
+      // a little table with the grid burned into its top
+      for (let y = 9; y <= 13; y++) [3, 12].forEach(x => G.set(x, y, '#5a3818'));
+      for (let y = 7; y <= 8; y++) for (let x = 2; x <= 13; x++) G.set(x, y, '#8a5a2e');
+      for (let y = 3; y <= 6; y++) for (let x = 1; x <= 14; x++) G.set(x, y, x % 4 === 1 || y === 5 ? '#9b6a38' : y === 3 ? '#d9a066' : '#c48a4f');
+      break;
+    case 'furnace':
+      // a stone block with a dark mouth and a glow at the bottom of it
+      for (let y = 2; y <= 13; y++) for (let x = 2; x <= 13; x++) G.set(x, y, (x + y * 3) % 7 === 0 ? '#6a6a6a' : y === 2 ? '#a9a9a9' : '#8a8a8a');
+      for (let y = 7; y <= 11; y++) for (let x = 5; x <= 10; x++) G.set(x, y, y === 11 ? '#ff8a1c' : '#1c1a18');
+      G.set(7, 10, '#ffd23f'); G.set(8, 10, '#ff8a1c');
+      break;
+    case 'chest':
+      // the chest from the tent, in small
+      for (let y = 7; y <= 13; y++) for (let x = 2; x <= 13; x++) G.set(x, y, y === 10 ? '#7a4a24' : x < 4 ? '#b07a42' : '#9a6233');
+      for (let y = 3; y <= 6; y++) for (let x = 2; x <= 13; x++) G.set(x, y, y === 3 ? '#d29a5c' : y === 6 ? '#6e4020' : '#b98049');
+      for (let y = 5; y <= 8; y++) { G.set(7, y, '#d9b23a'); G.set(8, y, '#d9b23a'); }
+      G.set(7, 5, '#ffe28a');
       break;
     case 'stick':
       pxLine(G, 3, 13, 12, 3, '#a0663a');
@@ -1742,7 +1772,7 @@ function nearestOpen(tx, ty) {
   return best;
 }
 
-// a station at x, y (pixels) inside a room
+// a station at x, y (pixels) inside a room, or out in the world if r is null
 function addStation(kind, x, y, r) {
   const frames = kind === 'craft' ? [makeTable()] : kind === 'chest' ? [makeChest()] : [makeFurnace(false, 0)];
   const st = { kind, x, y, frames, station: kind };
@@ -1751,10 +1781,10 @@ function addStation(kind, x, y, r) {
     st.lit = [makeFurnace(true, 0), makeFurnace(true, 1), makeFurnace(true, 2)];
     st.fps = 8;
     st.glow = { x: st.x, y: st.y - 8, rgb: '255,140,50', rad: 2.6, flicker: true, strength: 0.3, off: true };
-    r.glows.push(st.glow);
+    (r ? r.glows : glows).push(st.glow);
   }
   stations.push(st);
-  r.things.push(st);
+  (r ? r.things : things).push(st);
   return st;
 }
 
@@ -1943,6 +1973,73 @@ function stumpGreatTree() {
 }
 if (quest.greatTree) stumpGreatTree();
 
+// stations you've made and put down (quest.placed, saved). each chest has its
+// own 18 slots and each furnace its own fire, so they're kept on the entry.
+const emptyFurnace = () => ({ input: null, fuel: null, output: null, burn: 0, prog: 0 });
+quest.placed = Array.isArray(quest.placed) ? quest.placed.filter(e => e && ['craft', 'furnace', 'chest'].includes(e.kind) && Number.isInteger(e.x) && Number.isInteger(e.y)) : [];
+quest.placed.forEach(e => {
+  if (e.kind === 'chest') e.slots = Array.from({ length: Array.isArray(e.slots) && e.slots.length > 18 ? 36 : 18 }, (_, i) => validStack(e.slots && e.slots[i]));
+  if (e.kind === 'furnace') {
+    const f = e.f || {};
+    e.f = { input: validStack(f.input), fuel: validStack(f.fuel), output: validStack(f.output), burn: +f.burn || 0, prog: clamp(+f.prog || 0, 0, 1) };
+  }
+});
+const STATION_ITEM = { craft: 'crafting-table', furnace: 'furnace', chest: 'chest' };
+function placedStation(e) {
+  const r = e.room === 'home' ? homeRoom : null;
+  const st = addStation(e.kind, e.x * TILE + 8, e.y * TILE + 14, r);
+  st.placed = e.id;
+  st.where = r ? 'at home' : 'out in the world';
+  if (e.kind === 'chest') st.slots = e.slots;
+  if (e.kind === 'furnace') st.fs = e.f;
+  return st;
+}
+function placeStation() {
+  const s = heldItem(), kind = ITEMS[s.id].station, name = ITEMS[s.id].name;
+  if (room && room !== homeRoom) { toast('No room...', name, 'Put it down outside, or at home.'); sfx.deny(); return; }
+  const m = mouseWorld();
+  const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE);
+  const spot = { cx: tx * TILE + 8, cy: ty * TILE + 8 };
+  let blockedSpot;
+  if (room) {
+    blockedSpot = ty < 3 || room.blocked(spot.cx, spot.cy + 6) || room.blocked(spot.cx, spot.cy - 8)
+      || room.things.some(o => !o.gone && !o.flat && Math.abs(o.x - spot.cx) < 16 && Math.abs(o.y - (spot.cy + 6)) < 14);
+  } else {
+    const where = regionAt(tx + 0.5, ty + 0.5);
+    if (!biomeOpen(where)) { lockedToast(where); return; }
+    blockedSpot = !inside(tx, ty) || solidTile(tx, ty) || tiles[idx(tx, ty)] === T.WATER
+      || things.some(o => !o.gone && !o.creature && !o.flat && Math.hypot(o.x - spot.cx, o.y - (spot.cy + 6)) < 14);
+  }
+  if (!inReach(spot)) { toast('Too far...', name, 'Put it down somewhere closer...'); return; }
+  if (blockedSpot) { toast('No room...', name, 'Needs a clear patch of ground...'); sfx.deny(); return; }
+  const e = { id: `st-${Date.now()}`, kind, x: tx, y: ty };
+  if (room) e.room = 'home';
+  if (kind === 'chest') e.slots = new Array(18).fill(null);
+  if (kind === 'furnace') e.f = emptyFurnace();
+  quest.placed.push(e);
+  placedStation(e);
+  s.n--;
+  if (!s.n) inv.slots[inv.sel] = null;
+  floatText(`Placed ${name}`, spot.cx, spot.cy - 12, '#cfe8ff');
+  sfx.craft();
+  afterInventoryChange();
+}
+// right click one of yours to pick it back up, as long as there's nothing in it
+function pickUpStation(st) {
+  const e = quest.placed.find(q => q.id === st.placed);
+  if (!e) return;
+  const name = ITEMS[STATION_ITEM[e.kind]].name;
+  const full = e.kind === 'chest' ? e.slots.some(Boolean) : e.kind === 'furnace' ? !!(e.f.input || e.f.fuel || e.f.output) : false;
+  if (full) { toast('Not empty...', name, 'Take everything out of it first.'); sfx.deny(); return; }
+  quest.placed = quest.placed.filter(q => q !== e);
+  const list = e.room === 'home' ? homeRoom.things : things;
+  if (list.includes(st)) list.splice(list.indexOf(st), 1);
+  stations.splice(stations.indexOf(st), 1);
+  if (st.glow) { const gl = e.room === 'home' ? homeRoom.glows : glows; if (gl.includes(st.glow)) gl.splice(gl.indexOf(st.glow), 1); }
+  gain(STATION_ITEM[e.kind], 1, st.x, st.y - 16);
+  markDirty();
+}
+
 const BED = makeBed();
 // a bed out in the world, or one put down at home (its x, y are then tiles of
 // the home room)
@@ -2080,6 +2177,7 @@ const homeRoom = {
 addStation('craft', 33, 47, homeRoom);
 addStation('furnace', 61, 47, homeRoom);
 addStation('chest', 87, 47, homeRoom);
+quest.placed.forEach(placedStation);
 quest.beds.forEach(bedThing);
 
 // the buildings you can walk into. the cave opens once the grizzly is dead,
@@ -5256,8 +5354,14 @@ function useRight() {
     else toast('Too far...', 'Bed', 'Walk up to it first...');
     return;
   }
+  if (tgt && tgt.type === 'station' && tgt.st.placed) {
+    if (inReach(tgt)) pickUpStation(tgt.st);
+    else toast('Too far...', ITEMS[STATION_ITEM[tgt.st.kind]].name, 'Walk up to it first...');
+    return;
+  }
   const s = heldItem();
   if (s && s.id === 'bed') { placeBed(); return; }
+  if (s && ITEMS[s.id].station) { placeStation(); return; }
   if (s && ITEMS[s.id].sapling) { plantSapling(); return; }
   if (s && ITEMS[s.id].ranged) { startBowDraw(); return; }
   if (s && ITEMS[s.id].tool === 'drill') { startDrill(); return; }
@@ -5325,11 +5429,14 @@ function tickEating(dt) {
   renderHUD();
 }
 
+// every furnace cooks on its own (the one at home uses furnaceState, ones you've
+// made carry theirs on their station)
 function furnaceTick(dt) {
-  const F = furnaceState;
+  stations.forEach(st => { if (st.kind === 'furnace') furnaceStep(st, st.fs || furnaceState, dt); });
+}
+function furnaceStep(st, F, dt) {
   const cooked = F.input && ITEMS[F.input.id].cooksTo;
   const canCook = !!cooked && (!F.output || (F.output.id === cooked && F.output.n < STACK_MAX));
-  const st = stations.find(s => s.kind === 'furnace');
   let changed = false;
   if (canCook) {
     // tiny tolerance: 1 wood is exactly 2 meat, and float sums land at 0.9999
@@ -5360,8 +5467,8 @@ function furnaceTick(dt) {
   const lit = canCook && F.burn > 1e-6;
   st.frames = lit ? st.lit : st.unlit;
   st.glow.off = !lit;
-  if (changed) { markDirty(); if (ui === 'furnace') renderUI(); }
-  if (ui === 'furnace') {
+  if (changed) { markDirty(); if (ui === 'furnace' && F === openFurnace) renderUI(); }
+  if (ui === 'furnace' && F === openFurnace) {
     const flame = $('#f-flame'), arrow = $('#f-arrow');
     if (flame) flame.style.height = `${Math.min(1, F.burn / 2) * 100}%`;
     if (arrow) arrow.style.width = `${F.prog * 100}%`;
@@ -5464,7 +5571,7 @@ function slotGet(ref) {
   if (box === 'craft') return craftGrid[+i];
   if (box === 'chest') return openChest[+i];
   if (box === 'out') { const r = matchRecipe(); return r ? { id: r.out, n: r.n } : null; }
-  return furnaceState[box];
+  return openFurnace[box];
 }
 function slotSet(ref, stack) {
   const [box, i] = ref.split(':');
@@ -5472,7 +5579,7 @@ function slotSet(ref, stack) {
   else if (box === 'armor') inv.armor[i] = stack;
   else if (box === 'craft') craftGrid[+i] = stack;
   else if (box === 'chest') openChest[+i] = stack;
-  else furnaceState[box] = stack;
+  else openFurnace[box] = stack;
 }
 // what each slot is allowed to hold, with the reason shown when it says no
 function slotRefuses(ref, id) {
@@ -5649,10 +5756,11 @@ const ARMOR_GHOST = Object.fromEntries(ARMOR_SLOTS.map(a => {
 }));
 
 // which chest is open (home, the cave, a burrow or moe's) and where it is
-let openChest = chestSlots, openWhere = 'at home';
+let openChest = chestSlots, openWhere = 'at home', openFurnace = furnaceState;
 function openUI(kind, st) {
   ui = kind;
   openChest = (st && st.slots) || chestSlots;
+  openFurnace = (st && st.fs) || furnaceState;
   openWhere = (st && st.where) || 'at home';
   if (st && st === denChest && !quest.moe.chestOpened) { quest.moe.chestOpened = true; markDirty(); }
   stopDrill();
@@ -5732,7 +5840,7 @@ function stationHTML() {
       <div class="chest-grid">${openChest.map((st, i) => slotHTML(`chest:${i}`, st)).join('')}</div></div>`;
   }
   if (ui === 'furnace') {
-    const F = furnaceState;
+    const F = openFurnace;
     return `<div class="st-furnace">
       <div class="f-col">
         ${slotHTML('input', F.input, 'slot-meat')}

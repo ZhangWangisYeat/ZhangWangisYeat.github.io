@@ -547,10 +547,7 @@ const PK_PERSONA = {
   you: { name: 'You' },
   brutus: { skill: 0.05, loose: 1.05, aggro: 1.3, bluff: 1.35, cr: 2.4, callAdj: 0, slow: 0, wildSize: 0.32, straddle: 0.08 },
   neville: { skill: 0.05, loose: 0.6, aggro: 0.45, bluff: 0.03, cr: 0.1, callAdj: -0.08, slow: 0.3, wildSize: 0, straddle: 0 },
-  ace: { skill: 0.015, loose: 1, aggro: 1, bluff: 1, cr: 1, callAdj: 0, slow: 0.15, wildSize: 0, straddle: 0, gto: true },
-  // ace against the miners: still precise, but reading them and leaning on
-  // their leaks instead of balancing (pkAceTarget picks the leak)
-  aceExploit: { skill: 0.015, loose: 1.2, aggro: 1.1, bluff: 1, cr: 0.9, callAdj: 0, slow: 0.1, wildSize: 0, straddle: 0, exploit: true },
+  ace: { skill: 0.015, loose: 1, aggro: 1, bluff: 1, cr: 1, callAdj: 0, slow: 0.15, wildSize: 0, straddle: 0 },
   brock: { skill: 0.06, loose: 1.25, aggro: 1.2, bluff: 1.2, cr: 1.2, callAdj: 0.02, slow: 0.1, wildSize: 0.08, straddle: 0.12 },
   sparks: { skill: 0.035, loose: 1.05, aggro: 1.05, bluff: 1.05, cr: 1.1, callAdj: 0, slow: 0.1, wildSize: 0.05, straddle: 0.05 }
 };
@@ -837,6 +834,12 @@ function pkAceEst(T, i) {
   const r = pkAceRead(T, i);
   return { l: r.l, a: r.a, b: r.b, f: 1, c: (r.cs + r.cb) / 2 };
 }
+// whose leaks her table talk is about: her lines are written for neville, a
+// steaming brutus, a wild sparks and brock on the warpath
+function pkAceSoft(T, i) {
+  const M = T.ai.mood;
+  return i === 2 || (i === 1 && M.brutus.tilt) || (i === 5 && M.sparks.wild) || (i === 4 && T.ai.hand.brockTarget);
+}
 // a weighted average of strength over a range (for range advantage)
 function pkRangeMean(R, S) {
   let w = 0, t = 0, nut = 0;
@@ -857,37 +860,14 @@ function pkRaiseTo(L, to, me) {
 // tag the game uses to pick something for them to say.
 function pkDecide(T, seat) {
   const s = T.seats[seat], id = s.id, M = T.ai.mood, L = pkLegal(T, seat);
-  let P = PK_PERSONA[id];
-  T.ai.aceExploit = null;
   if (id === 'ace') {
-    // she always plays the miners' leaks, whoever else is in the hand (alex:
-    // even with you in it). against you she keeps to the book, so with you in
-    // the hand her lines stay solver shaped and only her reads of the miners
-    // bend them. with you out of it she drops the balance altogether.
-    T.ai.aceExploit = pkAceTarget(T);
-    if (!pkInHand(T.seats[0])) P = PK_PERSONA.aceExploit;
+    const d = T.street === 'preflop' ? pkAcePre(T, s, L) : pkAcePost(T, s, L);
+    // (and now and then she says so, to whoever she's going after)
+    if (d.ex > 0 && pkAceSoft(T, d.ex) && (d.type === 'raise' || d.type === 'call') && Math.random() < 0.3) d.why = 'exploit_' + T.seats[d.ex].id;
+    return d;
   }
-  const d = T.street !== 'preflop' ? pkDecidePost(T, s, id, P, M, L) : id === 'ace' ? pkAcePre(T, s, L) : pkDecidePre(T, s, id, P, M, L);
-  // (and now and then she says so, to whoever she's going after)
-  const tg = T.ai.aceExploit;
-  if (tg && tg.weak && (d.type === 'raise' || d.type === 'call') && Math.random() < 0.3) d.why = 'exploit_' + T.seats[tg.seat].id;
-  return d;
-}
-// who ace is up against and how soft they are right now: brutus on tilt,
-// neville any time, brock with a grudge or out to prove himself, sparks when
-// he's wild. you never count: she only goes after the miners. the target is
-// whoever's leading the betting if they're soft, otherwise the softest miner
-// still in, so a leak gets played even when someone else made the last raise.
-function pkAceSoft(T, i) {
-  const M = T.ai.mood;
-  return (i === 1 && M.brutus.tilt) || i === 2 || (i === 4 && (M.brock.grudge >= 2 || T.ai.hand.brockTarget)) || (i === 5 && M.sparks.wild);
-}
-function pkAceTarget(T) {
-  const opp = T.seats.filter(o => o.i !== 3 && o.i !== 0 && pkInHand(o) && (T.street !== 'preflop' || o.vol || o.i === T.aggressor));
-  const lead = T.aggressor > 0 && T.aggressor !== 3 && pkInHand(T.seats[T.aggressor]) ? T.seats[T.aggressor] : null;
-  const main = lead && pkAceSoft(T, lead.i) ? lead : opp.find(o => pkAceSoft(T, o.i)) || lead || opp[0];
-  const seat = main ? main.i : -1;
-  return { seat, weak: !!main && pkAceSoft(T, main.i), all: opp.length > 0 && opp.every(o => pkAceSoft(T, o.i)), opp: opp.map(o => o.i) };
+  const P = PK_PERSONA[id];
+  return T.street === 'preflop' ? pkDecidePre(T, s, id, P, M, L) : pkDecidePost(T, s, id, P, M, L);
 }
 // the range one player puts another on: ace's own reads, everyone else's
 // adaptive ones
@@ -1179,6 +1159,147 @@ function pkAcePre(T, s, L) {
   return fold();
 }
 
+function pkAcePost(T, s, L) {
+  const A = T.ai, S = A.str, board = T.board, street = T.street, rnd = Math.random();
+  const { opp, ranges } = pkOpps(T, s);
+  const reads = opp.map(o => pkAceRead(T, o.i)), nOpp = opp.length, anyRead = reads.some(r => r.on);
+  const ci = pkComboIndex(s.cards[0], s.cards[1]), myS = S.s[ci], draw = S.draw[ci];
+  const eq = clampN(pkEquity(s.cards, board, ranges, street === 'river' ? 520 : 680) + pkGauss() * 0.015, 0, 1);
+  const pot = L.pot, toCall = L.toCall, needed = toCall / (pot + toCall);
+  const ip = pkInPosition(T, s.i);
+  const eff = Math.min(s.stack + s.bet, Math.max(...opp.map(o => o.stack + o.bet)));
+  const spr = eff / Math.max(1, pot);
+  const flushy = [0, 1, 2, 3].some(su => board.filter(c => pkSuit(c) === su).length >= 3);
+  const wet = flushy || [0, 1, 2, 3].some(su => board.filter(c => pkSuit(c) === su).length === 2) || pkStraightOuts(board.reduce((m, c) => m | (1 << pkRank(c)), 0)) >= 2;
+  const myR = pkRangeMean(A.adp[s.i], S), theirR = ranges.map(R => pkRangeMean(R, S));
+  const nutEdge = myR.nut - Math.max(...theirR.map(r => r.nut));
+  const adv = myR.mean - Math.max(...theirR.map(r => r.mean)) + nutEdge * 0.5;
+  // where her hand sits in her own range (the share of it that's stronger)
+  const own = A.adp[s.i];
+  let ownW = 0, ownAbove = 0;
+  for (let i = 0; i < 1326; i++) if (S.ok[i] && own[i] > 0) { ownW += own[i]; if (S.se[i] > S.se[ci]) ownAbove += own[i]; }
+  const rank = ownW ? ownAbove / ownW : 0.5;
+  const check = why => ({ type: 'check', why: why || 'check' });
+  const call = (why, ex = -1) => (L.canCheck ? check() : { type: 'call', why: why || 'call', ex });
+  const fold = () => (L.canCheck ? check() : { type: 'fold', why: 'fold' });
+  const bet = (frac, why, ex = -1) => {
+    if (!L.canRaise) return L.canCheck ? check() : call(why, ex);
+    return { type: 'raise', to: pkRaiseTo(L, Math.max(L.minTo, L.isBet ? pot * frac : L.bet + (pot + toCall) * frac)), why, ex };
+  };
+  const raiseTo = (mult, why, ex = -1) => {
+    if (!L.canRaise) return call(why, ex);
+    return { type: 'raise', to: pkRaiseTo(L, Math.max(L.minTo, L.bet * mult + (pot - L.bet) * 0.4)), why, ex };
+  };
+  // the hands in a range that call a bet of x pots: as strong as a solid
+  // player needs for that size, or weaker for someone her notes say calls
+  // down light (small and big bets apart), and draws on the early streets
+  const callers = (R, r, x) => {
+    const c = x < 0.6 ? r.cs : r.cb;
+    const cT = clampN(0.32 + 0.14 * Math.min(x, 2) - 0.12 * (c - 1), 0.1, 0.8);
+    const C = new Float32Array(1326);
+    let w = 0, cw = 0;
+    for (let i = 0; i < 1326; i++) {
+      if (!(R[i] > 0) || !S.ok[i]) continue;
+      C[i] = R[i] * Math.max(pkSig((S.se[i] - cT) / 0.06), S.draw[i] >= 2 && street !== 'river' ? 0.7 : 0);
+      w += R[i]; cw += C[i];
+    }
+    return { C, frac: w ? cw / w : 0.5 };
+  };
+  // how often player j lets go to a bet of x pots, from her counts (a big
+  // bet into a pot that's big for them is its own count: that's where neville
+  // lays down great hands)
+  const foldTo = (r, x, j) => (x < 0.6 ? r.fs : pkBigPot(T, pot - toCall, j) ? r.fp : r.fb);
+  const foldAll = x => reads.reduce((m, r, k) => m * foldTo(r, x, opp[k].i), 1);
+  const foldBook = x => reads.reduce((m, r, k) => m * foldTo(ACE_NEUTRAL, x, opp[k].i), 1);
+  // whose read is furthest from a solid player's on something
+  const most = f => {
+    let k = -1, v = 1.3;
+    reads.forEach((r, j) => { if (r.on && f(r, opp[j].i) > v) { v = f(r, opp[j].i); k = opp[j].i; } });
+    return k;
+  };
+
+  if (L.canCheck) {
+    // value: every size she might use, and what it wins when the worse hands
+    // that would call it do. that's where a calling station gets bet into
+    // thinner and bigger, and a nit, who only calls with good hands, gets
+    // nothing but her strong ones (and small)
+    let best = null;
+    if (eq > 0.5) {
+      const sizes = street === 'flop' ? [0.33, 0.66, 1] : [0.5, 0.8, 1.2];
+      if (street !== 'flop' && nutEdge > 0.12 && eq > 0.85) sizes.push(1.6);
+      sizes.forEach(x => {
+        const cr = ranges.map((R, k) => callers(R, reads[k], x));
+        const eqC = pkEquity(s.cards, board, cr.map(c => c.C), 300);
+        // (the chance someone calls: the range says one thing and the folds
+        // she's counted another, so she goes halfway between them)
+        const none = cr.reduce((m, c, k) => m * (1 - (reads[k].on ? (c.frac + 1 - foldTo(reads[k], x, opp[k].i)) / 2 : c.frac)), 1);
+        const ev = (1 - none) * x * (2 * eqC - 1);
+        if (eqC > 0.52 && ev > 0 && (!best || ev > best.ev)) best = { x, ev };
+      });
+    }
+    if (best) {
+      // a trap now and then with a monster, more often against someone who
+      // bluffs a lot and still has to act after her
+      const bluffer = !ip && reads.some(r => r.on && r.b > 1.4);
+      if (street !== 'river' && eq > 0.88 && rnd < (bluffer ? 0.4 : 0.15)) return check(bluffer ? 'trap' : 'slowplay');
+      return bet(best.x, 'value', most(r => (r.cs + r.cb) / 2));
+    }
+    // middling hands want a cheap showdown, not a bigger pot
+    if (myS > 0.45 && draw < 2) return check('pot control');
+    // bluffs: the size that wins the most when they fold as often as she's
+    // counted (the board's size when she has no notes), and a solver's share
+    // of bluffs for it, more or fewer by how much more or less they fold than
+    // a solid player would
+    let x = street === 'river' ? (rnd < 0.35 ? 1.25 : 0.8) : !wet && adv > 0 ? 0.33 : wet ? 0.66 : 0.5;
+    if (anyRead) {
+      let top = -9;
+      (street === 'flop' ? [0.33, 0.66, 1] : [0.5, 0.8, 1.25]).forEach(y => { const F = foldAll(y), ev = F - (1 - F) * y; if (ev > top) { top = ev; x = y; } });
+    }
+    let w = 0, v = 0;
+    for (let i = 0; i < 1326; i++) if (S.ok[i] && own[i] > 0) { w += own[i]; if (S.se[i] > 0.78) v += own[i]; }
+    const V = w ? v / w : 0.2, ratio = street === 'river' ? x / (1 + 2 * x) : (x / (1 + 2 * x)) * 1.6;
+    let bp = Math.min(0.85, (V * ratio) / Math.max(0.15, 1 - V) / (1 - ratio));
+    // she bluffs with her worst hands and her draws, and checks the middle
+    bp *= draw >= 2 ? 1.6 : myS < 0.3 ? 1.1 : 0.25;
+    if (nOpp > 1) bp *= 0.5;
+    const k = foldAll(x) / foldBook(x);
+    bp = Math.min(0.85, bp * clampN(k * k, 0.1, 3));
+    if (rnd < bp) return bet(x, 'bluff', k > 1.3 ? most((r, j) => foldTo(r, x, j) / foldTo(ACE_NEUTRAL, x, j)) : -1);
+    return check();
+  }
+
+  // bet into
+  const betFrac = toCall / Math.max(1, pot - toCall);
+  const real = (ip ? 1 : 0.9) * (street === 'river' ? 1 : 0.96);
+  const implied = draw >= 2 && street !== 'river' && spr > 1.5 ? 0.04 : 0;
+  const bi = T.aggressor >= 0 && T.aggressor !== s.i && pkInHand(T.seats[T.aggressor]) ? T.aggressor : opp[0].i;
+  const rb = pkAceRead(T, bi), bR = ranges[Math.max(0, opp.findIndex(o => o.i === bi))];
+  const raised = A.hand.betThis[s.i] === street;
+  // a raise for value: strong, and ahead of the hands that would put more in
+  // (bigger against someone who calls big bets light)
+  if (eq > 0.8 + 0.04 * (nOpp - 1) + (street === 'river' ? 0.04 : 0) && L.canRaise) {
+    if (rnd < 0.09 && street !== 'river' && eq < 0.95) return call('slowplay');
+    const C = new Float32Array(1326);
+    for (let i = 0; i < 1326; i++) if (bR[i] > 0 && S.ok[i]) C[i] = bR[i] * Math.max(pkSig((S.se[i] - 0.72) / 0.05), S.draw[i] >= 2 && street !== 'river' ? 0.5 : 0);
+    if (eq > 0.94 || pkEquity(s.cards, board, [C], 300) > 0.55) return raiseTo(rb.cb > 1.3 ? 3.6 : 3, 'value', rb.cb > 1.3 ? bi : -1);
+  }
+  if (spr < 1.2 && eq > 0.45 && rank < 0.3 && L.canRaise) return raiseTo(10, 'commit');
+  // how much of her range she keeps against the bet: the minimum defence
+  // against a player who bluffs like a solver, more against someone her notes
+  // say bluffs a lot, a lot less against someone who's only ever shown up with
+  // the goods. a little less still against huge overbets, and less again when
+  // it's a raise of her own bet (raising ranges are heavier on value), with
+  // the full price on top
+  const mdf = 1 / (1 + betFrac);
+  const honest = clampN(Math.pow(rb.b, 0.6), 0.45, 1.6);
+  const defend = Math.min(0.95, mdf * (betFrac > 1.5 ? 0.85 : 1) * (raised ? 0.75 : 1) * honest);
+  const price = raised ? needed + (street === 'river' ? 0 : 0.03) : needed * (rb.b > 1.3 ? 0.75 : rb.b < 0.7 ? 1 : 0.8);
+  if (draw >= 2 && street !== 'river' && rank < defend && L.canRaise && rnd < 0.18 * clampN(foldTo(rb, 2, bi) / foldTo(ACE_NEUTRAL, 2, bi), 0.3, 2)) return raiseTo(3, 'semibluff');
+  if (rank < defend && eq * real > price) return call('defend', rb.on && rb.b > 1.3 && rank >= mdf ? bi : -1);
+  if (draw >= 2 && street !== 'river' && eq * real + implied >= needed) return call('call');
+  return fold();
+}
+
 function pkDecidePost(T, s, id, P, M, L) {
   const A = T.ai, S = A.str, board = T.board, street = T.street, rnd = Math.random();
   const { opp, ranges } = pkOpps(T, s);
@@ -1233,30 +1354,13 @@ function pkDecidePost(T, s, id, P, M, L) {
   // sizes, by who they are and what the board looks like
   const sizeFor = kind => {
     if (id === 'neville') return 0.5;
-    if (X === 'neville') return kind === 'value' ? 0.4 : street === 'flop' ? 0.66 : 1.1;
-    if (X === 'brutus' && kind === 'value') return 0.95;
-    if (X && kind === 'value') return 0.8;
     if (id === 'brutus' && kind === 'bluff' && adv > 0 && rnd < P.wildSize * (tilt ? 1.6 : 1)) return 2 + Math.random() * 2.5;
     if (target && kind === 'bluff' && rnd < 0.45) return 1.2 + Math.random() * 1.3;
-    if (P.gto) {
-      const nutEdge = myR.nut - Math.max(...theirR.map(r => r.nut));
-      if (street !== 'flop' && nutEdge > 0.12 && (eq > 0.85 || kind === 'bluff')) return 1.25;
-      if (street === 'river') return eq > 0.85 || kind === 'bluff' ? (rnd < 0.35 ? 1.4 : 0.85) : 0.6;
-      return !wet && adv > 0 ? 0.33 : wet ? 0.7 : 0.5;
-    }
     if (id === 'brutus') return kind === 'value' ? 0.8 + Math.random() * 0.3 : 0.75;
     if (id === 'brock') return 0.66;
     return wet ? 0.66 : 0.5;
   };
-  let valueT = 0.6 + 0.07 * (nOpp - 1) + (street === 'river' ? 0.03 : 0);
-  // ace going after a leak: against neville she bets thin and small for value
-  // (he calls small bets with any pair) and bluffs big, the turn most of all
-  // (big bets scare him off his hand); against a tilting brutus, a cocky brock
-  // or a punting sparks she bets thinner for value, hardly bluffs (they call)
-  // and calls them down lighter
-  const X = T.ai.aceExploit && T.ai.aceExploit.weak ? T.seats[T.ai.aceExploit.seat].id : null;
-  if (X === 'neville') valueT -= 0.08;
-  else if (X) valueT -= 0.07;
+  const valueT = 0.6 + 0.07 * (nOpp - 1) + (street === 'river' ? 0.03 : 0);
 
   // neville after the flop plays like a fish (alex): he overvalues mediocre
   // hands, so any pair or any draw calls a normal bet in a normal pot, and he
@@ -1294,66 +1398,24 @@ function pkDecidePost(T, s, id, P, M, L) {
 
   if (L.canCheck) {
     // checked to us: bet for value, bluff some, check the rest
-    // (ace only value bets what's genuinely strong on the board, not
-    // anything that's ahead of a range she thinks is weak: a middling pair
-    // under an ace wants to see a showdown cheaply, not build a pot)
-    // she also asks the solver's question: if she bets, will worse hands
-    // call? that's her equity against just the part of your range that would
-    // call this size, and it has to be better than even
-    let strongEnough = true;
-    if (P.gto && perceived > valueT && !(X && X !== 'neville')) {
-      const cT = 0.32 + 0.14 * Math.min(sizeFor('value'), 2);
-      const callers = ranges.map(R => {
-        const C = new Float32Array(1326);
-        for (let i = 0; i < 1326; i++) if (R[i] > 0 && S.ok[i]) C[i] = R[i] * Math.max(pkSig((S.se[i] - cT) / 0.06), S.draw[i] >= 2 && street !== 'river' ? 0.7 : 0);
-        return C;
-      });
-      const eqCall = pkEquity(s.cards, board, callers, 420);
-      strongEnough = eqCall > 0.52 || eq > 0.9;
-    }
-    // a strong hand against a steaming brutus who's still to act: check it
-    // and let him fire, he will
-    const brutusBehind = X === 'brutus' && !pkInPosition(T, s.i) && pkCanAct(T.seats[1]);
-    if (brutusBehind && eq > 0.78 && street !== 'river' && rnd < 0.45) return check('trap');
-    if (perceived > valueT && strongEnough) {
+    if (perceived > valueT) {
       if (rnd < P.slow * (eq > 0.88 ? 1 : 0.3) && street !== 'river' && !tilt) return check('slowplay');
       return bet(sizeFor('value'), 'value');
     }
     if (id === 'neville') return check();
-    // how often to bluff. ace works it out like a solver: enough bluffs to go
-    // with her value bets that her bet can't be read, given the size. the
-    // others start from a feel for it, lean on their personality, and bluff
-    // more at anyone they've seen folding too much (neville, mostly).
-    let bp;
+    // how often to bluff: a feel for it, leaning on their personality, and
+    // more at anyone they've seen folding too much (neville, mostly)
     const size = sizeFor('bluff');
-    if (P.gto && myS > 0.45 && draw < 2 && X !== 'neville') return check('pot control');
-    if (P.gto) {
-      const R = A.adp[s.i];
-      let w = 0, v = 0;
-      for (let i = 0; i < 1326; i++) if (S.ok[i] && R[i] > 0) { w += R[i]; if (S.se[i] > 0.78) v += R[i]; }
-      const V = w ? v / w : 0.2, ratio = street === 'river' ? size / (1 + 2 * size) : (size / (1 + 2 * size)) * 1.6;
-      bp = Math.min(0.85, (V * ratio) / Math.max(0.15, 1 - V) / (1 - ratio));
-      // she bluffs with her worst hands and her draws, and checks the middle
-      bp *= draw >= 2 ? 1.6 : myS < 0.3 ? 1.1 : 0.25;
-      if (nOpp > 1) bp *= 0.5;
-      // (the miners' leaks still count with you in the hand: neville folds to
-      // pressure, the others call too much to be worth bluffing)
-      if (X === 'neville') bp = Math.min(0.85, bp * (street === 'turn' ? 2.2 : 1.7));
-      else if (X) bp *= 0.4;
-    } else {
-      bp = (street === 'flop' ? 0.24 : street === 'turn' ? 0.17 : 0.12) * P.bluff;
-      if (wasAggressor) bp *= 1.5;
-      if (draw >= 2) bp *= 1.8;
-      if (nOpp > 1) bp *= 0.45;
-      else bp *= pkEstFor(T, s.i, opp[0].i).f;
-      if (id === 'brutus') bp *= adv > 0.03 ? 2.1 : adv < -0.03 ? 0.25 : 1;
-      if (tilt) bp *= 1.8;
-      if (target) bp += 0.08 * g;
-      if (PK.SEVEN_DEUCE && pkIs72(s.cards)) bp = Math.min(0.85, bp * 2.5);
-      if (myS > 0.45 && myS < 0.75 && street !== 'river') bp *= 0.5;
-      if (X === 'neville') bp = Math.min(0.9, bp * (street === 'turn' ? 2.6 : 2));
-      else if (X) bp *= 0.35;
-    }
+    let bp = (street === 'flop' ? 0.24 : street === 'turn' ? 0.17 : 0.12) * P.bluff;
+    if (wasAggressor) bp *= 1.5;
+    if (draw >= 2) bp *= 1.8;
+    if (nOpp > 1) bp *= 0.45;
+    else bp *= pkEstFor(T, s.i, opp[0].i).f;
+    if (id === 'brutus') bp *= adv > 0.03 ? 2.1 : adv < -0.03 ? 0.25 : 1;
+    if (tilt) bp *= 1.8;
+    if (target) bp += 0.08 * g;
+    if (PK.SEVEN_DEUCE && pkIs72(s.cards)) bp = Math.min(0.85, bp * 2.5);
+    if (myS > 0.45 && myS < 0.75 && street !== 'river') bp *= 0.5;
     if (rnd < bp) return bet(size, id === 'brutus' && size > 1.6 ? 'wildbluff' : target ? 'grudgebluff' : 'bluff');
     return check();
   }
@@ -1365,9 +1427,6 @@ function pkDecidePost(T, s, id, P, M, L) {
   let margin = P.callAdj;
   if (wild) margin += 0.04;
   if (tilt) margin += 0.05;
-  if (X && X !== 'neville') margin += 0.06;
-  // (and when neville raises, he has it)
-  if (X === 'neville' && T.aggressor === 2 && T.raises >= 1 && A.hand.postAgg[2]) margin -= 0.08;
   if (target) margin += 0.05 * g;
   const raiseT = (id === 'neville' ? 0.88 : 0.8) + 0.04 * (nOpp - 1) + (street === 'river' ? 0.04 : 0);
   if (eq > raiseT && L.canRaise) {
@@ -1375,41 +1434,12 @@ function pkDecidePost(T, s, id, P, M, L) {
     return raiseTo(id === 'neville' ? 2.6 : 3, 'value');
   }
   // getting it in when the stacks are short compared to the pot
-  if (spr < 1.2 && eq > 0.45 && L.canRaise && id !== 'neville' && (!P.gto || rank < 0.3)) return raiseTo(10, 'commit');
+  if (spr < 1.2 && eq > 0.45 && L.canRaise && id !== 'neville') return raiseTo(10, 'commit');
   // where this hand sits in my own range, for bluff catching: against a
   // normal sized bet a decent player doesn't fold so much of their range that
-  // any two cards can bet and win (the minimum defence). ace keeps to it
-  // strictly. against an overbet it doesn't apply, and everyone just asks
-  // whether the hand has the equity, which against the strong range a big bet
-  // stands for, it usually doesn't (that's the hole in ace: bet huge at her
-  // with nothing and she lays it down).
+  // any two cards can bet and win (the minimum defence). against an overbet it
+  // doesn't apply, and they just ask whether the hand has the equity.
   const mdf = 1 / (1 + betFrac);
-  if (P.gto) {
-    // she continues with the top of her own range, as much of it as the size
-    // says she has to (the minimum defence), and folds the rest, however good
-    // the price looks against her read. a raise is judged the same way: her
-    // range after betting twice is strong, so a pair under the top card sits
-    // low in it and goes. she trims it a little against huge overbets (her
-    // charts don't have enough bluffs in them there), which is the opening a
-    // brave enough bluffer can use. draws with the price to continue still do.
-    // against a raise (she bet and got raised) it's stricter: raising ranges
-    // are heavier on value than betting ones, so she defends less of her range
-    // and only with hands that really have the price, with a bit extra for
-    // the river still to come (tens on a paired ace high board facing a big
-    // check raise used to call here)
-    const raised = !!(A.hand.betThis && A.hand.betThis[s.i] === street);
-    // a soft miner leading the betting changes the maths: a steaming brutus,
-    // a wild sparks or a brock out to make a point are betting far more than
-    // their share of bluffs, and neville betting means he has it
-    const lead = T.aggressor > 0 && T.aggressor !== 3 ? T.seats[T.aggressor].id : null;
-    const leak = lead && X === lead ? (lead === 'neville' ? 0.55 : 1.3) : 1;
-    const defend = Math.min(0.95, mdf * (betFrac > 1.5 ? 0.85 : 1) * (raised ? 0.75 : 1) * leak);
-    const price = raised ? needed + (street === 'river' ? 0 : 0.03) : needed * 0.8;
-    if (draw >= 2 && street !== 'river' && rank < defend && Math.random() < 0.18 && L.canRaise) return raiseTo(3, 'semibluff');
-    if (rank < defend && eq * real > price) return call('defend');
-    if (draw >= 2 && street !== 'river' && eq * real + implied >= needed) return call('call');
-    return fold('fold');
-  }
   if (perceived * real + implied + margin >= needed) {
     return call(id === 'neville' && perceived > eq + 0.1 ? 'overvalue' : wild && eq * real < needed ? 'wildcall' : target && eq * real < needed ? 'grudgecall' : 'call');
   }

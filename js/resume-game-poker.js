@@ -742,7 +742,15 @@ const ACE_K = 4, ACE_KF = 10;
 // played with them for years. it was learned the same way, from a few
 // thousand hands of them in node, then cut down to a dozen or so hands' worth
 // so it keeps moving with what they do in front of her.
-const ACE_SEED = {};
+const ACE_SEED = {
+  brutus: { seen: 12, vp: 1.64, vn: 10.44, rp: 0.96, rn: 8.4, cls: 0.72, cns: 2.94, clb: 0.94, cnb: 4.69, bl: 0.51, bn: 8.38, fs: 11.04, fsn: 25, fb: 11.81, fbn: 25, fp: 11.2, fpn: 25, fr: 9.51, frn: 25, fo: 17.59, fon: 25 },
+  'brutus:tilt': { seen: 12, vp: 3.42, vn: 11.74, rp: 2.63, rn: 10.14, cls: 0.42, cns: 1.5, clb: 0.45, cnb: 1.79, bl: 0.68, bn: 4.89, fs: 11.43, fsn: 25, fb: 13.79, fbn: 25, fp: 12.88, fpn: 25, fr: 1.12, frn: 25, fo: 10.11, fon: 25 },
+  neville: { seen: 12, vp: 2.15, vn: 11.92, rp: 0.04, rn: 1.51, cls: 0.4, cns: 1.5, clb: 3.01, cnb: 9.05, bl: 0.15, bn: 6.48, fs: 5.05, fsn: 25, fb: 5.96, fbn: 25, fp: 19.78, fpn: 25, fr: 19.34, frn: 25, fo: 18.61, fon: 25 },
+  brock: { seen: 12, vp: 3.43, vn: 12.63, rp: 1.18, rn: 7.88, cls: 0.64, cns: 2.6, clb: 0.63, cnb: 2.78, bl: 1.09, bn: 8.55, fs: 12.21, fsn: 25, fb: 15.19, fbn: 25, fp: 14.04, fpn: 25, fr: 5.53, frn: 25, fo: 11.31, fon: 25 },
+  'brock:you': { seen: 12, vp: 2.53, vn: 5.63, rp: 0.71, rn: 1.95, cls: 2.06, cns: 5.07, clb: 1.98, cnb: 5.53, bl: 2.81, bn: 10.75, fs: 4.82, fsn: 25, fb: 7.24, fbn: 25, fp: 7.46, fpn: 25, fr: 1.84, frn: 25, fo: 3.33, fon: 25 },
+  sparks: { seen: 12, vp: 1.71, vn: 10.84, rp: 0.95, rn: 8.47, cls: 0.53, cns: 2.5, clb: 0.87, cnb: 4.52, bl: 0.65, bn: 8.78, fs: 10.56, fsn: 25, fb: 13.13, fbn: 25, fp: 11.51, fpn: 25, fr: 9.96, frn: 25, fo: 18.89, fon: 25 },
+  'sparks:wild': { seen: 12, vp: 3.69, vn: 11.76, rp: 1.99, rn: 8.03, cls: 0.52, cns: 2.02, clb: 0.68, cnb: 3.1, bl: 0.87, bn: 5.85, fs: 11.3, fsn: 25, fb: 14.61, fbn: 25, fp: 14.67, fpn: 25, fr: 6.58, frn: 25, fo: 7.24, fon: 25 }
+};
 // the page for whoever's in a seat right now
 function pkAceKey(T, i) {
   const id = T.seats[i].id, M = T.ai.mood;

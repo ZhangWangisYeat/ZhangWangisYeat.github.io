@@ -378,7 +378,7 @@ function pkAct(T, seat, a) {
   if (type === 'check' && !L.canCheck) type = 'call';
   if (type === 'call' && L.toCall === 0) type = 'check';
   if (type === 'raise' && !L.canRaise) type = L.toCall ? 'call' : 'check';
-  const before = { pot: pkPotNow(T), toCall: L.toCall, level: T.raises, street: T.street, bet: T.bet, mine: s.bet };
+  const before = { pot: pkPotNow(T), toCall: L.toCall, level: T.raises, street: T.street, bet: T.bet, mine: s.bet, vol: s.vol };
   if (type === 'fold') {
     s.folded = true;
     if (T.street === 'preflop') s.foldedPre = true;
@@ -538,13 +538,11 @@ function pkAward(T, showdown, inH) {
 //
 // ranges: everyone keeps a range for everyone else, a weight on every combo,
 // starting even and squeezed by every action, on how likely each combo is to
-// have done that. there are two copies. the standard one assumes a solid,
-// textbook player, and it's the only one ace uses: she plays her charts and
-// her frequencies and never adapts (alex: she follows gto too religiously, so
-// crazy plays get through her). the adaptive one stretches or shrinks the
-// thresholds by how loose and aggressive each player has actually been lately,
-// so the others start calling a tilted brutus lighter, and calling you lighter
-// if you've been splashing around.
+// have done that. everyone but ace uses the adaptive copy: it stretches or
+// shrinks the thresholds by how loose and aggressive each player has actually
+// been lately, so the others start calling a tilted brutus lighter, and
+// calling you lighter if you've been splashing around. ace keeps her own copy,
+// read off her notebook (see pkAceRead).
 const PK_PERSONA = {
   you: { name: 'You' },
   brutus: { skill: 0.05, loose: 1.05, aggro: 1.3, bluff: 1.35, cr: 2.4, callAdj: 0, slow: 0, wildSize: 0.32, straddle: 0.08 },
@@ -563,7 +561,7 @@ function pkMood() {
   return {
     brutus: { tilt: false, losses: 0, wins: 0, folds: 0, quiet: 0 },
     neville: { comfort: [0, 0, 0, 0, 0, 0], read: { l: 1, b: 1 } },
-    ace: { respect: 0, read: { l: 1, b: 1 }, shown: 0, sd: 0 },
+    ace: { respect: 0, book: null },
     brock: { grudge: 0, target: false },
     sparks: { wild: true, losses: 0, read: { l: 1, b: 1 } }
   };
@@ -581,20 +579,21 @@ function pkAiInit(T, mood) {
   T.ai = {
     mood: pkMoodFix(mood),
     stats: T.seats.map(() => ({ vpip: 0.24, pfr: 0.17, agg: 0.4, ftb: 0.42, n: 0 })),
-    std: [], adp: [], str: null, lastSaw: [], hand: {}, results: null
+    ace: [], adp: [], str: null, lastSaw: [], hand: {}, results: null
   };
 }
 function pkAiHandStart(T) {
   const A = T.ai;
-  A.std = T.seats.map(() => new Float32Array(1326).fill(1));
+  A.ace = T.seats.map(() => new Float32Array(1326).fill(1));
   A.adp = T.seats.map(() => new Float32Array(1326).fill(1));
   A.str = pkStrengths([]);
-  A.hand = { betThis: [], postAgg: T.seats.map(() => 0), postAct: T.seats.map(() => 0), faced: T.seats.map(() => 0), folded: T.seats.map(() => 0), checked: T.seats.map(() => false), brockTarget: false, startStacks: T.seats.map(s => s.stack + s.total) };
+  A.hand = { betThis: [], postAgg: T.seats.map(() => 0), postAct: T.seats.map(() => 0), faced: T.seats.map(() => 0), folded: T.seats.map(() => 0), checked: T.seats.map(() => false), brockTarget: false, startStacks: T.seats.map(s => s.stack + s.total), log: [], strs: {}, learned: [] };
   A.mood.brock.target = false;
 }
 function pkAiStreet(T) {
   const A = T.ai;
   A.str = pkStrengths(T.board);
+  A.hand.strs[T.street] = A.str;
   A.hand.checked = T.seats.map(() => false);
 }
 // what a seat's play has looked like lately, as multipliers on a solid player's
@@ -647,7 +646,7 @@ function pkPostLikelihood(se, d, kind, frac, street, est, back) {
     return Math.max(pkSig((se - vT) / 0.06), bluff * (1 - se));
   }
   if (kind === 'call') {
-    const cT = 0.32 + 0.14 * Math.min(frac, 2) - 0.05 * (est.l - 1);
+    const cT = Math.max(0.1, 0.32 + 0.14 * Math.min(frac, 2) - 0.05 * (est.l - 1) - 0.12 * ((est.c || 1) - 1));
     return Math.max(pkSig((se - cT) / 0.08) * (1 - 0.45 * pkSig((se - 0.94) / 0.02)), d >= 2 ? 0.6 : 0);
   }
   if (kind === 'check') return 1 - (back ? 0.62 : 0.3) * pkSig((se - 0.82) / 0.05);
@@ -686,13 +685,12 @@ function pkPolarSqueeze(R, S, kind, frac, street, est, checkRaise) {
 function pkAiSaw(T, seat, kind, before) {
   const A = T.ai;
   if (before.street !== 'preflop' && before.toCall > 0) { A.hand.faced[seat]++; if (kind === 'fold') A.hand.folded[seat]++; }
+  pkAceNote(T, seat, kind, before);
   if (kind === 'fold') return;
   if (kind === 'check' && T.street !== 'preflop') A.hand.checked[seat] = true;
   const frac = before.pot ? Math.max(0, (T.seats[seat].bet - before.mine) / before.pot) : 1;
-  [true, false].forEach(std => {
-    // (ace's textbook ranges for you bend to what you've shown her)
-    const r = A.mood.ace.read;
-    const R = std ? A.std[seat] : A.adp[seat], est = std && seat === 0 ? { l: r.l, a: r.b, b: r.b, f: 1 } : pkEst(T, seat, std);
+  [true, false].forEach(mine => {
+    const R = mine ? A.ace[seat] : A.adp[seat], est = mine ? pkAceEst(T, seat) : pkEst(T, seat, false);
     if (before.street === 'preflop') {
       const behind = pkBehind(T, seat);
       for (let i = 0; i < 1326; i++) if (R[i] > 0) R[i] *= Math.max(0.01, pkPreLikelihood(PK_CPCT[i], kind, before.level, behind, est));
@@ -713,10 +711,131 @@ function pkAiSaw(T, seat, kind, before) {
     if (kind === 'raise') { A.hand.postAgg[seat]++; A.hand.betThis[seat] = before.street; }
   }
 }
+// ace's notebook (alex: she should be a very good player who adapts to
+// everyone's weaknesses, you included, and learns them from the hands she
+// sees). every hand that gets turned over, at a showdown she's in or not, or
+// shown after a hand, she goes back over what that player did with it: how far
+// down the starting hands they'll play and raise, whether they called bets with
+// something weak (calling down light, small bets and big ones apart, because
+// neville calls a small bet with anything and gives up to a big one), and
+// whether their bets were bluffs. folds she counts as they happen, since she
+// doesn't need the cards for those: how often each of them gives up to a small
+// bet, a big one, a big one in a big pot (where neville lays down great hands),
+// a raise after they've limped or opened, and an open. every count starts from
+// what a solid player would do (ACE_BASE), worth a few hands (ACE_K, ACE_KF),
+// so a couple of odd hands only bend her reads and a real pattern moves them
+// all the way.
+// (alex asked about a machine learning model for her. a trained model needs
+// thousands of hands of someone before it knows anything about them, and she
+// has to adjust after two, so this is counting, the way a real player keeps
+// notes. it's still learning, just with the right amount of data.)
+// she keeps different pages for the moods you can see across the table:
+// brutus steaming and brutus calm play like two different people, so do sparks
+// wild and settled, and brock once he's gone after you.
+const ACE_FIELDS = ['seen', 'vp', 'vn', 'rp', 'rn', 'cls', 'cns', 'clb', 'cnb', 'bl', 'bn', 'fs', 'fsn', 'fb', 'fbn', 'fp', 'fpn', 'fr', 'frn', 'fo', 'fon'];
+// a solid player's numbers, measured off the textbook bot at the table: the
+// average place in the starting hands of what they play and what they raise,
+// how often a call that gets shown was a weak hand (small bets, big bets), how
+// often a bet that gets shown was a bluff, and how often they fold to a small
+// bet, a big one, a big one in a big pot, a raise after limping or opening,
+// and an open
+const ACE_BASE = { vp: 0.13, rp: 0.084, cls: 0.2, clb: 0.17, bl: 0.065, fs: 0.43, fb: 0.56, fp: 0.49, fr: 0.36, fo: 0.74 };
+const ACE_K = 4, ACE_KF = 10;
+// what she already knows about the miners when you first sit down: she's
+// played with them for years. it was learned the same way, from a few
+// thousand hands of them in node, then cut down to a dozen or so hands' worth
+// so it keeps moving with what they do in front of her.
+const ACE_SEED = {};
+// the page for whoever's in a seat right now
+function pkAceKey(T, i) {
+  const id = T.seats[i].id, M = T.ai.mood;
+  if (id === 'brutus' && M.brutus.tilt) return 'brutus:tilt';
+  if (id === 'sparks' && M.sparks.wild) return 'sparks:wild';
+  if (id === 'brock' && T.ai.hand.brockTarget) return 'brock:you';
+  return id;
+}
+function pkAceEntry(M, key) {
+  if (!M.ace.book) M.ace.book = JSON.parse(JSON.stringify(ACE_SEED));
+  const B = M.ace.book;
+  if (!B[key]) B[key] = Object.fromEntries(ACE_FIELDS.map(f => [f, 0]));
+  return B[key];
+}
 // a pot big enough to scare someone: a quarter of a starting stack in big
 // blinds, or about a third of what they had at the start of the hand
 function pkBigPot(T, potBefore, seat) {
   return potBefore >= 25 * T.blinds.bb || potBefore >= 0.35 * (T.seats[seat].stack + T.seats[seat].total);
+}
+// someone's done something: folds go straight in, the rest waits in the
+// hand's log in case the cards get shown
+function pkAceNote(T, seat, kind, before) {
+  if (seat === 3) return;
+  const key = pkAceKey(T, seat), H = T.ai.hand;
+  const bf = before.toCall / Math.max(1, before.pot - before.toCall);
+  if (kind !== 'fold' && kind !== 'check') H.log.push({ seat, key, st: before.street, kind: kind === 'raise' && before.bet === 0 ? 'bet' : kind, bf });
+  if (before.toCall <= 0) return;
+  const e = pkAceEntry(T.ai.mood, key), f = kind === 'fold' ? 1 : 0;
+  if (before.street === 'preflop') {
+    if (before.vol) { e.frn++; e.fr += f; } else if (before.level === 1) { e.fon++; e.fo += f; }
+  } else if (bf < 0.6) { e.fsn++; e.fs += f; } else if (!pkBigPot(T, before.pot - before.toCall, seat)) { e.fbn++; e.fb += f; } else { e.fpn++; e.fp += f; }
+}
+// a hand's been turned over: she goes back over what they did with it. H is
+// the hand it was played in (you can show yours after the next one's begun
+// being dealt, so the show button keeps hold of it)
+function pkAceLearn(T, i, cards, H) {
+  H = H || T.ai.hand;
+  cards = cards || T.seats[i].cards;
+  if (i === 3 || !cards || !H.log || H.learned[i]) return;
+  H.learned[i] = true;
+  const M = T.ai.mood, ci = pkComboIndex(cards[0], cards[1]), p = pkPct(cards[0], cards[1]);
+  let played = false, raised = false, key = pkAceKey(T, i);
+  H.log.forEach(a => {
+    if (a.seat !== i) return;
+    const e = pkAceEntry(M, a.key);
+    key = a.key;
+    if (a.st === 'preflop') {
+      if (!played) { e.vp += p; e.vn++; played = true; }
+      if (a.kind === 'raise' && !raised) { e.rp += p; e.rn++; raised = true; }
+      return;
+    }
+    const S = H.strs[a.st];
+    if (!S) return;
+    if (a.kind === 'call') {
+      // (how light a call was: how far the hand was from the top of
+      // everything they could hold, so a call with the nuts counts 0)
+      const light = 1 - S.se[ci];
+      if (a.bf < 0.6) { e.cns++; e.cls += light; } else { e.cnb++; e.clb += light; }
+    } else { e.bn++; e.bl += S.s[ci] < 0.4 && S.draw[ci] < 2 ? 1 : 0; }
+  });
+  pkAceEntry(M, key).seen++;
+}
+// what her notes say about someone, as multipliers on a solid player (1 is
+// solid: l and a how far down the hands they play and raise, cs and cb how
+// light they call small and big bets, b how much they bluff) and their fold
+// rates. until she's seen a couple of someone's hands she plays them by the
+// book (alex: gto against you until then).
+const ACE_NEUTRAL = { on: false, l: 1, a: 1, cs: 1, cb: 1, b: 1, fs: ACE_BASE.fs, fb: ACE_BASE.fb, fp: ACE_BASE.fp, fr: ACE_BASE.fr, fo: ACE_BASE.fo };
+function pkAceRead(T, i) {
+  if (i === 3) return ACE_NEUTRAL;
+  const M = T.ai.mood, key = pkAceKey(T, i), id = T.seats[i].id;
+  let e = pkAceEntry(M, key);
+  if (e.seen < 2 && key !== id) e = pkAceEntry(M, id);
+  if (e.seen < 2) return ACE_NEUTRAL;
+  const B = ACE_BASE, m = (x, n, b, k) => (x + b * k) / (n + k);
+  return {
+    on: true,
+    l: clampN(m(e.vp, e.vn, B.vp, ACE_K) / B.vp, 0.45, 3),
+    a: clampN(m(e.rp, e.rn, B.rp, ACE_K) / B.rp, 0.4, 3.5),
+    cs: clampN(m(e.cls, e.cns, B.cls, ACE_K) / B.cls, 0.3, 3),
+    cb: clampN(m(e.clb, e.cnb, B.clb, ACE_K) / B.clb, 0.3, 3),
+    b: clampN(m(e.bl, e.bn, B.bl, ACE_K) / B.bl, 0.2, 3),
+    fs: m(e.fs, e.fsn, B.fs, ACE_KF), fb: m(e.fb, e.fbn, B.fb, ACE_KF), fp: m(e.fp, e.fpn, B.fp, ACE_KF),
+    fr: m(e.fr, e.frn, B.fr, ACE_KF), fo: m(e.fo, e.fon, B.fo, ACE_KF)
+  };
+}
+// the same read in the shape the range reading takes
+function pkAceEst(T, i) {
+  const r = pkAceRead(T, i);
+  return { l: r.l, a: r.a, b: r.b, f: 1, c: (r.cs + r.cb) / 2 };
 }
 // a weighted average of strength over a range (for range advantage)
 function pkRangeMean(R, S) {
@@ -770,54 +889,14 @@ function pkAceTarget(T) {
   const seat = main ? main.i : -1;
   return { seat, weak: !!main && pkAceSoft(T, main.i), all: opp.length > 0 && opp.every(o => pkAceSoft(T, o.i)), opp: opp.map(o => o.i) };
 }
-// the range one player puts another on. ace knows the other miners inside
-// out after all these years and reads brutus, neville and brock off how
-// they've actually been playing (which is why she eats them alive), but she
-// plays you and sparks strictly by the book: you're new, and sparks is too
-// random for her charts. that's her weakness (alex): a crazy line from either
-// of you gets read as the textbook hand it represents.
-// how far ace has stopped playing you by the book, 0 to 1. she starts strictly
-// gto against you, and every hand of yours she sees (a showdown with her, or
-// one you show) moves her a fifth of the rest of the way towards reading you
-// off how you've actually been playing
-function pkAceAdapt(M) {
-  return 1 - Math.pow(0.8, (M.ace.shown || 0) + (M.ace.sd || 0));
-}
+// the range one player puts another on: ace's own reads, everyone else's
+// adaptive ones
 function pkRangeFor(T, me, them) {
-  if (me === 3 && them === 0) {
-    const a = pkAceAdapt(T.ai.mood);
-    if (a <= 0) return T.ai.std[0];
-    const S = T.ai.std[0], D = T.ai.adp[0], R = new Float32Array(1326);
-    let ss = 0, sd = 0;
-    for (let i = 0; i < 1326; i++) { ss += S[i]; sd += D[i]; }
-    for (let i = 0; i < 1326; i++) R[i] = (1 - a) * S[i] / (ss || 1) + a * D[i] / (sd || 1);
-    return R;
-  }
-  if (me === 3 && T.ai.aceExploit && them !== 0) return pkAceView(T, them);
-  if (PK_PERSONA[T.seats[me].id].gto && (them === 0 || them === 5)) return T.ai.std[them];
-  return T.ai.adp[them];
-}
-// a miner's range the way ace sees it, bent by what she knows about them right
-// now. raising a range to a power under 1 flattens it (more of the weak hands
-// stay in, so more of what they bet reads as a bluff); over 1 sharpens it.
-function pkAceView(T, them) {
-  const R = T.ai.adp[them], M = T.ai.mood;
-  // (steam coming out of brutus's head: he's betting and raising with anything.
-  // neville betting or raising after the flop only ever means he has it)
-  const nevBets = them === 2 && T.street !== 'preflop' && (T.aggressor === 2 || T.ai.hand.betThis[2] === T.street);
-  const k = them === 1 && M.brutus.tilt ? 0.6 : nevBets ? 1.5 : 1;
-  if (k === 1) return R;
-  const O = new Float32Array(1326);
-  for (let i = 0; i < 1326; i++) O[i] = R[i] > 0 ? Math.pow(R[i], k) : 0;
-  return O;
+  return me === 3 ? T.ai.ace[them] : T.ai.adp[them];
 }
 function pkEstFor(T, me, them) {
-  // (ace reads every miner off how they've been playing, sparks included)
-  let e = pkEst(T, them, PK_PERSONA[T.seats[me].id].gto && (them === 0 || (them === 5 && me !== 3)));
-  if (me === 3 && them === 0) {
-    const a = pkAceAdapt(T.ai.mood), d = pkEst(T, 0, false);
-    e = { l: 1 + a * (d.l - 1), a: 1 + a * (d.a - 1), b: 1 + a * (d.b - 1), f: 1 + a * (d.f - 1) };
-  }
+  if (me === 3) return pkAceEst(T, them);
+  const e = pkEst(T, them, false);
   const r = them === 0 && T.ai.mood[T.seats[me].id] && T.ai.mood[T.seats[me].id].read;
   return r ? { ...e, l: e.l * r.l, a: e.a * r.b, b: e.b * r.b } : e;
 }
@@ -1364,22 +1443,15 @@ function pkAiHandEnd(T, showdown, busted) {
       if (stayed(4)) { M.brock.grudge = Math.min(7, M.brock.grudge + 2); res.events.push('brockSeven'); }
     }
   }
-  // a showdown between you and ace: she's seen what you play and how, and
-  // reads you a bit more off that from now on (see pkAceAdapt). a weak hand
-  // you got there with counts as you being loose, a strong one as you being
-  // honest. she learns a bit less from a showdown than from a hand you chose
-  // to show her.
-  if (showdown && you.cards && you.shown && T.seats[3].shown && invested[0] > 0 && invested[3] > 0) {
-    M.ace.sd = (M.ace.sd || 0) + 1;
-    pkLean(M.ace.read, pkWeak(you.cards, T.board), 0.6);
-  }
+  // every hand that got turned over goes in ace's notebook
+  T.seats.forEach(o => { if (o.shown && o.cards) pkAceLearn(T, o.i); });
   // ace's respect for you grows when you take a pot off her
   if (net[0] > 0 && net[3] < 0 && invested[3] >= T.blinds.bb * 2) { M.ace.respect++; res.events.push('aceBeaten'); }
   A.results = res;
 }
 // you've shown your cards after a hand (bluff says whether it was one, lost
-// is everyone who lost chips in it, folded everyone who folded). ace takes it
-// to heart and bends her reads of you; sparks does too, a bit, because he
+// is everyone who lost chips in it, folded everyone who folded). ace goes
+// over it in her notebook; sparks bends his reads of you a bit, because he
 // doesn't care that much; neville gets more scared of you and learns only a
 // tiny bit; brock, if he lost to you, takes it personally; and brutus, if you
 // bluffed him off his hand, is that much closer to tilting.
@@ -1387,11 +1459,10 @@ function pkLean(r, bluff, k) {
   r.b = clampN(r.b * (bluff ? 1 + 0.3 * k : 1 - 0.15 * k), 0.6, 2.4);
   r.l = clampN(r.l * (bluff ? 1 + 0.12 * k : 1 - 0.05 * k), 0.6, 2);
 }
-function pkAiYouShowed(T, bluff, lost, folded) {
+function pkAiYouShowed(T, bluff, lost, folded, cards, hand) {
   const M = T.ai.mood, out = [];
   const lean = (r, k) => pkLean(r, bluff, k);
-  lean(M.ace.read, 1);
-  M.ace.shown = (M.ace.shown || 0) + 1;
+  pkAceLearn(T, 0, cards, hand);
   lean(M.sparks.read, 0.4);
   lean(M.neville.read, 0.1);
   M.neville.comfort[0] = clampN(M.neville.comfort[0] - 0.15, -1, 1);
@@ -3119,7 +3190,7 @@ function pvShowsAfter(res, top, losers) {
   const you = T.seats[0];
   PV.showInfo = null;
   if (you.cards && !you.shown && !you.out) {
-    PV.showInfo = { cards: you.cards.slice(), board, bluff: pkWeak(you.cards, board) && net[0] > 0,
+    PV.showInfo = { cards: you.cards.slice(), board, hand: T.ai.hand, bluff: pkWeak(you.cards, board) && net[0] > 0,
       lost: losers.filter(i => i > 0), folded: T.seats.filter(o => o.i && o.cards && o.folded && o.total > 0).map(o => o.i) };
     pkUI.show.disabled = false;
     pkUI.show.hidden = false;
@@ -3137,6 +3208,7 @@ function pvShowsAfter(res, top, losers) {
   }
   if (!shows) return PV.showInfo ? 0.8 : 0;
   pvShowCards(top);
+  pkAceLearn(T, top);
   pvSayPick(top, line || 'show', 1, null, true);
   return 1.2;
 }
@@ -3160,7 +3232,7 @@ function pvYouShow() {
   pkUI.show.disabled = true;
   sfx.ui();
   pvShowCards(0);
-  const out = pkAiYouShowed(PV.T, info.bluff, info.lost, info.folded);
+  const out = pkAiYouShowed(PV.T, info.bluff, info.lost, info.folded, info.cards, info.hand);
   const alive = i => !PV.T.seats[i].out;
   if (alive(5)) pvSayPick(5, 'knows', 1, null, true);
   if (out.includes('brutusShown') && alive(1)) { pvMood(1, 'fume', 3); pvSayPick(1, 'seeBluff', 1, null, true); }

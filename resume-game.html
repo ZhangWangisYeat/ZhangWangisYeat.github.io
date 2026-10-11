@@ -171,7 +171,15 @@
     <canvas id="pk-canvas" aria-hidden="true"></canvas>
     <div class="pk-top">
       <button type="button" class="px-btn px" id="pk-rules-btn">Rules <kbd>R</kbd></button>
-      <button type="button" class="px-btn px" id="pk-fast" aria-pressed="false">Fast</button>
+      <div class="pk-speed" id="pk-speed">
+        <button type="button" class="px-btn px" id="pk-fast" aria-expanded="false" aria-controls="pk-speed-panel">Speed 1x</button>
+        <div class="audio-panel pk-speed-panel px" id="pk-speed-panel" hidden>
+          <button type="button" class="audio-opt" data-speed="1" aria-pressed="true">Normal <b>1x</b></button>
+          <button type="button" class="audio-opt" data-speed="2" aria-pressed="false">Fast <b>2x</b></button>
+          <button type="button" class="audio-opt" data-speed="3" aria-pressed="false">Faster <b>3x</b></button>
+          <button type="button" class="audio-opt" data-speed="4" aria-pressed="false">Fastest <b>4x</b></button>
+        </div>
+      </div>
       <button type="button" class="px-btn px" id="pk-leave">Leave</button>
       <span class="pk-level px" id="pk-level" hidden></span>
     </div>

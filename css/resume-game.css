@@ -1477,6 +1477,8 @@ body.is-poker .toast { z-index: 39; }
 .pk-top { position: absolute; top: 16px; left: var(--gap); display: flex; gap: 8px; }
 .pk-top .px-btn { padding: 8px 12px; font-size: 0.62rem; }
 #pk-fast.is-on { color: #111; background: var(--accent); }
+.pk-speed { position: relative; display: inline-flex; }
+.pk-speed-panel { left: 0; right: auto; z-index: 40; }
 .pk-actions {
   position: absolute;
   left: var(--gap);

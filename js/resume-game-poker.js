@@ -2416,7 +2416,7 @@ function pvDraw(t) {
 // knocked you out (they remember), brock's grudge and ace's respect carried
 // between games, and a game in progress (stacks, button, moods), saved after
 // every hand so a reload puts you back in your seat
-quest.poker = Object.assign({ met: false, won: false, keyGiven: false, visits: 0, busts: 0, lastBeater: null, table: null, grudge: 0, respect: 0, wins: 0, hideRules: false },
+quest.poker = Object.assign({ met: false, won: false, keyGiven: false, visits: 0, busts: 0, lastBeater: null, table: null, grudge: 0, respect: 0, wins: 0, hideRules: false, speed: 1 },
   quest.poker && typeof quest.poker === 'object' ? quest.poker : {});
 const PQ = quest.poker;
 
@@ -2714,12 +2714,30 @@ pkUI.presets.addEventListener('click', e => {
   pvSetRaise(to);
 });
 pkUI.straddle.addEventListener('change', () => { if (PV) PV.youStraddle = pkUI.straddle.checked; });
-pkUI.fast.addEventListener('click', () => {
-  if (!PV) return;
-  PV.fast = !PV.fast;
-  pkUI.fast.classList.toggle('is-on', PV.fast);
-  pkUI.fast.setAttribute('aria-pressed', String(PV.fast));
+// the speed menu: 1x to 4x
+const pkSpeedPanel = $('#pk-speed-panel');
+function pvSpeedMenu(open) {
+  pkSpeedPanel.hidden = !open;
+  pkUI.fast.setAttribute('aria-expanded', String(open));
+}
+function pvSetSpeed(k) {
+  PQ.speed = k;
+  if (PV) PV.mult = k;
+  pkUI.fast.textContent = `Speed ${k}x`;
+  pkUI.fast.classList.toggle('is-on', k > 1);
+  pkSpeedPanel.querySelectorAll('[data-speed]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.speed === k)));
+  markDirty();
+}
+pkUI.fast.addEventListener('click', e => { e.stopPropagation(); pvSpeedMenu(pkSpeedPanel.hidden); });
+pkSpeedPanel.addEventListener('click', e => {
+  const b = e.target.closest('[data-speed]');
+  if (!b) return;
+  e.stopPropagation();
+  pvSetSpeed(+b.dataset.speed);
+  pvSpeedMenu(false);
+  sfx.ui();
 });
+document.addEventListener('click', e => { if (!pkSpeedPanel.hidden && !e.target.closest('#pk-speed')) pvSpeedMenu(false); });
 pkUI.leave.addEventListener('click', () => pvAskLeave());
 pkUI.show.addEventListener('click', () => pvYouShow());
 pkUI.rulesBtn.addEventListener('click', () => pvRules(!PV.rulesOpen));
@@ -3384,7 +3402,7 @@ function pvOpen() {
   pvLayout();
   PV = {
     T: pkTable(PK_IDS.map((_, i) => (i ? PK.START : 0))), seats: null, board: [], pot: 0, movers: [], flights: [], bubbles: [], parts: [], wait: 0.4,
-    think: null, human: false, scene: null, modal: false, lastWhy: [], speed: 1, fast: false, shake: 0, time: 0, deck: true, buttonAt: null,
+    think: null, human: false, scene: null, modal: false, lastWhy: [], speed: 1, mult: 1, shake: 0, time: 0, deck: true, buttonAt: null,
     speaker: -1, wins: [], started: false, youStraddle: false, sayQ: []
   };
   pkAiInit(PV.T);
@@ -3392,7 +3410,8 @@ function pvOpen() {
   pkChat.innerHTML = '';
   pkUI.straddle.checked = false;
   pkUI.show.hidden = true;
-  pkUI.fast.classList.remove('is-on');
+  pvSetSpeed([1, 2, 3, 4].includes(PQ.speed) ? PQ.speed : 1);
+  pvSpeedMenu(false);
   pvHideControls();
   pkRoot.hidden = false;
   document.body.classList.add('is-poker');
@@ -3419,9 +3438,9 @@ function pvLoop(ts) {
   if (!PV) return;
   const raw = Math.min(0.05, Math.max(0, (ts - pkLast) / 1000));
   pkLast = ts;
-  // quicker when you're not in the hand, and quicker again with fast on
+  // quicker when you're not in the hand, and quicker again at 2x to 4x
   const out = !PV.T.seats[0] || PV.T.seats[0].folded || PV.T.seats[0].out;
-  PV.speed = (PV.fast ? 2.2 : 1) * (out && PV.started && !PV.scene ? 1.7 : 1);
+  PV.speed = PV.mult * (out && PV.started && !PV.scene ? 1.7 : 1);
   const dt = raw * PV.speed;
   pvTick(dt);
   pvSceneTick(raw);
@@ -3617,7 +3636,7 @@ const PK_TUTORIAL = [
   // the controls
   { who: 3, text: "Your buttons are bottom left. Fold is F. Check or call is C." },
   { who: 3, text: "To raise, set how much with the slider, the minus and plus, the arrow keys, or the presets: the minimum, half the pot, three quarters, the pot, or everything. Then Raise, or Enter. A goes all in." },
-  { who: 3, text: "The chat on the right keeps track of everything. R brings the rules back. Fast speeds things up when you're out of a hand. Leave cashes you out after the hand you're in." },
+  { who: 3, text: "The chat on the right keeps track of everything. R brings the rules back. Speed plays it two, three or four times faster. Leave cashes you out after the hand you're in." },
   { who: 3, text: "That's everything. You know the rules. Now let's see if you can play.", mood: 'smug', demo: {} },
   { who: 5, text: "Class dismissed! Deal, deal, deal!", mood: 'grin' }
 ];

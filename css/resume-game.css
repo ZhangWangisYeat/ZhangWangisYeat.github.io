@@ -1402,6 +1402,7 @@ body.is-title .hud-play { opacity: 0; pointer-events: none; }
 
 .slot s, .hb-slot s { position: absolute; left: 5px; bottom: 4px; height: 3px; max-width: calc(100% - 10px); }
 .chest-grid { display: grid; grid-template-columns: repeat(6, 46px); gap: 4px; }
+.chest-grid.is-big { grid-template-columns: repeat(9, 46px); }
 .hud-time {
   padding: 2px 6px;
   font-family: var(--px);
@@ -1461,6 +1462,7 @@ body.is-title .hud-play { opacity: 0; pointer-events: none; }
   .slot { width: auto; aspect-ratio: 1; height: auto; }
   .rb-list { grid-template-columns: 1fr; }
   .chest-grid { grid-template-columns: repeat(6, 1fr); }
+  .chest-grid.is-big { grid-template-columns: repeat(9, 1fr); }
   .craft-grid { grid-template-columns: repeat(5, 34px); }
   .craft-grid .slot { width: 34px; height: 34px; }
 }

@@ -1143,6 +1143,19 @@ function makeChest(locked) {
   return G.outline(() => '#2b1a0c').canvas();
 }
 
+// two chests pushed together into one big one: one long lid and body, the
+// metal bands at either end, a seam down the middle and a clasp on each half
+function makeBigChest() {
+  const G = pixelGrid(40, 18);
+  for (let y = 7; y <= 16; y++) for (let x = 1; x <= 38; x++) G.set(x, y, y === 11 || y === 14 ? '#7a4a24' : x < 5 ? '#b07a42' : '#9a6233');
+  for (let y = 2; y <= 6; y++) for (let x = 1; x <= 38; x++) G.set(x, y, y === 2 ? '#d29a5c' : y === 6 ? '#6e4020' : '#b98049');
+  [3, 36].forEach(x => { for (let y = 2; y <= 16; y++) G.set(x, y, y === 2 ? '#9a9a9a' : '#6f6f6f'); });
+  for (let y = 3; y <= 16; y++) G.set(19, y, y === 6 ? '#4a2a12' : '#6e4020');
+  [10, 28].forEach(x0 => { for (let y = 5; y <= 8; y++) for (let x = x0; x <= x0 + 1; x++) G.set(x, y, y === 5 ? '#ffe28a' : '#d9b23a'); });
+  return G.outline(() => '#2b1a0c').canvas();
+}
+const BIG_CHEST = makeBigChest();
+
 // a placed bed, seen from above: headboard, pillow, red blanket
 function makeBed() {
   const G = pixelGrid(18, 28);
@@ -1978,7 +1991,7 @@ if (quest.greatTree) stumpGreatTree();
 const emptyFurnace = () => ({ input: null, fuel: null, output: null, burn: 0, prog: 0 });
 quest.placed = Array.isArray(quest.placed) ? quest.placed.filter(e => e && ['craft', 'furnace', 'chest'].includes(e.kind) && Number.isInteger(e.x) && Number.isInteger(e.y)) : [];
 quest.placed.forEach(e => {
-  if (e.kind === 'chest') e.slots = Array.from({ length: Array.isArray(e.slots) && e.slots.length > 18 ? 36 : 18 }, (_, i) => validStack(e.slots && e.slots[i]));
+  if (e.kind === 'chest') e.slots = Array.from({ length: e.w === 2 ? 36 : 18 }, (_, i) => validStack(e.slots && e.slots[i]));
   if (e.kind === 'furnace') {
     const f = e.f || {};
     e.f = { input: validStack(f.input), fuel: validStack(f.fuel), output: validStack(f.output), burn: +f.burn || 0, prog: clamp(+f.prog || 0, 0, 1) };
@@ -1987,7 +2000,9 @@ quest.placed.forEach(e => {
 const STATION_ITEM = { craft: 'crafting-table', furnace: 'furnace', chest: 'chest' };
 function placedStation(e) {
   const r = e.room === 'home' ? homeRoom : null;
-  const st = addStation(e.kind, e.x * TILE + 8, e.y * TILE + 14, r);
+  // (a large chest spans its tile and the one to its right)
+  const st = addStation(e.kind, e.x * TILE + (e.w === 2 ? 16 : 8), e.y * TILE + 14, r);
+  if (e.w === 2) st.frames = [BIG_CHEST];
   st.placed = e.id;
   st.where = r ? 'at home' : 'out in the world';
   if (e.kind === 'chest') st.slots = e.slots;
@@ -2011,6 +2026,28 @@ function placeStation() {
       || things.some(o => !o.gone && !o.creature && !o.flat && Math.hypot(o.x - spot.cx, o.y - (spot.cy + 6)) < 14);
   }
   if (!inReach(spot)) { toast('Too far...', name, 'Put it down somewhere closer...'); return; }
+  // a chest put down right beside one of your single chests joins it, like
+  // minecraft: the two become one large chest with twice the room (alex)
+  if (kind === 'chest') {
+    const here = room ? 'home' : undefined;
+    const nb = quest.placed.find(q => q.kind === 'chest' && q.w !== 2 && q.room === here && q.y === ty && Math.abs(q.x - tx) === 1);
+    if (nb) {
+      const old = stations.find(st => st.placed === nb.id);
+      const list = room ? room.things : things;
+      if (old && list.includes(old)) list.splice(list.indexOf(old), 1);
+      if (old) stations.splice(stations.indexOf(old), 1);
+      nb.w = 2;
+      nb.x = Math.min(nb.x, tx);
+      nb.slots = nb.slots.concat(new Array(18).fill(null));
+      placedStation(nb);
+      s.n--;
+      if (!s.n) inv.slots[inv.sel] = null;
+      floatText('Large Chest', nb.x * TILE + 16, spot.cy - 12, '#cfe8ff');
+      sfx.craft();
+      afterInventoryChange();
+      return;
+    }
+  }
   if (blockedSpot) { toast('No room...', name, 'Needs a clear patch of ground...'); sfx.deny(); return; }
   const e = { id: `st-${Date.now()}`, kind, x: tx, y: ty };
   if (room) e.room = 'home';
@@ -2036,7 +2073,7 @@ function pickUpStation(st) {
   if (list.includes(st)) list.splice(list.indexOf(st), 1);
   stations.splice(stations.indexOf(st), 1);
   if (st.glow) { const gl = e.room === 'home' ? homeRoom.glows : glows; if (gl.includes(st.glow)) gl.splice(gl.indexOf(st.glow), 1); }
-  gain(STATION_ITEM[e.kind], 1, st.x, st.y - 16);
+  gain(STATION_ITEM[e.kind], e.w === 2 ? 2 : 1, st.x, st.y - 16);
   markDirty();
 }
 
@@ -5837,7 +5874,7 @@ function stationHTML() {
   }
   if (ui === 'chest') {
     return `<div class="st-chest"><p class="inv-label">Chest <span>${openWhere}</span></p>
-      <div class="chest-grid">${openChest.map((st, i) => slotHTML(`chest:${i}`, st)).join('')}</div></div>`;
+      <div class="chest-grid${openChest.length > 18 ? ' is-big' : ''}">${openChest.map((st, i) => slotHTML(`chest:${i}`, st)).join('')}</div></div>`;
   }
   if (ui === 'furnace') {
     const F = openFurnace;
@@ -5856,7 +5893,7 @@ function stationHTML() {
 
 function renderUI() {
   if (!ui) return;
-  const title = { inv: 'Inventory', craft: 'Crafting Table', furnace: 'Furnace', chest: 'Chest' }[ui];
+  const title = { inv: 'Inventory', craft: 'Crafting Table', furnace: 'Furnace', chest: openChest.length > 18 ? 'Large Chest' : 'Chest' }[ui];
   const scroll = invWrap.querySelector('.rb-list')?.scrollTop || 0;
   invWrap.innerHTML = `
     <section class="inv px" role="dialog" aria-label="${title}">
@@ -6976,7 +7013,7 @@ canvas.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   const tgt = targetAt(mouseWorld());
   if (tgt && CLICK_ONLY.has(tgt.type)) {
-    const name = tgt.type === 'station' ? { craft: 'Crafting Table', furnace: 'Furnace', chest: 'Chest' }[tgt.st.kind] : tgt.type === 'building' ? tgt.b.name : '???';
+    const name = tgt.type === 'station' ? { craft: 'Crafting Table', furnace: 'Furnace', chest: tgt.st.slots && tgt.st.slots.length > 18 ? 'Large Chest' : 'Chest' }[tgt.st.kind] : tgt.type === 'building' ? tgt.b.name : '???';
     if (!inReach(tgt)) toast('Too far...', name, 'Walk up to it first');
     else if (tgt.type === 'station' && tgt.st.locked) { toast(...(tgt.st.lockMsg || ['Locked', 'Moe\'s Loot', 'Defeat Moe the Mole first.'])); sfx.deny(); }
     else if (tgt.type === 'station') openUI(tgt.st.kind, tgt.st);

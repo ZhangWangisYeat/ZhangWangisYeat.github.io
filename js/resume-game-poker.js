@@ -3291,6 +3291,8 @@ function pvAfterHand() {
   if (ev.includes('brockGrudge')) PQ.grudge = T.ai.mood.brock.grudge;
   // save where the game's at, unless it's over
   const live = T.seats.filter(s => !s.out);
+  // (ace's notebook goes with her from one game to the next)
+  PQ.aceBook = T.ai.mood.ace.book;
   if (T.seats[0].out || live.length <= 1) PQ.table = null;
   else PQ.table = { stacks: T.seats.map(s => s.stack), button: T.button, hand: T.hand, mood: T.ai.mood, stats: T.ai.stats, clock: T.clock || 0, level: T.level || 0 };
   markDirty();
@@ -3354,6 +3356,7 @@ function pvYouShow() {
   if (alive(3) && Math.random() < 0.6) pvSayPick(3, 'noted', 1, null, true);
   if (out.includes('brutusTilt')) pvSayPick(1, 'tiltShown', 1, null, true);
   PQ.grudge = PV.T.ai.mood.brock.grudge;
+  PQ.aceBook = PV.T.ai.mood.ace.book;
   PV.wait = Math.max(PV.wait, 2.2);
   markDirty();
 }
@@ -3685,6 +3688,7 @@ function pvNewGame(youStack) {
   const mood = pkMood();
   mood.brock.grudge = Math.min(4, PQ.grudge * 0.5);
   mood.ace.respect = PQ.respect;
+  mood.ace.book = PQ.aceBook || null;
   pkAiInit(T, mood);
   PV.T = T;
   PV.seats = pvSeats(T);

@@ -57,6 +57,11 @@ const ITEMS = {
   wood:          { name: 'Oak Wood', fuel: 2, wood: true },
   'spruce-wood': { name: 'Spruce Wood', fuel: 2, wood: true },
   'willow-wood': { name: 'Willow Wood', fuel: 2, wood: true },
+  // saplings fall off trees when they come down. plant one (right click the
+  // ground) and it grows into that kind of tree (see SAPLING_GROW)
+  'oak-sapling':    { name: 'Oak Sapling', sapling: 'tree' },
+  'spruce-sapling': { name: 'Spruce Sapling', sapling: 'pine' },
+  'willow-sapling': { name: 'Willow Sapling', sapling: 'deadtree' },
   stick:         { name: 'Stick', fuel: 0.5 },
   stone:         { name: 'Stone' },
   marble:        { name: 'Marble' },
@@ -671,6 +676,11 @@ function makeIcon(id) {
       pxBlob(G, 13, 8.5, 2, 3, (dx, dy) => (dx * dx + dy * dy < 0.35 ? core : ring));
       break;
     }
+    case 'oak-sapling':
+    case 'spruce-sapling':
+    case 'willow-sapling':
+      saplingArt(G, ITEMS[id].sapling, 8, 14);
+      break;
     case 'stick':
       pxLine(G, 3, 13, 12, 3, '#a0663a');
       pxLine(G, 4, 13, 13, 3, '#734522');
@@ -829,6 +839,28 @@ function makeIcon(id) {
     lit.filter((_, i) => i % 3 === 0).slice(0, 4).forEach(([x, y]) => G.set(x, y, '#ffffff'));
   }
   return G.outline(() => '#141414').canvas();
+}
+// a sapling standing with its foot at (fx, fy): a thin stem and a few leaves
+// in its tree's colours. oak is a round green tuft, spruce a little dark
+// green spire, and dried willow a pale bent twig with a couple of grey green
+// leaves hanging off it.
+function saplingArt(G, kind, fx, fy) {
+  if (kind === 'pine') {
+    pxLine(G, fx, fy, fx, fy - 3, '#6b4422');
+    for (let k = 0; k < 4; k++) for (let x = -3 + k; x <= 3 - k; x++) G.set(fx + x, fy - 3 - k * 2, x < 0 ? '#3f8f6a' : '#2f6d51');
+    for (let k = 0; k < 4; k++) for (let x = -2 + k; x <= 2 - k; x++) G.set(fx + x, fy - 4 - k * 2, x < 0 ? '#4fa07a' : '#2a5e46');
+    G.set(fx, fy - 11, '#4fa07a');
+  } else if (kind === 'deadtree') {
+    pxLine(G, fx, fy, fx + 1, fy - 5, '#9c8e74');
+    pxLine(G, fx + 1, fy - 5, fx - 2, fy - 9, '#b9ab8f');
+    pxLine(G, fx + 1, fy - 6, fx + 4, fy - 9, '#9c8e74');
+    [[fx - 3, fy - 8], [fx - 3, fy - 7], [fx + 5, fy - 8], [fx + 4, fy - 7], [fx - 1, fy - 10]].forEach(([x, y]) => G.set(x, y, '#a3ad7c'));
+  } else {
+    pxLine(G, fx, fy, fx, fy - 5, '#7a4f2a');
+    pxBlob(G, fx - 1.5, fy - 7, 2.6, 2.2, (dx, dy) => (dx + dy < -0.4 ? '#8fd45e' : '#62b240'));
+    pxBlob(G, fx + 2, fy - 8.5, 2.4, 2.2, (dx, dy) => (dx + dy < -0.4 ? '#7cc650' : '#3f8f3a'));
+    pxBlob(G, fx, fy - 10, 2, 1.8, (dx, dy) => (dx + dy < -0.3 ? '#9be36a' : '#4f9e36'));
+  }
 }
 // moe's drill in miniature, pointing up to the top right like the other tools:
 // the grip, the chunky hazard striped motor, the collar and the threaded bit.
@@ -1801,8 +1833,107 @@ function tickSnow(dt) {
     markDirty();
   }
 }
+// every tree the world started with, standing or not, so a chopped one can
+// grow back in the same spot
+const WILD_TREES = Object.fromEntries(things.filter(o => o.tree).map(o => [o.id, o]));
 for (let i = things.length - 1; i >= 0; i--) {
   if (things[i].tree && quest.chopped.includes(things[i].id)) things.splice(i, 1);
+}
+// trees grow back (alex). a chopped one is bare ground for a while, then a
+// sapling comes up in its place, and a few minutes after it was chopped the
+// tree is back (quest.treeGrow, seconds left, saved). planted saplings
+// (quest.planted) grow into trees of their kind the same way and stay where
+// you put them. the great tree is the one that never grows back.
+const TREE_REGROW = 300, SAPLING_GROW = 180;
+const SAPLING_SPRITE = Object.fromEntries(['tree', 'pine', 'deadtree'].map(k => {
+  const G = pixelGrid(12, 16);
+  saplingArt(G, k, 6, 15);
+  return [k, G.outline(() => '#1c140c').canvas()];
+}));
+const SAPLING_OF = { tree: 'oak-sapling', pine: 'spruce-sapling', deadtree: 'willow-sapling' };
+quest.treeGrow = Array.isArray(quest.treeGrow) ? quest.treeGrow.filter(e => Array.isArray(e) && WILD_TREES[e[0]]) : [];
+// (trees chopped before they could grow back get a timer when the save loads)
+quest.chopped.forEach(id => { if (WILD_TREES[id] && !quest.treeGrow.some(e => e[0] === id)) quest.treeGrow.push([id, 60 + Math.random() * TREE_REGROW]); });
+quest.planted = Array.isArray(quest.planted) ? quest.planted.filter(p => p && SAPLING_OF[p.kind] && Number.isInteger(p.tx) && Number.isInteger(p.ty)) : [];
+const sprouts = {};
+function treeFrame(kind, tx, ty) {
+  const pool = DECOR[kind];
+  return pool[(hash2(tx, ty, 61) * pool.length) | 0];
+}
+// the little sapling showing where a tree is coming back (or one you planted)
+function showSprout(key, kind, tx, ty) {
+  if (sprouts[key]) return;
+  sprouts[key] = { sapling: true, x: tx * TILE + 8, y: ty * TILE + 14, frames: [SAPLING_SPRITE[kind]] };
+  things.push(sprouts[key]);
+}
+function hideSprout(key) {
+  const o = sprouts[key];
+  if (!o) return;
+  const k = things.indexOf(o);
+  if (k >= 0) things.splice(k, 1);
+  delete sprouts[key];
+}
+function plantedTree(p) {
+  const o = { decor: true, tree: p.kind, id: p.id, planted: true, tx: p.tx, ty: p.ty, x: p.tx * TILE + 8, y: p.ty * TILE + 14, frames: [treeFrame(p.kind, p.tx, p.ty)] };
+  things.push(o);
+  return o;
+}
+quest.planted.forEach(p => { if (p.t > 0) showSprout(p.id, p.kind, p.tx, p.ty); else plantedTree(p); });
+quest.treeGrow.forEach(e => { if (e[1] < TREE_REGROW * 0.5) { const o = WILD_TREES[e[0]]; showSprout(o.id, o.tree, o.tx, o.ty); } });
+// nothing grows on top of you or anything alive (it waits until the spot is clear)
+function spotClear(x, y) {
+  const near = (ax, ay) => Math.abs(ax - x) < 12 && Math.abs(ay - y) < 12;
+  return (room || !near(player.x, player.y)) && !creatures.some(c => !c.room && !c.dead && !c.gone && near(c.x, c.y));
+}
+function tickTrees(dt) {
+  for (let k = quest.treeGrow.length - 1; k >= 0; k--) {
+    const e = quest.treeGrow[k], o = WILD_TREES[e[0]];
+    e[1] -= dt;
+    if (e[1] < TREE_REGROW * 0.5) showSprout(o.id, o.tree, o.tx, o.ty);
+    if (e[1] > 0 || !spotClear(o.x, o.y)) continue;
+    quest.treeGrow.splice(k, 1);
+    quest.chopped = quest.chopped.filter(id => id !== o.id);
+    hideSprout(o.id);
+    o.gone = false;
+    o.shake = 0;
+    if (!things.includes(o)) things.push(o);
+    if (!room && Math.hypot(o.x - player.x, o.y - player.y) < 20 * TILE) burst(o.x, o.y - 16, o.tree === 'pine' ? '47,109,81' : o.tree === 'deadtree' ? '154,140,110' : '98,178,64', 10);
+    markDirty();
+  }
+  quest.planted.forEach(p => {
+    if (!(p.t > 0)) return;
+    p.t -= dt;
+    if (p.t > 0) return;
+    if (!spotClear(p.tx * TILE + 8, p.ty * TILE + 14)) { p.t = 0.5; return; }
+    p.t = 0;
+    hideSprout(p.id);
+    plantedTree(p);
+    if (!room && Math.hypot(p.tx * TILE - player.x, p.ty * TILE - player.y) < 20 * TILE) burst(p.tx * TILE + 8, p.ty * TILE - 2, '98,178,64', 10);
+    markDirty();
+  });
+}
+// right click with a sapling: it goes in the ground you're pointing at, on
+// open grass, snow, sand or dirt, not too close to another tree
+function plantSapling() {
+  if (room) { toast('Not in here...', 'Sapling', 'Plant it outside.'); sfx.deny(); return; }
+  const s = heldItem(), kind = ITEMS[s.id].sapling;
+  const m = mouseWorld();
+  const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE);
+  const spot = { cx: tx * TILE + 8, cy: ty * TILE + 8 };
+  const where = regionAt(tx + 0.5, ty + 0.5);
+  if (!biomeOpen(where)) { lockedToast(where); return; }
+  if (!inReach(spot)) { toast('Too far...', ITEMS[s.id].name, 'Plant it somewhere closer...'); return; }
+  const ground = inside(tx, ty) && [T.GRASS, T.SNOW, T.SAND, T.DIRT].includes(tiles[idx(tx, ty)]) && !solidTile(tx, ty);
+  const crowded = things.some(o => !o.gone && !o.creature && !o.flat && Math.hypot(o.x - spot.cx, o.y - (spot.cy + 6)) < 2.2 * TILE);
+  if (!ground || crowded) { toast('Can\'t plant here...', ITEMS[s.id].name, 'It needs open ground with room to grow.'); sfx.deny(); return; }
+  const p = { id: `p-${Date.now()}`, kind, tx, ty, t: SAPLING_GROW };
+  quest.planted.push(p);
+  showSprout(p.id, kind, tx, ty);
+  s.n--;
+  if (!s.n) inv.slots[inv.sel] = null;
+  floatText('Planted', spot.cx, spot.cy - 10, '#9bf07a');
+  sfx.pickup();
+  afterInventoryChange();
 }
 function stumpGreatTree() {
   greatTree.frames = [STUMP];
@@ -4984,6 +5115,7 @@ function breakTarget(tgt, info) {
       quest.greatTree = true;
       gain('wood', rand(10, 15), o.x, o.y - 40);
       gain('stick', rand(5, 10), o.x, o.y - 30);
+      gain('oak-sapling', rand(2, 3), o.x, o.y - 20);
       burst(o.x, o.y - 20, '98,178,64', 30);
       toast('Timber', 'The Great Tree falls', 'Every tree can be chopped now. Something stirs in the grass...');
       hyena.dormant = false;
@@ -4992,7 +5124,12 @@ function breakTarget(tgt, info) {
     } else {
       o.gone = true;
       things.splice(things.indexOf(o), 1);
-      quest.chopped.push(o.id);
+      // (a tree you planted is just gone; a wild one starts growing back)
+      if (o.planted) quest.planted = quest.planted.filter(p => p.id !== o.id);
+      else { quest.chopped.push(o.id); quest.treeGrow.push([o.id, TREE_REGROW]); }
+      // a sapling more often than not, now and then two
+      const ns = Math.random() < 0.6 ? 1 + (Math.random() < 0.3 ? 1 : 0) : 0;
+      if (ns) gain(SAPLING_OF[o.tree], ns, o.x, o.y - 10);
       const dead = o.tree === 'deadtree';
       gain(TREE_WOOD[o.tree] || 'wood', dead ? rand(1, 2) : rand(2, 4), o.x, o.y - 30);
       gain('stick', dead ? rand(1, 3) : rand(1, 2), o.x, o.y - 20);
@@ -5121,6 +5258,7 @@ function useRight() {
   }
   const s = heldItem();
   if (s && s.id === 'bed') { placeBed(); return; }
+  if (s && ITEMS[s.id].sapling) { plantSapling(); return; }
   if (s && ITEMS[s.id].ranged) { startBowDraw(); return; }
   if (s && ITEMS[s.id].tool === 'drill') { startDrill(); return; }
   if (s && ITEMS[s.id].armor) { wearFrom(`inv:${inv.sel}`); return; }
@@ -6389,6 +6527,7 @@ function playUpdate(dt, t) {
   shakeAmp = Math.max(0, shakeAmp - dt * 10);
   tickGround(dt);
   tickSnow(dt);
+  tickTrees(dt);
   if (typeof raceTick === 'function') raceTick(dt);
   if (typeof wolfTick === 'function') wolfTick(dt);
   if (typeof pokerTick === 'function') pokerTick(dt);

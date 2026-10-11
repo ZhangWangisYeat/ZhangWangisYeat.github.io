@@ -867,7 +867,7 @@ function pkDecide(T, seat) {
     T.ai.aceExploit = pkAceTarget(T);
     if (!pkInHand(T.seats[0])) P = PK_PERSONA.aceExploit;
   }
-  const d = T.street === 'preflop' ? pkDecidePre(T, s, id, P, M, L) : pkDecidePost(T, s, id, P, M, L);
+  const d = T.street !== 'preflop' ? pkDecidePost(T, s, id, P, M, L) : id === 'ace' ? pkAcePre(T, s, L) : pkDecidePre(T, s, id, P, M, L);
   // (and now and then she says so, to whoever she's going after)
   const tg = T.ai.aceExploit;
   if (tg && tg.weak && (d.type === 'raise' || d.type === 'call') && Math.random() < 0.3) d.why = 'exploit_' + T.seats[tg.seat].id;
@@ -964,19 +964,6 @@ function pkDecidePre(T, s, id, P, M, L) {
     let size = unit * (behind === 1 && T.sb === s.i ? 3 : 2.5) + unit * limpers;
     if (tilt) { open = 0.55; size = unit * (5 + Math.random() * 4) + unit * limpers; }
     if (wild) { open = 0.62; if (rnd < 0.3) size = unit * (4 + Math.random() * 3); }
-    if (T.ai.aceExploit) {
-      const soft = i => (i === 1 && M.brutus.tilt) || i === 2 || (i === 5 && M.sparks.wild);
-      if (T.seats.some(o => o.i !== s.i && pkCanAct(o) && !o.vol && soft(o.i))) open *= 1.3;
-      // neville limped: raise him off it. anything over three and a half big
-      // blinds and he lets go of most of what he limps with
-      if (limpers && T.seats.some(o => o.i === 2 && o.vol && pkInHand(o))) { open = Math.max(open, 0.62); size = Math.max(size, unit * (4.5 + limpers)); }
-    }
-    if (id === 'ace') {
-      // a mixed strategy at the edge of the range, like a solver: hands just
-      // outside it open some of the time
-      if (p < open || (p < open * 1.18 && rnd < (open * 1.18 - p) / (open * 0.18) * 0.5)) return raise(size, 'open');
-      return fold();
-    }
     if (p < open) return raise(size, tilt ? 'tilt' : wild ? 'wild' : 'open');
     if (wild && p < 0.8 && rnd < 0.5) return call('wildcall');
     if (limpers && p < open * 1.6 && (pair || suited)) return call('limp');
@@ -1027,30 +1014,13 @@ function pkDecidePre(T, s, id, P, M, L) {
   // a solid player: value raises off the top of the range (wider against a
   // loose raiser), the odd bluff with hands that block the top or play well,
   // and calls when the price is right
-  // ace against a steaming brutus's raise: he's raising over half his hands
-  // with silly sizes, so she re-raises a much wider value range to isolate him
-  // and gets it in light when he comes back over the top
-  const steam = id === 'ace' && T.ai.aceExploit && agg.i === 1 && M.brutus.tilt;
-  if (steam && level === 1 && p < 0.17) return raise(raiseToFor(level), 'value');
-  if (steam && level >= 2 && p < 0.12) return shove('jam');
-  // neville raised: it's a strong hand, but he folds all but the very top of
-  // it to a re-raise, so ace re-raises a lot of her playable hands at him and
-  // folds the rest (and gives up after the flop if he calls)
-  if (id === 'ace' && T.ai.aceExploit && agg.i === 2 && level === 1 && !callers) {
-    if (p < 0.02) return raise(raiseToFor(1), 'value');
-    if (p < 0.45 && rnd < 0.45) return raise(lastRaiseTo * 4, 'bluff3');
-  }
   const looser = Math.max(1, aggEst.a * 0.85);
   const vThr = [0, 0.062, 0.03, 0.031, 0.012][Math.min(level, 4)] * P.aggro * looser * (id === 'neville' ? 0.5 : 1);
   const bluffBand = (level === 1 && ((suited && (hiR === 12 || (hiR - loR <= 2 && loR >= 3))) || (hiR === 12 && loR <= 3)))
     || (level === 2 && hiR === 12 && loR <= 3 && suited);
   const bluffP = (level === 1 ? 0.5 : level === 2 ? 0.55 : 0) * P.bluff * (id === 'neville' ? 0 : 1);
   const raiseTo = raiseToFor(level);
-  if (p < vThr) {
-    // ace mixes in a call now and then with the top so she's never only raising it
-    if (P.gto && level <= 2 && p > 0.01 && rnd < 0.18) return call('trap');
-    return raise(raiseTo, level >= 3 ? 'jam' : 'value');
-  }
+  if (p < vThr) return raise(raiseTo, level >= 3 ? 'jam' : 'value');
   if (level <= 2 && bluffBand && rnd < bluffP) return raise(raiseTo, 'bluff3');
   // calling: the hand has to have the equity for the price, a bit more out of
   // position (it'll be harder to realise), and big commitments get looked at
@@ -1063,9 +1033,6 @@ function pkDecidePre(T, s, id, P, M, L) {
   const real = (ip ? 0.9 : 0.76) - 0.04 * callers - (blind || level >= 2 ? 0 : 0.05) + (pair || suited ? 0.05 : 0) * (stackBB > 60 && level <= 1 ? 1 : 0);
   let margin = P.callAdj + (commit > 0.4 ? 0.02 : 0);
   if (id === 'brock') margin += 0.015 + 0.02 * g;
-  if (T.ai.aceExploit && T.ai.aceExploit.weak && T.ai.aceExploit.seat !== 2) margin += 0.04;
-  if (steam) margin += 0.04;
-  if (T.ai.aceExploit && agg.i === 2) margin -= 0.04;
   if (eq * real + margin >= needed) return call(level >= 3 ? 'calljam' : 'call');
   return fold();
 }
@@ -1102,6 +1069,114 @@ function pkNevillePre(T, s, M, L, h) {
   if (p < 0.008) return rnd < 0.5 && L.toCall < s.stack * 0.5 ? call('call') : raise(L.maxTo, 'allin');
   if (p < 0.05 * (1 + 0.5 * comfort) * jumpy && commit < 0.4) return call('call');
   return nope(p < 0.06 ? 'scaredfold' : 'fold');
+}
+
+// ace. she starts from how a solver plays (charts before the flop, value bets
+// only when worse hands will call, a balanced share of bluffs, the minimum
+// defence when she's bet into) and bends every one of those by what her
+// notebook says about whoever she's up against. nothing about anyone is
+// written into her: a calling station gets value bet thinner and bigger and
+// hardly bluffed because she's seen them turn over weak hands they called
+// with, a nit gets folded to and only bet into with strong hands because
+// she's seen them show nothing but the top of their range, and neville gets
+// bluffed big in big pots because she's counted him folding there. each of
+// her decisions also says whose read made the difference (ex), for her lines.
+function pkAcePre(T, s, L) {
+  const p = pkPct(s.cards[0], s.cards[1]), level = T.raises, behind = pkBehind(T, s.i), rnd = Math.random();
+  const suited = (s.cards[0] & 3) === (s.cards[1] & 3), pair = (s.cards[0] >> 2) === (s.cards[1] >> 2);
+  const hiR = Math.max(s.cards[0] >> 2, s.cards[1] >> 2), loR = Math.min(s.cards[0] >> 2, s.cards[1] >> 2);
+  const unit = T.straddle >= 0 ? T.blinds.straddle : T.blinds.bb;
+  const limpers = T.seats.filter(o => o.i !== s.i && pkInHand(o) && o.bet === T.bet && o.vol);
+  const stackBB = (s.stack + s.bet) / T.blinds.bb;
+  const fold = () => (L.canCheck ? { type: 'check', why: 'check' } : { type: 'fold', why: 'fold' });
+  const call = (why, ex = -1) => (L.canCheck ? { type: 'check', why: 'check' } : { type: 'call', why: why || 'call', ex });
+  const raise = (to, why, ex = -1) => (L.canRaise ? { type: 'raise', to: pkRaiseTo(L, to, s), why, ex } : call(why, ex));
+  // a mixed strategy at the edge of a range, like a solver: hands just
+  // outside it play some of the time
+  const mix = thr => p < thr || (p < thr * 1.18 && rnd < ((thr * 1.18 - p) / (thr * 0.18)) * 0.5);
+  // limpers she can raise off their hands: the looser they limp and the more
+  // they let go to a raise, the wider she isolates them, and bigger
+  const iso = () => {
+    let k = 1, ex = -1, big = false;
+    limpers.forEach(o => {
+      const r = pkAceRead(T, o.i);
+      if (!r.on) return;
+      const f = clampN(Math.sqrt(r.l) * Math.pow(r.fr / ACE_BASE.fr, 0.7), 0.7, 2.2);
+      k *= f;
+      if (f > 1.25) ex = o.i;
+      if (r.fr > ACE_BASE.fr * 1.25) big = true;
+    });
+    return { k: clampN(k, 0.6, 2.4), ex, big };
+  };
+
+  // her option in the big blind (or straddle) after limps
+  if (level === 0 && L.canCheck) {
+    const I = iso();
+    if (mix(0.1 * I.k)) return raise(T.bet + unit * ((I.big ? 4 : 3) + limpers.length), 'value', I.ex);
+    return { type: 'check', why: 'check' };
+  }
+  // nobody's raised: open or fold (she never limps)
+  if (level === 0) {
+    let open = PK_OPEN[Math.min(6, behind)], ex = -1;
+    const liveN = pkLive(T).length;
+    if (liveN === 2) open = 0.8;
+    else if (liveN === 3) open = Math.max(open, 0.5);
+    // steal more when the players still to act give up to opens more than
+    // they should, and less when they fight back
+    let steal = 1;
+    T.seats.forEach(o => {
+      if (o.i === s.i || !pkCanAct(o) || o.vol) return;
+      const r = pkAceRead(T, o.i);
+      if (!r.on) return;
+      const f = clampN(Math.pow(r.fo / ACE_BASE.fo, 1.2), 0.75, 1.5);
+      steal *= f;
+      if (f > 1.2) ex = o.i;
+    });
+    open *= clampN(steal, 0.7, 1.6);
+    let size = unit * (behind === 1 && T.sb === s.i ? 3 : 2.5);
+    if (limpers.length) {
+      const I = iso();
+      open *= 0.72 * I.k;
+      size += unit * (limpers.length + (I.big ? 1.5 : 0));
+      if (I.ex >= 0) ex = I.ex;
+    }
+    if (mix(Math.min(0.95, open))) return raise(size, 'open', ex);
+    return fold();
+  }
+
+  // facing a raise. a value re-raise off the top of her range, wider the
+  // wider her notes say the raiser raises; bluffs with hands that block the
+  // top or play well, more against someone who gives up to re-raises; calls
+  // when the hand has the equity against the range she puts them on
+  const agg = T.seats[T.aggressor >= 0 ? T.aggressor : T.bb];
+  const postIdx = i => (i - T.button + 5) % 6;
+  const ip = postIdx(s.i) > postIdx(agg.i);
+  const callers = T.seats.filter(o => o.i !== s.i && o.i !== agg.i && pkInHand(o) && o.bet === T.bet).length;
+  const r = pkAceRead(T, agg.i);
+  const lastRaiseTo = T.bet, commit = L.toCall / (s.stack + s.bet), needed = L.toCall / (L.pot + L.toCall);
+  const sizeUp = level === 1 ? (ip ? 3 : 3.8) : level === 2 ? 2.3 : 10;
+  const raiseTo = level >= 3 || stackBB < 40 ? L.maxTo : lastRaiseTo * sizeUp + L.toCall * callers;
+  const wide = clampN(r.a, 0.5, 2.5);
+  const vThr = [0, 0.062, 0.03, 0.031, 0.012][Math.min(level, 4)] * Math.pow(wide, 0.8);
+  if (p < vThr) {
+    // (she flats the top now and then so her calls aren't all weak)
+    if (level <= 2 && p > 0.01 && rnd < 0.18) return call('trap');
+    return raise(raiseTo, level >= 3 ? 'jam' : 'value', wide > 1.3 ? agg.i : -1);
+  }
+  const folds = clampN(Math.pow(r.fr / ACE_BASE.fr, 1.5), 0.2, 2.2);
+  const bluffBand = (level === 1 && ((suited && (hiR === 12 || (hiR - loR <= 2 && loR >= 3))) || (hiR === 12 && loR <= 3)))
+    || (level === 2 && hiR === 12 && loR <= 3 && suited);
+  if (level <= 2 && bluffBand && rnd < (level === 1 ? 0.5 : 0.55) * folds) return raise(raiseTo, 'bluff3', folds > 1.3 ? agg.i : -1);
+  // (against someone who hardly ever fights back she widens the bluffs out
+  // to anything half decent, heads up)
+  if (level === 1 && !callers && r.on && folds > 1.4 && p < 0.45 && rnd < Math.min(0.5, (r.fr - ACE_BASE.fr) * 1.6)) return raise(lastRaiseTo * 4, 'bluff3', agg.i);
+  if (L.toCall === 0) return { type: 'check', why: 'check' };
+  const ranges = T.seats.filter(o => o.i !== s.i && pkInHand(o) && (o.vol || o.i === T.aggressor)).map(o => T.ai.ace[o.i]);
+  const eq = clampN(pkEquity(s.cards, [], ranges.length ? ranges : [null], 420) + pkGauss() * 0.015, 0, 1);
+  const blind = s.i === T.bb || s.i === T.sb || s.i === T.straddle;
+  const real = (ip ? 0.9 : 0.76) - 0.04 * callers - (blind || level >= 2 ? 0 : 0.05) + (pair || suited ? 0.05 : 0) * (stackBB > 60 && level <= 1 ? 1 : 0);
+  if (eq * real + (commit > 0.4 ? 0.02 : 0) >= needed) return call(level >= 3 ? 'calljam' : 'call');
+  return fold();
 }
 
 function pkDecidePost(T, s, id, P, M, L) {

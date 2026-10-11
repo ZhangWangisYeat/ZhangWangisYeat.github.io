@@ -22,8 +22,9 @@ const pkIs72 = c => !!c && c.length === 2 && ((c[0] >> 2) + (c[1] >> 2) === 5) &
 // the blinds go up as the game goes on ("the lava rises"). at one and two for
 // good, a last one standing game between six players runs to about 700 hands,
 // which is hours. at the table they go up every LEVEL_SECS seconds of real
-// play (alex: every 5 minutes, not sped up by Fast), counted on T.clock while
-// a game's actually running. without a clock (the bots playing each other in
+// play (alex: every 5 minutes), counted on T.clock while a game's actually
+// running. the speed menu speeds the clock up with everything else, so at 2x
+// they go up every two and a half real minutes. without a clock (the bots playing each other in
 // node) it's every LEVEL_HANDS hands. 0 for either keeps them at one and two.
 const PK_LEVELS = [[1, 2], [2, 4], [3, 6], [5, 10], [8, 16], [10, 20], [15, 30], [25, 50], [40, 80], [60, 120], [100, 200]];
 function pkLevel(T) {
@@ -2714,7 +2715,8 @@ pkUI.presets.addEventListener('click', e => {
   pvSetRaise(to);
 });
 pkUI.straddle.addEventListener('change', () => { if (PV) PV.youStraddle = pkUI.straddle.checked; });
-// the speed menu: 1x to 4x
+// the speed menu: 1x to 4x. the lava rises at the same speed as the play, so
+// a game at 4x is over in about a quarter of the time (alex)
 const pkSpeedPanel = $('#pk-speed-panel');
 function pvSpeedMenu(open) {
   pkSpeedPanel.hidden = !open;
@@ -3445,7 +3447,9 @@ function pvLoop(ts) {
   pvTick(dt);
   pvSceneTick(raw);
   if (PV && PV.started) {
-    if (!PV.scene && !PV.modal && !PV.gameOverRun) PV.T.clock = (PV.T.clock || 0) + raw;
+    // (the blinds clock runs at the chosen speed but not the extra bit you get
+    // while you're out of a hand, so sitting out doesn't make the lava rise)
+    if (!PV.scene && !PV.modal && !PV.gameOverRun) PV.T.clock = (PV.T.clock || 0) + raw * PV.mult;
     pvStep(dt);
   }
   if (PV) pvLevelChip();
@@ -3468,7 +3472,8 @@ function pvLevelChip() {
     const k = pkLevel(T), L = PK_LEVELS[k];
     text = `Blinds ${pkDollars(L[0])} / ${pkDollars(L[1])}`;
     if (PK.LEVEL_SECS && k < PK_LEVELS.length - 1) {
-      const left = Math.max(0, Math.ceil(PK.LEVEL_SECS * (k + 1) - T.clock));
+      // (in real seconds, so at 2x it counts down from 2:30)
+      const left = Math.max(0, Math.ceil((PK.LEVEL_SECS * (k + 1) - T.clock) / PV.mult));
       text += ` | Up in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
     }
   }
@@ -3636,7 +3641,7 @@ const PK_TUTORIAL = [
   // the controls
   { who: 3, text: "Your buttons are bottom left. Fold is F. Check or call is C." },
   { who: 3, text: "To raise, set how much with the slider, the minus and plus, the arrow keys, or the presets: the minimum, half the pot, three quarters, the pot, or everything. Then Raise, or Enter. A goes all in." },
-  { who: 3, text: "The chat on the right keeps track of everything. R brings the rules back. Speed plays it two, three or four times faster. Leave cashes you out after the hand you're in." },
+  { who: 3, text: "The chat on the right keeps track of everything. R brings the rules back. Speed plays it two, three or four times faster, and the lava rises that much faster too. Leave cashes you out after the hand you're in." },
   { who: 3, text: "That's everything. You know the rules. Now let's see if you can play.", mood: 'smug', demo: {} },
   { who: 5, text: "Class dismissed! Deal, deal, deal!", mood: 'grin' }
 ];

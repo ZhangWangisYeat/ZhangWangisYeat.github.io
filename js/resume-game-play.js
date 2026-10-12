@@ -1955,26 +1955,67 @@ function tickTrees(dt) {
     markDirty();
   });
 }
-// right click with a sapling: it goes in the ground you're pointing at, on
-// open grass, snow, sand or dirt, not too close to another tree
-function plantSapling() {
-  if (room) { toast('Not in here...', 'Sapling', 'Plant it outside.'); sfx.deny(); return; }
-  const s = heldItem(), kind = ITEMS[s.id].sapling;
+// where the thing in your hand would go if you put it down now, and whether
+// it can. it's always the tile under the cursor, and the preview (see
+// drawPlacing) asks the same question the real thing does, so what you see
+// is what you get. what is bed, station or sapling; no is a reason it can't
+// go in this room at all, locked a biome that isn't open yet, far out of
+// reach, join the chest it'd make a large chest with, blocked no room.
+function placeCheck() {
+  const s = heldItem(), it = s && ITEMS[s.id];
+  const what = !it ? null : s.id === 'bed' ? 'bed' : it.station ? 'station' : it.sapling ? 'sapling' : null;
+  if (!what) return null;
   const m = mouseWorld();
   const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE);
   const spot = { cx: tx * TILE + 8, cy: ty * TILE + 8 };
-  const where = regionAt(tx + 0.5, ty + 0.5);
-  if (!biomeOpen(where)) { lockedToast(where); return; }
-  if (!inReach(spot)) { toast('Too far...', ITEMS[s.id].name, 'Plant it somewhere closer...'); return; }
-  const ground = inside(tx, ty) && [T.GRASS, T.SNOW, T.SAND, T.DIRT].includes(tiles[idx(tx, ty)]) && !solidTile(tx, ty);
-  const crowded = things.some(o => !o.gone && !o.creature && !o.flat && Math.hypot(o.x - spot.cx, o.y - (spot.cy + 6)) < 2.2 * TILE);
-  if (!ground || crowded) { toast('Can\'t plant here...', ITEMS[s.id].name, 'It needs open ground with room to grow.'); sfx.deny(); return; }
-  const p = { id: `p-${Date.now()}`, kind, tx, ty, t: SAPLING_GROW };
+  const c = { what, it, name: it.name, tx, ty, spot, ok: false };
+  if (room && (what === 'sapling' || room !== homeRoom)) {
+    c.no = what === 'sapling' ? ['Not in here...', it.name, 'Plant it outside.'] : ['No room...', it.name, 'Put it down outside, or at home.'];
+    return c;
+  }
+  if (!room) {
+    const where = regionAt(tx + 0.5, ty + 0.5);
+    if (!biomeOpen(where)) { c.locked = where; return c; }
+  }
+  c.far = !inReach(spot);
+  if (it.station === 'chest') c.join = chestJoin(tx, ty);
+  if (c.join) { c.ok = !c.far; return c; }
+  if (what === 'sapling') {
+    const ground = inside(tx, ty) && [T.GRASS, T.SNOW, T.SAND, T.DIRT].includes(tiles[idx(tx, ty)]) && !solidTile(tx, ty);
+    const crowded = things.some(o => !o.gone && !o.creature && !o.flat && Math.hypot(o.x - spot.cx, o.y - (spot.cy + 6)) < 2.2 * TILE);
+    c.blocked = !ground || crowded;
+  } else if (room) {
+    // indoors it needs floor under the whole thing, clear of the furniture
+    const bed = what === 'bed';
+    c.blocked = ty < 3 || room.blocked(spot.cx, spot.cy + 6) || room.blocked(spot.cx, spot.cy - (bed ? 12 : 8))
+      || room.things.some(o => !o.gone && !o.flat && Math.abs(o.x - spot.cx) < 16 && Math.abs(o.y - (spot.cy + 6)) < (bed ? 22 : 14));
+  } else {
+    c.blocked = !inside(tx, ty) || solidTile(tx, ty) || tiles[idx(tx, ty)] === T.WATER
+      || things.some(o => !o.gone && !o.creature && !o.flat && Math.hypot(o.x - spot.cx, o.y - (spot.cy + 6)) < 14);
+  }
+  c.ok = !c.far && !c.blocked;
+  return c;
+}
+// the chest a chest put down at tx, ty would join: one of your single chests
+// right beside it
+function chestJoin(tx, ty) {
+  const here = room ? 'home' : undefined;
+  return quest.placed.find(q => q.kind === 'chest' && q.w !== 2 && q.room === here && q.y === ty && Math.abs(q.x - tx) === 1) || null;
+}
+// right click with a sapling: it goes in the ground you're pointing at, on
+// open grass, snow, sand or dirt, not too close to another tree
+function plantSapling() {
+  const c = placeCheck(), s = heldItem(), name = c.name;
+  if (c.no) { toast(...c.no); sfx.deny(); return; }
+  if (c.locked) { lockedToast(c.locked); return; }
+  if (c.far) { toast('Too far...', name, 'Plant it somewhere closer...'); return; }
+  if (c.blocked) { toast('Can\'t plant here...', name, 'It needs open ground with room to grow.'); sfx.deny(); return; }
+  const p = { id: `p-${Date.now()}`, kind: c.it.sapling, tx: c.tx, ty: c.ty, t: SAPLING_GROW };
   quest.planted.push(p);
-  showSprout(p.id, kind, tx, ty);
+  showSprout(p.id, p.kind, c.tx, c.ty);
   s.n--;
   if (!s.n) inv.slots[inv.sel] = null;
-  floatText('Planted', spot.cx, spot.cy - 10, '#9bf07a');
+  floatText('Planted', c.spot.cx, c.spot.cy - 10, '#9bf07a');
   sfx.pickup();
   afterInventoryChange();
 }
@@ -2010,46 +2051,31 @@ function placedStation(e) {
   return st;
 }
 function placeStation() {
-  const s = heldItem(), kind = ITEMS[s.id].station, name = ITEMS[s.id].name;
-  if (room && room !== homeRoom) { toast('No room...', name, 'Put it down outside, or at home.'); sfx.deny(); return; }
-  const m = mouseWorld();
-  const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE);
-  const spot = { cx: tx * TILE + 8, cy: ty * TILE + 8 };
-  let blockedSpot;
-  if (room) {
-    blockedSpot = ty < 3 || room.blocked(spot.cx, spot.cy + 6) || room.blocked(spot.cx, spot.cy - 8)
-      || room.things.some(o => !o.gone && !o.flat && Math.abs(o.x - spot.cx) < 16 && Math.abs(o.y - (spot.cy + 6)) < 14);
-  } else {
-    const where = regionAt(tx + 0.5, ty + 0.5);
-    if (!biomeOpen(where)) { lockedToast(where); return; }
-    blockedSpot = !inside(tx, ty) || solidTile(tx, ty) || tiles[idx(tx, ty)] === T.WATER
-      || things.some(o => !o.gone && !o.creature && !o.flat && Math.hypot(o.x - spot.cx, o.y - (spot.cy + 6)) < 14);
-  }
-  if (!inReach(spot)) { toast('Too far...', name, 'Put it down somewhere closer...'); return; }
+  const c = placeCheck(), s = heldItem(), kind = c.it.station, name = c.name, spot = c.spot;
+  if (c.no) { toast(...c.no); sfx.deny(); return; }
+  if (c.locked) { lockedToast(c.locked); return; }
+  if (c.far) { toast('Too far...', name, 'Put it down somewhere closer...'); return; }
   // a chest put down right beside one of your single chests joins it, like
   // minecraft: the two become one large chest with twice the room (alex)
-  if (kind === 'chest') {
-    const here = room ? 'home' : undefined;
-    const nb = quest.placed.find(q => q.kind === 'chest' && q.w !== 2 && q.room === here && q.y === ty && Math.abs(q.x - tx) === 1);
-    if (nb) {
-      const old = stations.find(st => st.placed === nb.id);
-      const list = room ? room.things : things;
-      if (old && list.includes(old)) list.splice(list.indexOf(old), 1);
-      if (old) stations.splice(stations.indexOf(old), 1);
-      nb.w = 2;
-      nb.x = Math.min(nb.x, tx);
-      nb.slots = nb.slots.concat(new Array(18).fill(null));
-      placedStation(nb);
-      s.n--;
-      if (!s.n) inv.slots[inv.sel] = null;
-      floatText('Large Chest', nb.x * TILE + 16, spot.cy - 12, '#cfe8ff');
-      sfx.craft();
-      afterInventoryChange();
-      return;
-    }
+  if (c.join) {
+    const nb = c.join;
+    const old = stations.find(st => st.placed === nb.id);
+    const list = room ? room.things : things;
+    if (old && list.includes(old)) list.splice(list.indexOf(old), 1);
+    if (old) stations.splice(stations.indexOf(old), 1);
+    nb.w = 2;
+    nb.x = Math.min(nb.x, c.tx);
+    nb.slots = nb.slots.concat(new Array(18).fill(null));
+    placedStation(nb);
+    s.n--;
+    if (!s.n) inv.slots[inv.sel] = null;
+    floatText('Large Chest', nb.x * TILE + 16, spot.cy - 12, '#cfe8ff');
+    sfx.craft();
+    afterInventoryChange();
+    return;
   }
-  if (blockedSpot) { toast('No room...', name, 'Needs a clear patch of ground...'); sfx.deny(); return; }
-  const e = { id: `st-${Date.now()}`, kind, x: tx, y: ty };
+  if (c.blocked) { toast('No room...', name, 'Needs a clear patch of ground...'); sfx.deny(); return; }
+  const e = { id: `st-${Date.now()}`, kind, x: c.tx, y: c.ty };
   if (room) e.room = 'home';
   if (kind === 'chest') e.slots = new Array(18).fill(null);
   if (kind === 'furnace') e.f = emptyFurnace();
@@ -5290,24 +5316,12 @@ function breakTarget(tgt, info) {
 }
 
 function placeBed() {
-  if (room && room !== homeRoom) { toast('No room...', 'Bed', 'Put it down outside, or at home.'); sfx.deny(); return; }
-  const m = mouseWorld();
-  const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE);
-  const spot = { cx: tx * TILE + 8, cy: ty * TILE + 8 };
-  let blockedSpot;
-  if (room) {
-    // indoors it needs floor under the whole bed, clear of the furniture
-    blockedSpot = ty < 3 || room.blocked(spot.cx, spot.cy + 6) || room.blocked(spot.cx, spot.cy - 12)
-      || room.things.some(o => !o.gone && !o.flat && Math.abs(o.x - spot.cx) < 16 && Math.abs(o.y - (spot.cy + 6)) < 22);
-  } else {
-    const where = regionAt(tx + 0.5, ty + 0.5);
-    if (!biomeOpen(where)) { lockedToast(where); return; }
-    blockedSpot = !inside(tx, ty) || solidTile(tx, ty) || tiles[idx(tx, ty)] === T.WATER
-      || things.some(o => !o.gone && !o.creature && !o.flat && Math.hypot(o.x - spot.cx, o.y - (spot.cy + 6)) < 14);
-  }
-  if (!inReach(spot)) { toast('Too far...', 'Bed', 'Place it somewhere closer...'); return; }
-  if (blockedSpot) { toast('No room...', 'Bed', 'Needs a clear patch of ground...'); sfx.deny(); return; }
-  const b = { id: `bed-${Date.now()}`, x: tx, y: ty };
+  const c = placeCheck();
+  if (c.no) { toast(...c.no); sfx.deny(); return; }
+  if (c.locked) { lockedToast(c.locked); return; }
+  if (c.far) { toast('Too far...', 'Bed', 'Place it somewhere closer...'); return; }
+  if (c.blocked) { toast('No room...', 'Bed', 'Needs a clear patch of ground...'); sfx.deny(); return; }
+  const b = { id: `bed-${Date.now()}`, x: c.tx, y: c.ty };
   if (room) b.room = 'home';
   quest.beds.push(b);
   bedThing(b);
@@ -5381,6 +5395,46 @@ function wearFrom(ref) {
   floatText(was ? `Swapped for ${ITEMS[st.id].name}` : `Put on ${ITEMS[st.id].name}`, player.x, player.y - 34, '#cfe8ff');
   sfx.craft();
   afterInventoryChange();
+}
+// what you'd put down and where (alex: the world should read as tiles when
+// you're placing something, the way you can see which blocks you can mine):
+// a faint grid over the tiles round the cursor, fading out, the tile it'd go
+// on filled and bracketed, and a see-through copy of the thing standing on
+// it, green where it fits and red where it doesn't. only ever the ground
+// you'd stand it on: the floor itself can't be dug, there's no down yet.
+const GHOST = { craft: makeTable(), furnace: makeFurnace(false, 0), chest: makeChest(), big: BIG_CHEST, bed: BED };
+function drawPlacing(c, toX, toY, t) {
+  const ok = c.ok, rgb = ok ? '140,255,150' : '255,110,100';
+  const th = Math.max(1, Math.round(S / 2));
+  const line = (x, y, w, h) => ctx.fillRect(Math.round(toX(x)), Math.round(toY(y)), Math.max(th, Math.round(w * S)), Math.max(th, Math.round(h * S)));
+  for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+    const d = Math.hypot(dx, dy);
+    if (d > 3.2) continue;
+    ctx.fillStyle = `rgba(255,255,255,${(0.22 * (1 - d / 3.4)).toFixed(3)})`;
+    const x = (c.tx + dx) * TILE, y = (c.ty + dy) * TILE;
+    line(x, y, TILE, 0);
+    line(x, y, 0, TILE);
+  }
+  // (a chest that joins another covers both their tiles)
+  let x0 = c.tx * TILE, w = TILE, gx = c.spot.cx, gy = c.ty * TILE + 14, ghost;
+  if (c.join) {
+    x0 = Math.min(c.join.x, c.tx) * TILE; w = 2 * TILE; gx = x0 + TILE; ghost = GHOST.big;
+  } else ghost = c.what === 'bed' ? GHOST.bed : c.what === 'sapling' ? SAPLING_SPRITE[c.it.sapling] : GHOST[c.it.station];
+  const y0 = c.ty * TILE;
+  ctx.fillStyle = `rgba(${rgb},${ok ? 0.16 : 0.2})`;
+  ctx.fillRect(toX(x0), toY(y0), w * S, TILE * S);
+  if (ghost) {
+    ctx.globalAlpha = (ok ? 0.55 : 0.3) * (0.9 + Math.sin(t / 260) * 0.1);
+    ctx.drawImage(ghost, toX(gx - ghost.width / 2), toY(gy - ghost.height), ghost.width * S, ghost.height * S);
+    ctx.globalAlpha = 1;
+  }
+  ctx.fillStyle = `rgba(${rgb},0.9)`;
+  const L = 4 * S, b = S;
+  const X = toX(x0), Y = toY(y0), X2 = toX(x0 + w), Y2 = toY(y0 + TILE);
+  [[X, Y, 1, 1], [X2, Y, -1, 1], [X, Y2, 1, -1], [X2, Y2, -1, -1]].forEach(([cx, cy, sx, sy]) => {
+    ctx.fillRect(sx > 0 ? cx : cx - L, sy > 0 ? cy : cy - b, L, b);
+    ctx.fillRect(sx > 0 ? cx : cx - b, sy > 0 ? cy : cy - L, b, L);
+  });
 }
 // right-click: sleep in a bed you're pointing at, place a bed you're holding,
 // put on armor you're holding, or eat whatever food is in your hand
@@ -6794,10 +6848,14 @@ function playRenderOverlay(toX, toY, t) {
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  // target outline + mining progress
+  // target outline + mining progress. with something in your hand you can put
+  // down, the tiles show instead (unless you're pointing at a bed or a
+  // station, which right click would use)
   if (!ui && !player.dead && mouse.inCanvas && !mouse.touch) {
     const tgt = targetAt(mouseWorld());
-    if (tgt) {
+    const pc = !sleeping && !(tgt && (tgt.type === 'bed' || tgt.type === 'station')) ? placeCheck() : null;
+    if (pc) drawPlacing(pc, toX, toY, t);
+    else if (tgt) {
       const ok = inReach(tgt) && (CLICK_ONLY.has(tgt.type) || mineInfo(tgt).time !== Infinity);
       let x0, y0, w, h;
       if (tgt.type === 'tile' || tgt.type === 'racetile') { x0 = tgt.tx * TILE; y0 = tgt.ty * TILE; w = h = TILE; }

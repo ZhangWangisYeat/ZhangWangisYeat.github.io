@@ -1256,6 +1256,7 @@ function makeShrooms() {
 // bottom. the workshop sits in a row at the left of the back wall and the rest
 // of the floor is left open (there's room for a bed and more).
 const HOME_COLS = 11, HOME_ROWS = 8, HOME_DOOR = 5;
+const HOME_CHEST = { x: 5, y: 2 }, HOME_POLE = 124;
 function paintHomeRoom() {
   const w = HOME_COLS * TILE, h = HOME_ROWS * TILE;
   const c = mk(w, h), g = c.getContext('2d');
@@ -1275,15 +1276,17 @@ function paintHomeRoom() {
     if (y >= 29) col = '#8a3f1c';
     px(x, y, col);
   }
-  // the pole, with the lantern hung off a hook on it. it stands a little
-  // right of the middle so the workshop can sit in one tidy row to its left.
-  px(110, 0, '#6b3a1e', 4, 35);
-  px(110, 0, '#8a4f2a', 1, 35);
-  px(114, 8, '#2b2b2b', 4, 1);
-  px(117, 8, '#2b2b2b', 1, 3);
-  px(114, 11, '#2b2b2b', 7, 2);
-  px(115, 13, '#ffd77a', 5, 6);
-  px(114, 19, '#2b2b2b', 7, 2);
+  // the pole, with the lantern hung off a hook on it. it stands right of the
+  // middle so the workshop can sit in one tidy row to its left, with room for
+  // the chest to become a large one.
+  const P = HOME_POLE;
+  px(P, 0, '#6b3a1e', 4, 35);
+  px(P, 0, '#8a4f2a', 1, 35);
+  px(P + 4, 8, '#2b2b2b', 4, 1);
+  px(P + 7, 8, '#2b2b2b', 1, 3);
+  px(P + 4, 11, '#2b2b2b', 7, 2);
+  px(P + 5, 13, '#ffd77a', 5, 6);
+  px(P + 4, 19, '#2b2b2b', 7, 2);
   px(0, 32, 'rgba(0,0,0,0.3)', w, 3);
   // the canvas round the sides and front, seen from above
   const wallTop = (x, y, ww, hh) => { px(x, y, '#8a3f1c', ww, hh); px(x + 2, y + 2, '#b3572a', ww - 4, hh - 4); };
@@ -1590,7 +1593,8 @@ function loadSave() {
   if (typeof data.hp === 'number') vitals.hp = clamp(data.hp, 0.5, vitals.max);
   if (typeof data.hunger === 'number') vitals.hunger = clamp(data.hunger, 0, HUNGER_MAX);
   if (typeof data.sat === 'number') vitals.sat = clamp(data.sat, 0, vitals.hunger);
-  if (Array.isArray(data.chest)) data.chest.slice(0, 18).forEach((st, i) => { chestSlots[i] = validStack(st); });
+  if (quest.homeBig) while (chestSlots.length < 36) chestSlots.push(null);
+  if (Array.isArray(data.chest)) data.chest.slice(0, chestSlots.length).forEach((st, i) => { chestSlots[i] = validStack(st); });
   if (typeof data.clock === 'number') clock = ((data.clock % DAY_LEN) + DAY_LEN) % DAY_LEN;
   quest.beds = Array.isArray(quest.beds) ? quest.beds : [];
   quest.cave = quest.cave && typeof quest.cave === 'object' ? quest.cave : {};
@@ -1997,10 +2001,13 @@ function placeCheck() {
   return c;
 }
 // the chest a chest put down at tx, ty would join: one of your single chests
-// right beside it
+// right beside it, or the tent's own chest from its right hand side
 function chestJoin(tx, ty) {
   const here = room ? 'home' : undefined;
-  return quest.placed.find(q => q.kind === 'chest' && q.w !== 2 && q.room === here && q.y === ty && Math.abs(q.x - tx) === 1) || null;
+  const nb = quest.placed.find(q => q.kind === 'chest' && q.w !== 2 && q.room === here && q.y === ty && Math.abs(q.x - tx) === 1);
+  if (nb) return nb;
+  if (room === homeRoom && !quest.homeBig && tx === HOME_CHEST.x + 1 && ty === HOME_CHEST.y) return 'home';
+  return null;
 }
 // right click with a sapling: it goes in the ground you're pointing at, on
 // open grass, snow, sand or dirt, not too close to another tree
@@ -2057,6 +2064,15 @@ function placeStation() {
   if (c.far) { toast('Too far...', name, 'Put it down somewhere closer...'); return; }
   // a chest put down right beside one of your single chests joins it, like
   // minecraft: the two become one large chest with twice the room (alex)
+  if (c.join === 'home') {
+    homeBigChest(true);
+    s.n--;
+    if (!s.n) inv.slots[inv.sel] = null;
+    floatText('Large Chest', homeChestSt.x, spot.cy - 12, '#cfe8ff');
+    sfx.craft();
+    afterInventoryChange();
+    return;
+  }
   if (c.join) {
     const nb = c.join;
     const old = stations.find(st => st.placed === nb.id);
@@ -2089,6 +2105,13 @@ function placeStation() {
 }
 // right click one of yours to pick it back up, as long as there's nothing in it
 function pickUpStation(st) {
+  if (st === homeChestSt) {
+    if (chestSlots.slice(18).some(Boolean)) { toast('Not empty...', 'Large Chest', 'Take everything out of the right half first.'); sfx.deny(); return; }
+    homeBigChest(false);
+    gain('chest', 1, st.x + 8, st.y - 16);
+    markDirty();
+    return;
+  }
   const e = quest.placed.find(q => q.id === st.placed);
   if (!e) return;
   const name = ITEMS[STATION_ITEM[e.kind]].name;
@@ -2233,13 +2256,27 @@ const homeRoom = {
     { x: 26, y: 106, frames: [makePlant()] },
     { x: 147, y: 47, frames: [makeBookshelf()] }
   ],
-  glows: [{ x: 117, y: 16, rgb: '255,190,110', rad: 4.5, flicker: true, strength: 0.25 }]
+  glows: [{ x: HOME_POLE + 7, y: 16, rgb: '255,190,110', rad: 4.5, flicker: true, strength: 0.25 }]
 };
 // side by side from the left wall, 4px apart (table 20-45, furnace 50-71,
-// chest 76-97), so the rest of the tent stays open for other things
+// chest 77-98), so the rest of the tent stays open for other things. the
+// chest sits square on its tile (HOME_CHEST) so a chest put down on the tile
+// to its right makes it a large chest (alex: room for a double chest), which
+// is why the pole stands further over than it used to.
 addStation('craft', 33, 47, homeRoom);
 addStation('furnace', 61, 47, homeRoom);
-addStation('chest', 87, 47, homeRoom);
+const homeChestSt = addStation('chest', HOME_CHEST.x * TILE + 8, HOME_CHEST.y * TILE + 15, homeRoom);
+homeChestSt.slots = chestSlots;
+// the tent's chest as a large chest or back to a single one. the second half's
+// 18 slots go on the end of the same chest, so they're saved with it.
+function homeBigChest(on) {
+  quest.homeBig = on;
+  homeChestSt.frames = [on ? BIG_CHEST : makeChest()];
+  homeChestSt.x = HOME_CHEST.x * TILE + (on ? 16 : 8);
+  if (on) while (chestSlots.length < 36) chestSlots.push(null);
+  else chestSlots.length = 18;
+}
+if (quest.homeBig) homeBigChest(true);
 quest.placed.forEach(placedStation);
 quest.beds.forEach(bedThing);
 
@@ -5418,7 +5455,9 @@ function drawPlacing(c, toX, toY, t) {
   // (a chest that joins another covers both their tiles)
   let x0 = c.tx * TILE, w = TILE, gx = c.spot.cx, gy = c.ty * TILE + 14, ghost;
   if (c.join) {
-    x0 = Math.min(c.join.x, c.tx) * TILE; w = 2 * TILE; gx = x0 + TILE; ghost = GHOST.big;
+    const left = c.join === 'home' ? HOME_CHEST.x : Math.min(c.join.x, c.tx);
+    x0 = left * TILE; w = 2 * TILE; gx = x0 + TILE; ghost = GHOST.big;
+    if (c.join === 'home') gy = homeChestSt.y;
   } else ghost = c.what === 'bed' ? GHOST.bed : c.what === 'sapling' ? SAPLING_SPRITE[c.it.sapling] : GHOST[c.it.station];
   const y0 = c.ty * TILE;
   ctx.fillStyle = `rgba(${rgb},${ok ? 0.16 : 0.2})`;
@@ -5445,7 +5484,7 @@ function useRight() {
     else toast('Too far...', 'Bed', 'Walk up to it first...');
     return;
   }
-  if (tgt && tgt.type === 'station' && tgt.st.placed) {
+  if (tgt && tgt.type === 'station' && (tgt.st.placed || (tgt.st === homeChestSt && quest.homeBig))) {
     if (inReach(tgt)) pickUpStation(tgt.st);
     else toast('Too far...', ITEMS[STATION_ITEM[tgt.st.kind]].name, 'Walk up to it first...');
     return;

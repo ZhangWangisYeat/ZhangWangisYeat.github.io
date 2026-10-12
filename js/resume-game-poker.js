@@ -3674,8 +3674,9 @@ function pvLevelChip() {
     const k = pkLevel(T), L = PK_LEVELS[k];
     text = `Blinds ${pkDollars(L[0])} / ${pkDollars(L[1])}`;
     if (PK.LEVEL_SECS && k < PK_LEVELS.length - 1) {
-      // (in real seconds, so at 2x it counts down from 2:30)
-      const left = Math.max(0, Math.ceil((PK.LEVEL_SECS * (k + 1) - T.clock) / PV.mult));
+      // (in game time, so it always starts from 5:00 and at 2x it just counts
+      // down twice as fast, alex)
+      const left = Math.max(0, Math.ceil(PK.LEVEL_SECS * (k + 1) - T.clock));
       text += ` | Up in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
     }
   }

@@ -3663,6 +3663,11 @@ function songStart(tune = MOE_TUNE) {
 function songTick() {
   if (!song.on) return;
   const tune = song.tune, st = 60 / tune.bpm / 4;
+  // (a background tab only gets this timer once a second or less, and the
+  // audio clock keeps going while the computer sleeps, so the next note could
+  // be minutes or hours behind. catching up would schedule every note it
+  // missed in one go, enough to lock the page up. it skips ahead instead.)
+  if (song.next < musicAC.currentTime - 0.25) song.next = musicAC.currentTime + 0.05;
   while (song.next < musicAC.currentTime + 0.15) {
     tune.step(song.bar, song.step, song.next);
     song.next += st;
@@ -5264,7 +5269,10 @@ function targetAt(m) {
     return (typeof raceTarget === 'function' && raceTarget(m)) || (typeof wolfTarget === 'function' ? wolfTarget(m) : null);
   }
   const b = BUILDINGS.find(bd => thingAt(m, o => o === bd.thing));
-  if (b) return { type: 'building', b, thing: b.thing, key: `b:${b.room.id}`, cx: b.thing.x, cy: b.thing.y - 10 };
+  // (the old door at the teachla site has no room behind it yet, and reading
+  // its room's id here threw every frame you pointed at it, which froze the
+  // whole game until a reload)
+  if (b) return { type: 'building', b, thing: b.thing, key: `b:${b.room ? b.room.id : b.name}`, cx: b.thing.x, cy: b.thing.y - 10 };
   const tree = thingAt(m, o => o.tree || (o === greatTree && !greatTree.chopped));
   if (tree) return { type: 'tree', thing: tree, key: `tree:${tree.id || 'great'}`, cx: tree.x, cy: tree.y - 6, cls: 'wood', great: tree === greatTree };
   const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE);

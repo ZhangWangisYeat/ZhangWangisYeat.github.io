@@ -3633,8 +3633,14 @@ function pvClose() {
   markDirty();
   if (won && !found.has('desperate')) setTimeout(() => { victoryJingle(); discover(desperatePoi); }, 400);
 }
+// (the table's own loop asks for its next frame first, like the world's, so an
+// error in one frame doesn't freeze the table; see noteError)
 function pvLoop(ts) {
   if (!PV) return;
+  pkRaf = requestAnimationFrame(pvLoop);
+  try { pvFrame(ts); } catch (e) { noteError('poker', e); }
+}
+function pvFrame(ts) {
   const raw = Math.min(0.05, Math.max(0, (ts - pkLast) / 1000));
   pkLast = ts;
   // quicker when you're not in the hand, and quicker again at 2x to 4x
@@ -3656,7 +3662,6 @@ function pvLoop(ts) {
     const b = seatAt(PV.speaker, 'body'), y = b.y - (PV.speaker === 0 ? 46 : MINER_H + 6) - (Math.floor(ts / 250) % 2);
     pRect(b.x - 2, y, 5, 1, '#ffd23f'); pRect(b.x - 1, y + 1, 3, 1, '#ffd23f'); pRect(b.x, y + 2, 1, 1, '#ffd23f');
   }
-  if (PV) pkRaf = requestAnimationFrame(pvLoop);
 }
 window.addEventListener('resize', () => { if (PV) pvLayout(); });
 

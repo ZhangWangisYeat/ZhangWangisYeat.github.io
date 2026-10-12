@@ -2848,16 +2848,35 @@ const hashRegion = location.hash.slice(1);
 if (regionById[hashRegion]) start(hashRegion);
 else if (store.read('dm-started', false, 'sessionStorage')) start();
 
+// anything that goes wrong inside a frame. the next frame used to be asked for
+// at the very end of this one, so a single error anywhere in the update or the
+// drawing stopped the loop for good: the game froze and only a reload brought
+// it back (alex). now the next frame is asked for first, whatever happens, and
+// the error is logged and the last few kept in dm-errors (localStorage), so if
+// it ever happens again there's something to go on. each different error is
+// only kept once.
+function noteError(where, e) {
+  console.error(where, e);
+  try {
+    const list = store.read('dm-errors', []), msg = `${where}: ${(e && e.message) || e}`;
+    if (list.some(x => x.msg === msg)) return;
+    list.push({ msg, stack: String((e && e.stack) || '').split('\n').slice(0, 6).join('\n'), at: new Date().toISOString() });
+    store.write('dm-errors', list.slice(-5));
+  } catch { /* storage full or blocked, the console still has it */ }
+}
 let last = performance.now();
 function frame(t) {
+  requestAnimationFrame(frame);
   // the first frame's timestamp can land a hair before `last` was read, and a
   // negative dt sent the animation clock below zero, which picks sprite column
   // -1 and draws nothing
   const dt = clamp((t - last) / 1000, 0, 0.05);
   last = t;
-  update(dt, t);
-  render(t);
-  renderHero(t);
+  try {
+    update(dt, t);
+    render(t);
+    renderHero(t);
+  } catch (e) { noteError('frame', e); }
   // minimap marker follows the player
   const mm = $('#mm-frame');
   const at = room ? room.outside : player;
@@ -2868,7 +2887,6 @@ function frame(t) {
   // so it clicks between directions like a sprite instead of spinning smoothly
   const deg = Math.round(((player.heading * 180) / Math.PI - 90) / 45) * 45;
   marker.style.transform = `rotate(${deg}deg)`;
-  requestAnimationFrame(frame);
 }
 const marker = $('#mm-marker');
 requestAnimationFrame(frame);

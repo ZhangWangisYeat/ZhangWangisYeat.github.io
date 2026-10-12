@@ -2459,6 +2459,8 @@ function whistleNote(ac, midi, t, len) {
 }
 function whistleTick() {
   const ac = getAudio(), st = 60 / WHISTLE_BPM / 4;
+  // (skips ahead after the tab's been hidden, like the songs, see songTick)
+  if (whistle.next < ac.currentTime - 0.25) whistle.next = ac.currentTime + 0.05;
   while (whistle.next < ac.currentTime + 0.2) {
     WHISTLE_TUNE.forEach(([s, m, l]) => { if (s === whistle.step) whistleNote(ac, m, whistle.next, l * st * 0.95); });
     whistle.next += st;

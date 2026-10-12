@@ -1655,7 +1655,7 @@ function loadSave() {
 // is the cave, which can only be found once both guards are dead, so a ucla
 // without that is really the tree. checked every load rather than by save
 // version, because dm-found can outlive dm-save.
-function fixFoundIds() {
+function fixFoundIds(final) {
   const before = [...found].join();
   const both = quest.killed.hyena && quest.killed.bear;
   if (found.has('ucla') && !both) { found.delete('ucla'); found.add('ghs'); }
@@ -1664,9 +1664,18 @@ function fixFoundIds() {
   // mines landmarks used to be found just by walking up to them. now each one
   // waits on its boss, so any found that way that are still guarded go back to
   // undiscovered, and a beaten boss's landmark always counts as found.
+  // (the ore wolf and the poker table say whether they're beaten from their
+  // own files, which load after this one. the first pass, while this file
+  // loads, used to take their landmarks off the found list because they had
+  // no boss yet, and saved it, so bruinpop and desperate measures were
+  // forgotten every time the game loaded (alex). now the first pass leaves a
+  // landmark it can't judge yet alone, and the final pass, once every file
+  // has loaded, settles it.)
   let before0 = true;
   MINE_ORDER.forEach(p => {
-    const boss = MINE_BOSSES[p.id], beaten = !!boss && boss.beaten();
+    const boss = MINE_BOSSES[p.id];
+    if (!boss && !final) { before0 = before0 && found.has(p.id); return; }
+    const beaten = !!boss && boss.beaten();
     if (beaten && before0) found.add(p.id);
     if (!beaten || !before0) found.delete(p.id);
     before0 = before0 && found.has(p.id);
@@ -1881,6 +1890,7 @@ function mineSealReason(p) {
 
 loadSave();
 fixFoundIds();
+document.addEventListener('DOMContentLoaded', () => fixFoundIds(true));
 
 // snow blocks grow back (alex wanted snowballs to be renewable): a dug out
 // snow block fills in again SNOW_REGROW seconds later, once you're not

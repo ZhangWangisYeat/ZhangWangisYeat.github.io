@@ -704,11 +704,18 @@ function makeIcon(id) {
       G.set(7, 10, '#ffd23f'); G.set(8, 10, '#ff8a1c');
       break;
     case 'chest':
-      // the chest from the tent, in small
-      for (let y = 7; y <= 13; y++) for (let x = 2; x <= 13; x++) G.set(x, y, y === 10 ? '#7a4a24' : x < 4 ? '#b07a42' : '#9a6233');
-      for (let y = 3; y <= 6; y++) for (let x = 2; x <= 13; x++) G.set(x, y, y === 3 ? '#d29a5c' : y === 6 ? '#6e4020' : '#b98049');
-      for (let y = 5; y <= 8; y++) { G.set(7, y, '#d9b23a'); G.set(8, y, '#d9b23a'); }
-      G.set(7, 5, '#ffe28a');
+      // the chest in the world, in small: lid, iron rim, planked front,
+      // corner straps and the gold hasp
+      for (let y = 2; y <= 13; y++) for (let x = 1; x <= 14; x++) {
+        if ((y === 2 && (x < 3 || x > 12)) || (y === 3 && (x === 1 || x === 14))) continue;
+        let col = y <= 3 ? '#e2ab6c' : y === 4 ? '#bb7f45' : y === 5 ? '#a56b36' : y === 6 ? '#8d9099' : y === 7 ? '#3e230f' : y === 13 ? '#4a2a12' : (x - 1) % 3 === 0 ? '#6e4020' : y >= 11 ? '#8e5b2c' : '#a8703e';
+        if (y === 6 && x % 4 === 2) col = '#d7d9de';
+        if ((x <= 2 || x >= 13) && y >= 3 && y <= 12 && y !== 7) col = x === 1 || x === 13 ? '#a9acb4' : '#6d7079';
+        G.set(x, y, col);
+      }
+      for (let y = 4; y <= 6; y++) { G.set(7, y, y === 4 ? '#fff0a8' : '#e2b53a'); G.set(8, y, '#b88a1c'); }
+      for (let y = 8; y <= 10; y++) for (let x = 6; x <= 9; x++) G.set(x, y, y === 8 ? '#ffe28a' : x === 9 || y === 10 ? '#a8800f' : '#d9b23a');
+      G.set(7, 9, '#2a1a08'); G.set(8, 9, '#2a1a08');
       break;
     case 'stick':
       pxLine(G, 3, 13, 12, 3, '#a0663a');
@@ -989,6 +996,8 @@ const DRUM = { full: makeDrum('full'), half: makeDrum('half'), empty: makeDrum('
 
 // (everything you put down is one tile wide, the large chest two, so nothing
 // you place ever overlaps the thing next to it, alex)
+// (everything you put down is one tile wide, the large chest two, so nothing
+// you place ever overlaps the thing next to it, alex)
 function makeTable() {
   const G = pixelGrid(16, 21);
   for (let y = 12; y <= 19; y++) [2, 3, 12, 13].forEach(x => G.set(x, y, x === 2 || x === 12 ? '#7a4f26' : '#5a3818'));
@@ -1142,12 +1151,55 @@ function makeBear(frame, pose) {
   return G.outline(() => '#24140a').canvas();
 }
 
+// a chest, seen from above and in front like everything else: a planked lid
+// with its top edge catching the light, an iron band riveted round the rim,
+// a shadow under it, then the front, upright planks with dark gaps between
+// them, darker towards the floor and down the right hand side, iron straps
+// up the corners, and a gold hasp hanging off the lid with a keyhole plate.
+// w is how wide (the large chest is two of them in one), and hasps says
+// where the clasps go.
+function paintChest(G, w, hasps) {
+  const R = w - 2;
+  const WOOD = ['#e2ab6c', '#cf9457', '#bb7f45', '#a56b36'];
+  for (let y = 1; y <= 6; y++) for (let x = 1; x <= R; x++) {
+    // (the lid's corners are rounded off)
+    if ((y === 1 && (x < 3 || x > R - 2)) || (y === 2 && (x === 1 || x === R))) continue;
+    let col = WOOD[Math.min(3, Math.max(0, y - 1 - (y > 3 ? 1 : 0)))];
+    if (y === 4) col = '#8a5a2e';
+    else if (hash2(x, y, 731) < 0.12) col = '#9a6233';
+    if (x > R - 3 && y > 1) col = y === 4 ? '#734522' : '#9a6233';
+    G.set(x, y, col);
+  }
+  for (let x = 1; x <= R; x++) G.set(x, 7, x % 4 === 2 ? '#d7d9de' : x > R - 3 ? '#5c5f68' : '#8d9099');
+  for (let x = 1; x <= R; x++) G.set(x, 8, '#3e230f');
+  for (let y = 9; y <= 16; y++) for (let x = 1; x <= R; x++) {
+    let col = y >= 14 ? '#8e5b2c' : '#a8703e';
+    if ((x - 1) % 4 === 0) col = '#6e4020';
+    else if (x === 2) col = '#c08a52';
+    else if (x > R - 3) col = '#7d4c26';
+    else if (hash2(x, y, 977) < 0.1) col = '#94612f';
+    if (y === 16) col = '#4a2a12';
+    G.set(x, y, col);
+  }
+  // iron straps up the corners, with rivets
+  [[1, 2], [R - 1, R]].forEach(([a, b]) => {
+    for (let y = 2; y <= 15; y++) for (let x = a; x <= b; x++) {
+      if (y === 8) continue;
+      G.set(x, y, x === a ? '#a9acb4' : '#6d7079');
+    }
+    [3, 11, 14].forEach(y => G.set(a, y, '#e4e6ea'));
+  });
+  // (c is the hasp's middle column: it's three wide and the plate five, so
+  // the keyhole sits dead centre)
+  hasps.forEach(c => {
+    for (let y = 5; y <= 8; y++) { G.set(c - 1, y, y === 5 ? '#fff0a8' : '#f2c94c'); G.set(c, y, y === 5 ? '#ffe28a' : '#d9b23a'); G.set(c + 1, y, '#a8800f'); }
+    for (let y = 9; y <= 13; y++) for (let x = c - 2; x <= c + 2; x++) G.set(x, y, y === 9 ? '#ffe28a' : x === c + 2 || y === 13 ? '#a8800f' : x === c - 2 ? '#f2c94c' : '#d9b23a');
+    G.set(c, 10, '#2a1a08'); G.set(c, 11, '#2a1a08'); G.set(c, 12, '#5a400a');
+  });
+}
 function makeChest(locked) {
   const G = pixelGrid(16, 18);
-  for (let y = 7; y <= 16; y++) for (let x = 1; x <= 14; x++) G.set(x, y, y === 11 || y === 14 ? '#7a4a24' : x < 4 ? '#b07a42' : '#9a6233');
-  for (let y = 2; y <= 6; y++) for (let x = 1; x <= 14; x++) G.set(x, y, y === 2 ? '#d29a5c' : y === 6 ? '#6e4020' : '#b98049');
-  [2, 13].forEach(x => { for (let y = 2; y <= 16; y++) G.set(x, y, y === 2 ? '#9a9a9a' : '#6f6f6f'); });
-  for (let y = 5; y <= 8; y++) for (let x = 7; x <= 8; x++) G.set(x, y, y === 5 ? '#ffe28a' : '#d9b23a');
+  paintChest(G, 16, [7]);
   if (locked) {
     // chained shut: two chains across the front and a padlock on the clasp
     for (let k = 0; k <= 12; k++) {
@@ -1160,15 +1212,13 @@ function makeChest(locked) {
   return G.outline(() => '#2b1a0c').canvas();
 }
 
-// two chests pushed together into one big one: one long lid and body, the
-// metal bands at either end, a seam down the middle and a clasp on each half
+// two chests put side by side become one big chest (alex: it should look like
+// one big chest, not two stuck together): one long lid and front with no join
+// down the middle, the straps only at the outside corners, and a single hasp
+// in the middle
 function makeBigChest() {
   const G = pixelGrid(32, 18);
-  for (let y = 7; y <= 16; y++) for (let x = 1; x <= 30; x++) G.set(x, y, y === 11 || y === 14 ? '#7a4a24' : x < 4 ? '#b07a42' : '#9a6233');
-  for (let y = 2; y <= 6; y++) for (let x = 1; x <= 30; x++) G.set(x, y, y === 2 ? '#d29a5c' : y === 6 ? '#6e4020' : '#b98049');
-  [2, 29].forEach(x => { for (let y = 2; y <= 16; y++) G.set(x, y, y === 2 ? '#9a9a9a' : '#6f6f6f'); });
-  for (let y = 3; y <= 16; y++) G.set(15, y, y === 6 ? '#4a2a12' : '#6e4020');
-  [7, 23].forEach(x0 => { for (let y = 5; y <= 8; y++) for (let x = x0; x <= x0 + 1; x++) G.set(x, y, y === 5 ? '#ffe28a' : '#d9b23a'); });
+  paintChest(G, 32, [15]);
   return G.outline(() => '#2b1a0c').canvas();
 }
 const BIG_CHEST = makeBigChest();

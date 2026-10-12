@@ -174,6 +174,11 @@ ITEMS['old-map'] = { name: 'Crumpled Map', keep: true };
 // the lava key, ace's prize for being the last one standing at the poker
 // table (js/resume-game-poker.js). it opens the old door at the teachla site.
 ITEMS['lava-key'] = { name: 'Lava Key', keep: true };
+// the tent's furniture, as things you can carry and put down (decor: they're
+// placed like a station but don't open, and the rug lies flat)
+ITEMS['potted-plant'] = { name: 'Potted Plant', station: 'decor', decor: true };
+ITEMS.nightstand = { name: 'Nightstand', station: 'decor', decor: true };
+ITEMS.rug = { name: 'Rug', station: 'decor', decor: true, flat: true };
 // whatever you're holding that isn't a tool hits like a bare hand
 const FIST = { name: 'Bare hands', dmg: 0.25, cd: 0.45, reach: 1.4 };
 const STACK_MAX = 64;
@@ -911,6 +916,14 @@ function drillIconArt(G, spin) {
 }
 // canvases for drawing items in your hand, data urls for the html slots
 const ICON_CANVAS = Object.fromEntries(Object.keys(ITEMS).map(id => [id, makeIcon(id)]));
+// (the furniture's icons are the things themselves, shrunk to fit)
+const FURNITURE = { 'potted-plant': makePlant(), nightstand: makeNightstand(), rug: makeHomeRug() };
+Object.entries(FURNITURE).forEach(([id, art]) => {
+  const c = mk(16, 16), g = c.getContext('2d'), k = Math.min(16 / art.width, 16 / art.height);
+  g.imageSmoothingEnabled = false;
+  g.drawImage(art, Math.round((16 - art.width * k) / 2), Math.round((16 - art.height * k) / 2), Math.round(art.width * k), Math.round(art.height * k));
+  ICON_CANVAS[id] = c;
+});
 const ICON = Object.fromEntries(Object.entries(ICON_CANVAS).map(([id, c]) => [id, c.toDataURL()]));
 const DRILL_SPIN = (() => { const G = pixelGrid(16, 16); drillIconArt(G, 1); return G.outline(() => '#141414').canvas(); })();
 
@@ -963,40 +976,42 @@ function makeDrum(kind) {
 }
 const DRUM = { full: makeDrum('full'), half: makeDrum('half'), empty: makeDrum('empty') };
 
+// (everything you put down is one tile wide, the large chest two, so nothing
+// you place ever overlaps the thing next to it, alex)
 function makeTable() {
-  const G = pixelGrid(26, 21);
-  for (let y = 12; y <= 19; y++) [3, 4, 21, 22].forEach(x => G.set(x, y, x === 3 || x === 21 ? '#7a4f26' : '#5a3818'));
-  for (let y = 10; y <= 12; y++) for (let x = 2; x <= 23; x++) G.set(x, y, '#8a5a2e');
-  for (let y = 3; y <= 9; y++) for (let x = 1; x <= 24; x++) {
-    // a faint 5x5 grid burned into the top, so it reads as the crafting table
-    const line = x % 5 === 0 || y === 5 || y === 7;
+  const G = pixelGrid(16, 21);
+  for (let y = 12; y <= 19; y++) [2, 3, 12, 13].forEach(x => G.set(x, y, x === 2 || x === 12 ? '#7a4f26' : '#5a3818'));
+  for (let y = 10; y <= 12; y++) for (let x = 2; x <= 13; x++) G.set(x, y, '#8a5a2e');
+  for (let y = 3; y <= 9; y++) for (let x = 1; x <= 14; x++) {
+    // a faint grid burned into the top, so it reads as the crafting table
+    const line = x === 5 || x === 10 || y === 5 || y === 7;
     G.set(x, y, line ? '#9b6a38' : y === 3 ? '#d9a066' : '#c48a4f');
   }
-  pxLine(G, 17, 2, 21, 2, '#6b4422');
-  [[21, 1], [22, 1], [21, 3], [22, 3], [22, 2]].forEach(([x, y]) => G.set(x, y, '#9a9a9a'));
+  pxLine(G, 9, 2, 12, 2, '#6b4422');
+  [[12, 1], [13, 1], [12, 3], [13, 3], [13, 2]].forEach(([x, y]) => G.set(x, y, '#9a9a9a'));
   return G.outline(() => '#3b220f').canvas();
 }
 
 function makeFurnace(lit, frame) {
   const r = mulberry32(900 + frame);
-  const G = pixelGrid(22, 26);
-  for (let y = 4; y <= 24; y++) for (let x = 1; x <= 20; x++) {
+  const G = pixelGrid(16, 26);
+  for (let y = 4; y <= 24; y++) for (let x = 1; x <= 14; x++) {
     const course = Math.floor((y - 4) / 3);
     const mortar = (y - 4) % 3 === 2 || (x + (course % 2) * 3) % 6 === 0;
-    G.set(x, y, mortar ? '#666666' : x < 6 ? '#9c9c9c' : '#878787');
+    G.set(x, y, mortar ? '#666666' : x < 4 ? '#9c9c9c' : '#878787');
   }
-  for (let y = 2; y <= 4; y++) for (let x = 0; x <= 21; x++) G.set(x, y, y === 2 ? '#bdbdbd' : '#a5a5a5');
-  for (let y = 0; y <= 2; y++) for (let x = 15; x <= 18; x++) G.set(x, y, '#7a7a7a');
-  for (let y = 12; y <= 22; y++) for (let x = 6; x <= 15; x++) {
-    if (y < 15 && Math.abs(x - 10.5) > (y - 11) * 1.8) continue;
+  for (let y = 2; y <= 4; y++) for (let x = 1; x <= 14; x++) G.set(x, y, y === 2 ? '#bdbdbd' : '#a5a5a5');
+  for (let y = 0; y <= 2; y++) for (let x = 10; x <= 12; x++) G.set(x, y, '#7a7a7a');
+  for (let y = 12; y <= 22; y++) for (let x = 4; x <= 11; x++) {
+    if (y < 15 && Math.abs(x - 7.5) > (y - 11) * 1.5) continue;
     let col = '#1e1a17';
     if (lit && y >= 16) {
-      const heat = (y - 15) / 7 - Math.abs(x - 10.5) / 6 + (r() - 0.5) * 0.5;
+      const heat = (y - 15) / 7 - Math.abs(x - 7.5) / 5 + (r() - 0.5) * 0.5;
       col = heat > 0.55 ? '#fff1a8' : heat > 0.3 ? '#ffc23c' : heat > 0.08 ? '#ff7a1c' : '#7a2a10';
     }
     G.set(x, y, col);
   }
-  if (lit) [6, 15].forEach(x => { for (let y = 15; y <= 22; y++) G.set(x, y, '#ffb347'); });
+  if (lit) [4, 11].forEach(x => { for (let y = 15; y <= 22; y++) G.set(x, y, '#ffb347'); });
   return G.outline(() => '#2b2b2b').canvas();
 }
 
@@ -1117,19 +1132,19 @@ function makeBear(frame, pose) {
 }
 
 function makeChest(locked) {
-  const G = pixelGrid(22, 18);
-  for (let y = 7; y <= 16; y++) for (let x = 1; x <= 20; x++) G.set(x, y, y === 11 || y === 14 ? '#7a4a24' : x < 5 ? '#b07a42' : '#9a6233');
-  for (let y = 2; y <= 6; y++) for (let x = 1; x <= 20; x++) G.set(x, y, y === 2 ? '#d29a5c' : y === 6 ? '#6e4020' : '#b98049');
-  [3, 18].forEach(x => { for (let y = 2; y <= 16; y++) G.set(x, y, y === 2 ? '#9a9a9a' : '#6f6f6f'); });
-  for (let y = 5; y <= 8; y++) for (let x = 10; x <= 11; x++) G.set(x, y, y === 5 ? '#ffe28a' : '#d9b23a');
+  const G = pixelGrid(16, 18);
+  for (let y = 7; y <= 16; y++) for (let x = 1; x <= 14; x++) G.set(x, y, y === 11 || y === 14 ? '#7a4a24' : x < 4 ? '#b07a42' : '#9a6233');
+  for (let y = 2; y <= 6; y++) for (let x = 1; x <= 14; x++) G.set(x, y, y === 2 ? '#d29a5c' : y === 6 ? '#6e4020' : '#b98049');
+  [2, 13].forEach(x => { for (let y = 2; y <= 16; y++) G.set(x, y, y === 2 ? '#9a9a9a' : '#6f6f6f'); });
+  for (let y = 5; y <= 8; y++) for (let x = 7; x <= 8; x++) G.set(x, y, y === 5 ? '#ffe28a' : '#d9b23a');
   if (locked) {
     // chained shut: two chains across the front and a padlock on the clasp
-    for (let k = 0; k <= 18; k++) {
-      [[2 + k, 3 + Math.round(k * 0.7)], [2 + k, 16 - Math.round(k * 0.7)]].forEach(([x, y]) => G.set(x, y, k % 2 ? '#a6a6a6' : '#5f5f5f'));
+    for (let k = 0; k <= 12; k++) {
+      [[1 + k, 3 + Math.round(k * 1.05)], [1 + k, 16 - Math.round(k * 1.05)]].forEach(([x, y]) => G.set(x, y, k % 2 ? '#a6a6a6' : '#5f5f5f'));
     }
-    [[9, 5], [9, 6], [10, 4], [11, 4], [12, 5], [12, 6]].forEach(([x, y]) => G.set(x, y, '#7a7a7a'));
-    for (let y = 7; y <= 12; y++) for (let x = 8; x <= 13; x++) G.set(x, y, y === 7 ? '#ffe28a' : x === 13 || y === 12 ? '#a8800f' : '#d9b23a');
-    G.set(10, 9, '#3a2a0a'); G.set(10, 10, '#3a2a0a');
+    [[6, 5], [6, 6], [7, 4], [8, 4], [9, 5], [9, 6]].forEach(([x, y]) => G.set(x, y, '#7a7a7a'));
+    for (let y = 7; y <= 12; y++) for (let x = 5; x <= 10; x++) G.set(x, y, y === 7 ? '#ffe28a' : x === 10 || y === 12 ? '#a8800f' : '#d9b23a');
+    G.set(7, 9, '#3a2a0a'); G.set(7, 10, '#3a2a0a');
   }
   return G.outline(() => '#2b1a0c').canvas();
 }
@@ -1137,26 +1152,26 @@ function makeChest(locked) {
 // two chests pushed together into one big one: one long lid and body, the
 // metal bands at either end, a seam down the middle and a clasp on each half
 function makeBigChest() {
-  const G = pixelGrid(40, 18);
-  for (let y = 7; y <= 16; y++) for (let x = 1; x <= 38; x++) G.set(x, y, y === 11 || y === 14 ? '#7a4a24' : x < 5 ? '#b07a42' : '#9a6233');
-  for (let y = 2; y <= 6; y++) for (let x = 1; x <= 38; x++) G.set(x, y, y === 2 ? '#d29a5c' : y === 6 ? '#6e4020' : '#b98049');
-  [3, 36].forEach(x => { for (let y = 2; y <= 16; y++) G.set(x, y, y === 2 ? '#9a9a9a' : '#6f6f6f'); });
-  for (let y = 3; y <= 16; y++) G.set(19, y, y === 6 ? '#4a2a12' : '#6e4020');
-  [10, 28].forEach(x0 => { for (let y = 5; y <= 8; y++) for (let x = x0; x <= x0 + 1; x++) G.set(x, y, y === 5 ? '#ffe28a' : '#d9b23a'); });
+  const G = pixelGrid(32, 18);
+  for (let y = 7; y <= 16; y++) for (let x = 1; x <= 30; x++) G.set(x, y, y === 11 || y === 14 ? '#7a4a24' : x < 4 ? '#b07a42' : '#9a6233');
+  for (let y = 2; y <= 6; y++) for (let x = 1; x <= 30; x++) G.set(x, y, y === 2 ? '#d29a5c' : y === 6 ? '#6e4020' : '#b98049');
+  [2, 29].forEach(x => { for (let y = 2; y <= 16; y++) G.set(x, y, y === 2 ? '#9a9a9a' : '#6f6f6f'); });
+  for (let y = 3; y <= 16; y++) G.set(15, y, y === 6 ? '#4a2a12' : '#6e4020');
+  [7, 23].forEach(x0 => { for (let y = 5; y <= 8; y++) for (let x = x0; x <= x0 + 1; x++) G.set(x, y, y === 5 ? '#ffe28a' : '#d9b23a'); });
   return G.outline(() => '#2b1a0c').canvas();
 }
 const BIG_CHEST = makeBigChest();
 
 // a placed bed, seen from above: headboard, pillow, red blanket
 function makeBed() {
-  const G = pixelGrid(18, 28);
-  for (let y = 2; y <= 25; y++) for (let x = 1; x <= 16; x++) {
-    let col = x === 1 || x === 16 || y === 25 ? '#8a5a2e' : y <= 5 ? '#a86f3c' : y <= 9 ? (y === 6 || x === 2 ? '#ffffff' : '#ece8df') : y === 10 ? '#e05a4a' : x >= 13 ? '#9c2a20' : '#c0392b';
-    if (y === 2 && x > 1 && x < 16) col = '#c48a4f';
-    if (y > 10 && y < 25 && (y - 10) % 5 === 0 && x > 2 && x < 15) col = '#a83226';
+  const G = pixelGrid(16, 28);
+  for (let y = 2; y <= 25; y++) for (let x = 1; x <= 14; x++) {
+    let col = x === 1 || x === 14 || y === 25 ? '#8a5a2e' : y <= 5 ? '#a86f3c' : y <= 9 ? (y === 6 || x === 2 ? '#ffffff' : '#ece8df') : y === 10 ? '#e05a4a' : x >= 11 ? '#9c2a20' : '#c0392b';
+    if (y === 2 && x > 1 && x < 14) col = '#c48a4f';
+    if (y > 10 && y < 25 && (y - 10) % 5 === 0 && x > 2 && x < 13) col = '#a83226';
     G.set(x, y, col);
   }
-  [[1, 26], [2, 26], [15, 26], [16, 26]].forEach(([x, y]) => G.set(x, y, '#5a3818'));
+  [[1, 26], [2, 26], [13, 26], [14, 26]].forEach(([x, y]) => G.set(x, y, '#5a3818'));
   return G.outline(() => '#2b1a0c').canvas();
 }
 
@@ -1246,8 +1261,11 @@ function makeShrooms() {
 // the back up and a lantern hung off it, a dirt floor, and the flap at the
 // bottom. the workshop sits in a row at the left of the back wall and the rest
 // of the floor is left open (there's room for a bed and more).
-const HOME_COLS = 11, HOME_ROWS = 8, HOME_DOOR = 5;
-const HOME_CHEST = { x: 5, y: 2 }, HOME_POLE = 124;
+// (two tiles wider inside than it was, alex: so everything in it sits on the
+// tiles with the same gap between each thing, and there's still room for a
+// second chest and a bed. it's bigger on the inside than the outside, which
+// nobody's going to complain about.)
+const HOME_COLS = 13, HOME_ROWS = 8, HOME_DOOR = 6, HOME_POLE = 150;
 function paintHomeRoom() {
   const w = HOME_COLS * TILE, h = HOME_ROWS * TILE;
   const c = mk(w, h), g = c.getContext('2d');
@@ -1267,9 +1285,7 @@ function paintHomeRoom() {
     if (y >= 29) col = '#8a3f1c';
     px(x, y, col);
   }
-  // the pole, with the lantern hung off a hook on it. it stands right of the
-  // middle so the workshop can sit in one tidy row to its left, with room for
-  // the chest to become a large one.
+  // the pole, with the lantern hung off a hook on it, over where the bed goes
   const P = HOME_POLE;
   px(P, 0, '#6b3a1e', 4, 35);
   px(P, 0, '#8a4f2a', 1, 35);
@@ -1311,6 +1327,8 @@ function makePlant() {
     pxBlob(G, cx, cy, rx, ry, (dx, dy) => (dy < -0.3 ? '#62b240' : '#2d7d37')));
   return G.outline(() => '#123a1e').canvas();
 }
+// (the bookshelf's out of the tent for now, alex: it may come back for the
+// secret mission, so its art stays here)
 function makeBookshelf() {
   const G = pixelGrid(24, 30);
   for (let y = 1; y <= 28; y++) for (let x = 1; x <= 22; x++) G.set(x, y, x <= 2 || x >= 21 || y <= 2 || y >= 27 || y === 10 || y === 18 ? '#6b4020' : '#3b2412');
@@ -1322,6 +1340,29 @@ function makeBookshelf() {
       x += bw + (k % 4 === 0 ? 1 : 0);
     }
   });
+  return G.outline(() => '#24160a').canvas();
+}
+
+// a nightstand by where your bed goes: a little wooden cabinet with a drawer
+// and a brass knob, short legs, and a candle in a dish on top, lit
+function makeNightstand() {
+  const G = pixelGrid(16, 24);
+  // the candle and its flame
+  G.set(7, 1, '#fff2b0'); G.set(7, 2, '#ffd23f'); G.set(8, 2, '#ff9a2a'); G.set(7, 3, '#ff9a2a');
+  for (let y = 4; y <= 7; y++) { G.set(7, y, '#f1e9d6'); G.set(8, y, '#d7ccb4'); }
+  for (let x = 5; x <= 10; x++) G.set(x, 8, x === 5 ? '#e6c46a' : x === 10 ? '#9c7a2a' : '#c9a443');
+  // the top, lit along its front edge
+  for (let y = 9; y <= 11; y++) for (let x = 1; x <= 14; x++) G.set(x, y, y === 9 ? '#c48a4f' : y === 11 ? '#8a5a2e' : '#b07a42');
+  // the body, a drawer and a cupboard under it
+  for (let y = 12; y <= 20; y++) for (let x = 2; x <= 13; x++) {
+    let col = x === 2 ? '#a86f3c' : x >= 12 ? '#7d4c26' : '#94602f';
+    if (y === 15 || y === 12) col = '#6e4020';
+    G.set(x, y, col);
+  }
+  G.set(7, 13, '#ffe28a'); G.set(8, 13, '#d9b23a');
+  G.set(10, 17, '#ffe28a');
+  // short legs
+  [3, 12].forEach(x => { G.set(x, 21, '#5a3818'); G.set(x, 22, '#5a3818'); });
   return G.outline(() => '#24160a').canvas();
 }
 
@@ -1541,6 +1582,13 @@ let ui = null;               // null, 'inv', 'craft' or 'furnace'
 let bookOpen = false;
 let heldStack = null;        // what's stuck to the cursor in the inventory
 let mining = null;
+// stop working at whatever you were mining. it always lets go of the shake
+// too: just setting mining to null left the thing shaking forever (opening a
+// chest you'd just tapped, switching slots mid chop, going through a door)
+function stopMining() {
+  if (mining && mining.thing) mining.thing.shake = 0;
+  mining = null;
+}
 const mouse = { x: 0, y: 0, down: false, inCanvas: false, touch: false };
 let saveDirty = false, lastSave = 0, resetting = false;
 
@@ -1584,7 +1632,7 @@ function loadSave() {
   if (typeof data.hp === 'number') vitals.hp = clamp(data.hp, 0.5, vitals.max);
   if (typeof data.hunger === 'number') vitals.hunger = clamp(data.hunger, 0, HUNGER_MAX);
   if (typeof data.sat === 'number') vitals.sat = clamp(data.sat, 0, vitals.hunger);
-  if (quest.homeBig) while (chestSlots.length < 36) chestSlots.push(null);
+  if (quest.homeBig && !quest.homeLaid) while (chestSlots.length < 36) chestSlots.push(null);
   if (Array.isArray(data.chest)) data.chest.slice(0, chestSlots.length).forEach((st, i) => { chestSlots[i] = validStack(st); });
   if (typeof data.clock === 'number') clock = ((data.clock % DAY_LEN) + DAY_LEN) % DAY_LEN;
   quest.beds = Array.isArray(quest.beds) ? quest.beds : [];
@@ -1963,7 +2011,7 @@ function placeCheck() {
   const m = mouseWorld();
   const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE);
   const spot = { cx: tx * TILE + 8, cy: ty * TILE + 8 };
-  const c = { what, it, name: it.name, tx, ty, spot, ok: false };
+  const c = { what, it, id: s.id, name: it.name, tx, ty, spot, ok: false };
   if (room && (what === 'sapling' || room !== homeRoom)) {
     c.no = what === 'sapling' ? ['Not in here...', it.name, 'Plant it outside.'] : ['No room...', it.name, 'Put it down outside, or at home.'];
     return c;
@@ -1973,7 +2021,8 @@ function placeCheck() {
     if (!biomeOpen(where)) { c.locked = where; return c; }
   }
   c.far = !inReach(spot);
-  if (it.station === 'chest') c.join = chestJoin(tx, ty);
+  // (only onto a free tile: a chest can't join one by landing on something)
+  if (it.station === 'chest' && !tileTaken(tx, ty, room)) c.join = chestJoin(tx, ty);
   if (c.join) { c.ok = !c.far; return c; }
   if (what === 'sapling') {
     const ground = inside(tx, ty) && [T.GRASS, T.SNOW, T.SAND, T.DIRT].includes(tiles[idx(tx, ty)]) && !solidTile(tx, ty);
@@ -1981,24 +2030,34 @@ function placeCheck() {
     c.blocked = !ground || crowded;
   } else if (room) {
     // indoors it needs floor under the whole thing, clear of the furniture
-    const bed = what === 'bed';
-    c.blocked = ty < 3 || room.blocked(spot.cx, spot.cy + 6) || room.blocked(spot.cx, spot.cy - (bed ? 12 : 8))
-      || room.things.some(o => !o.gone && !o.flat && Math.abs(o.x - spot.cx) < 16 && Math.abs(o.y - (spot.cy + 6)) < (bed ? 22 : 14));
+    // (things stand against the back wall, the row furniture is on; a bed's
+    // too long for that row, so it goes a row out with its head to the wall)
+    const bed = what === 'bed', flat = !!it.flat;
+    // (loose things lying on the floor don't count, they're just in the way
+    // of nothing)
+    c.blocked = ty < (bed ? 3 : 2) || room.blocked(spot.cx, spot.cy + 6) || room.blocked(spot.cx, spot.cy - (bed ? 12 : 4))
+      || (!flat && (tileTaken(tx, ty, room) || (bed && tileTaken(tx, ty - 1, room))
+        || room.things.some(o => !o.gone && !o.flat && !o.ground && !o.placed && !o.bed && Math.abs(o.x - spot.cx) < 16 && Math.abs(o.y - (spot.cy + 6)) < (bed ? 22 : 14))));
   } else {
     c.blocked = !inside(tx, ty) || solidTile(tx, ty) || tiles[idx(tx, ty)] === T.WATER
-      || things.some(o => !o.gone && !o.creature && !o.flat && Math.hypot(o.x - spot.cx, o.y - (spot.cy + 6)) < 14);
+      || (!it.flat && (tileTaken(tx, ty, null) || (what === 'bed' && tileTaken(tx, ty - 1, null))
+        || things.some(o => !o.gone && !o.creature && !o.flat && !o.ground && !o.placed && !o.bed && Math.hypot(o.x - spot.cx, o.y - (spot.cy + 6)) < 14)));
   }
   c.ok = !c.far && !c.blocked;
   return c;
 }
+// whether one of your things already stands on a tile (in the tent if r is
+// the tent, out in the world if it's null)
+function tileTaken(tx, ty, r) {
+  const here = r === homeRoom ? 'home' : undefined;
+  if (quest.placed.some(e => e.room === here && !(e.kind === 'decor' && ITEMS[e.item].flat) && e.y === ty && (e.x === tx || (e.w === 2 && e.x + 1 === tx)))) return true;
+  return quest.beds.some(b => b.room === here && b.x === tx && (b.y === ty || b.y - 1 === ty));
+}
 // the chest a chest put down at tx, ty would join: one of your single chests
-// right beside it, or the tent's own chest from its right hand side
+// right beside it (the tent's included, it's one of yours now)
 function chestJoin(tx, ty) {
   const here = room ? 'home' : undefined;
-  const nb = quest.placed.find(q => q.kind === 'chest' && q.w !== 2 && q.room === here && q.y === ty && Math.abs(q.x - tx) === 1);
-  if (nb) return nb;
-  if (room === homeRoom && !quest.homeBig && tx === HOME_CHEST.x + 1 && ty === HOME_CHEST.y) return 'home';
-  return null;
+  return quest.placed.find(q => q.kind === 'chest' && q.w !== 2 && q.room === here && q.y === ty && Math.abs(q.x - tx) === 1) || null;
 }
 // right click with a sapling: it goes in the ground you're pointing at, on
 // open grass, snow, sand or dirt, not too close to another tree
@@ -2028,7 +2087,7 @@ if (quest.greatTree) stumpGreatTree();
 // stations you've made and put down (quest.placed, saved). each chest has its
 // own 18 slots and each furnace its own fire, so they're kept on the entry.
 const emptyFurnace = () => ({ input: null, fuel: null, output: null, burn: 0, prog: 0 });
-quest.placed = Array.isArray(quest.placed) ? quest.placed.filter(e => e && ['craft', 'furnace', 'chest'].includes(e.kind) && Number.isInteger(e.x) && Number.isInteger(e.y)) : [];
+quest.placed = Array.isArray(quest.placed) ? quest.placed.filter(e => e && (['craft', 'furnace', 'chest'].includes(e.kind) || (e.kind === 'decor' && ITEMS[e.item] && ITEMS[e.item].decor)) && Number.isInteger(e.x) && Number.isInteger(e.y)) : [];
 quest.placed.forEach(e => {
   if (e.kind === 'chest') e.slots = Array.from({ length: e.w === 2 ? 36 : 18 }, (_, i) => validStack(e.slots && e.slots[i]));
   if (e.kind === 'furnace') {
@@ -2039,6 +2098,13 @@ quest.placed.forEach(e => {
 const STATION_ITEM = { craft: 'crafting-table', furnace: 'furnace', chest: 'chest' };
 function placedStation(e) {
   const r = e.room === 'home' ? homeRoom : null;
+  if (e.kind === 'decor') {
+    const o = { decorItem: e.item, kind: 'decor', placed: e.id, x: e.x * TILE + 8, y: e.y * TILE + 14, frames: [FURNITURE[e.item]], flat: !!ITEMS[e.item].flat };
+    // (the nightstand's candle is a little light)
+    if (e.item === 'nightstand') { o.glow = { x: o.x, y: o.y - 21, rgb: '255,200,120', rad: 1.6, flicker: true, strength: 0.18 }; (r ? r.glows : glows).push(o.glow); }
+    (r ? r.things : things).push(o);
+    return o;
+  }
   // (a large chest spans its tile and the one to its right)
   const st = addStation(e.kind, e.x * TILE + (e.w === 2 ? 16 : 8), e.y * TILE + 14, r);
   if (e.w === 2) st.frames = [BIG_CHEST];
@@ -2055,15 +2121,6 @@ function placeStation() {
   if (c.far) { toast('Too far...', name, 'Put it down somewhere closer...'); return; }
   // a chest put down right beside one of your single chests joins it, like
   // minecraft: the two become one large chest with twice the room (alex)
-  if (c.join === 'home') {
-    homeBigChest(true);
-    s.n--;
-    if (!s.n) inv.slots[inv.sel] = null;
-    floatText('Large Chest', homeChestSt.x, spot.cy - 12, '#cfe8ff');
-    sfx.craft();
-    afterInventoryChange();
-    return;
-  }
   if (c.join) {
     const nb = c.join;
     const old = stations.find(st => st.placed === nb.id);
@@ -2083,6 +2140,7 @@ function placeStation() {
   }
   if (c.blocked) { toast('No room...', name, 'Needs a clear patch of ground...'); sfx.deny(); return; }
   const e = { id: `st-${Date.now()}`, kind, x: c.tx, y: c.ty };
+  if (kind === 'decor') e.item = c.id;
   if (room) e.room = 'home';
   if (kind === 'chest') e.slots = new Array(18).fill(null);
   if (kind === 'furnace') e.f = emptyFurnace();
@@ -2094,26 +2152,32 @@ function placeStation() {
   sfx.craft();
   afterInventoryChange();
 }
-// right click one of yours to pick it back up, as long as there's nothing in it
-function pickUpStation(st) {
-  if (st === homeChestSt) {
-    if (chestSlots.slice(18).some(Boolean)) { toast('Not empty...', 'Large Chest', 'Take everything out of the right half first.'); sfx.deny(); return; }
-    homeBigChest(false);
-    gain('chest', 1, st.x + 8, st.y - 16);
-    markDirty();
-    return;
-  }
+// breaking one of your things (a held left click, see tgt.smash): whatever
+// was in it spills out round it, and the thing itself drops too (two chests
+// for a large one), to be put down again somewhere else
+function smashPlaced(st) {
   const e = quest.placed.find(q => q.id === st.placed);
   if (!e) return;
-  const name = ITEMS[STATION_ITEM[e.kind]].name;
-  const full = e.kind === 'chest' ? e.slots.some(Boolean) : e.kind === 'furnace' ? !!(e.f.input || e.f.fuel || e.f.output) : false;
-  if (full) { toast('Not empty...', name, 'Take everything out of it first.'); sfx.deny(); return; }
+  const r = e.room === 'home' ? homeRoom : null;
+  const spill = [];
+  if (e.kind === 'chest') spill.push(...e.slots.filter(Boolean));
+  if (e.kind === 'furnace') ['input', 'fuel', 'output'].forEach(k => { if (e.f[k]) spill.push(e.f[k]); });
+  spill.push(makeStack(e.kind === 'decor' ? e.item : STATION_ITEM[e.kind], e.w === 2 ? 2 : 1));
   quest.placed = quest.placed.filter(q => q !== e);
-  const list = e.room === 'home' ? homeRoom.things : things;
+  const list = r ? r.things : things;
   if (list.includes(st)) list.splice(list.indexOf(st), 1);
-  stations.splice(stations.indexOf(st), 1);
-  if (st.glow) { const gl = e.room === 'home' ? homeRoom.glows : glows; if (gl.includes(st.glow)) gl.splice(gl.indexOf(st.glow), 1); }
-  gain(STATION_ITEM[e.kind], e.w === 2 ? 2 : 1, st.x, st.y - 16);
+  if (stations.includes(st)) stations.splice(stations.indexOf(st), 1);
+  if (st.glow) { const gl = r ? r.glows : glows; if (gl.includes(st.glow)) gl.splice(gl.indexOf(st.glow), 1); }
+  spill.forEach(stack => {
+    let lx = st.x, ly = st.y + 10;
+    for (let tries = 0; tries < 10; tries++) {
+      const a = Math.random() * Math.PI * 2, d = 10 + Math.random() * 20;
+      const tx = st.x + Math.cos(a) * d, ty = st.y + 6 + Math.abs(Math.sin(a)) * d * 0.8;
+      if (!blocked(tx, ty)) { lx = tx; ly = ty; break; }
+    }
+    dropStack(stack, lx, ly, r, 0.5, { x: st.x, y: st.y - 10 });
+  });
+  burst(st.x, st.y - 8, e.kind === 'furnace' ? '140,140,140' : '160,102,58', 16);
   markDirty();
 }
 
@@ -2242,32 +2306,38 @@ const homeRoom = {
   exit: { x: campHouse.x, y: campHouse.y + 10 },
   door: HOME_DOOR,
   blocked: roomWalls(HOME_COLS, HOME_ROWS, HOME_DOOR),
-  things: [
-    { flat: true, x: 66, y: 98, frames: [makeHomeRug()] },
-    { x: 26, y: 106, frames: [makePlant()] },
-    { x: 147, y: 47, frames: [makeBookshelf()] }
-  ],
+  things: [],
   glows: [{ x: HOME_POLE + 7, y: 16, rgb: '255,190,110', rad: 4.5, flicker: true, strength: 0.25 }]
 };
-// side by side from the left wall, 4px apart (table 20-45, furnace 50-71,
-// chest 77-98), so the rest of the tent stays open for other things. the
-// chest sits square on its tile (HOME_CHEST) so a chest put down on the tile
-// to its right makes it a large chest (alex: room for a double chest), which
-// is why the pole stands further over than it used to.
-addStation('craft', 33, 47, homeRoom);
-addStation('furnace', 61, 47, homeRoom);
-const homeChestSt = addStation('chest', HOME_CHEST.x * TILE + 8, HOME_CHEST.y * TILE + 15, homeRoom);
-homeChestSt.slots = chestSlots;
-// the tent's chest as a large chest or back to a single one. the second half's
-// 18 slots go on the end of the same chest, so they're saved with it.
-function homeBigChest(on) {
-  quest.homeBig = on;
-  homeChestSt.frames = [on ? BIG_CHEST : makeChest()];
-  homeChestSt.x = HOME_CHEST.x * TILE + (on ? 16 : 8);
-  if (on) while (chestSlots.length < 36) chestSlots.push(null);
-  else chestSlots.length = 18;
+// everything in the tent is an ordinary placed thing (alex): break any of it
+// with a held left click and put it somewhere else. it's laid out on the
+// tiles the first time, every other tile along the back wall so the gaps
+// match: the plant in the corner, the crafting table, the furnace, the chest
+// with a free tile beside it for a second one (a large chest), then the pole
+// with the lantern, a free tile under it for a bed, and the nightstand in the
+// other corner. the rug lies in front of the door. on a save from before, the
+// old chest's and furnace's contents move into the new ones.
+const HOME_LAYOUT = [
+  ['decor', 1, 2, { item: 'potted-plant' }], ['craft', 3, 2], ['furnace', 5, 2], ['chest', 7, 2],
+  ['decor', 11, 2, { item: 'nightstand' }], ['decor', 6, 5, { item: 'rug' }]
+];
+if (!quest.homeLaid) {
+  quest.homeLaid = true;
+  HOME_LAYOUT.forEach(([kind, x, y, more]) => {
+    const e = Object.assign({ id: `st-home-${kind}-${x}`, kind, x, y, room: 'home' }, more);
+    if (kind === 'furnace') e.f = { input: furnaceState.input, fuel: furnaceState.fuel, output: furnaceState.output, burn: furnaceState.burn, prog: furnaceState.prog };
+    if (kind === 'chest') {
+      e.slots = chestSlots.slice(0, quest.homeBig ? 36 : 18);
+      while (e.slots.length < (quest.homeBig ? 36 : 18)) e.slots.push(null);
+      if (quest.homeBig) e.w = 2;
+    }
+    quest.placed.push(e);
+  });
+  chestSlots.length = 18;
+  chestSlots.fill(null);
+  Object.assign(furnaceState, emptyFurnace());
+  markDirty();
 }
-if (quest.homeBig) homeBigChest(true);
 quest.placed.forEach(placedStation);
 quest.beds.forEach(bedThing);
 
@@ -4018,7 +4088,7 @@ function tickDrill(dt) {
     if (mining && Math.random() < dt * 30) burst(tgt.cx, tgt.cy, tgt.cls === 'ore' ? '220,220,220' : '150,150,150', 1);
   } else if (mining) {
     if (mining.thing) mining.thing.shake = 0;
-    mining = null;
+    stopMining();
   }
 }
 
@@ -4232,7 +4302,7 @@ function die() {
   player.dead = true;
   player.deadT = 0;
   player.swing = -1;
-  mining = null;
+  stopMining();
   bowDraw = null;
   stopDrill();
   closeUI();
@@ -5178,7 +5248,11 @@ function thingAt(m, pred) {
 // in the cave it's only the chest, or the core once it's been uncovered. the
 // rocks are never targets, on purpose (see tickSecretRock).
 function targetAt(m) {
-  const st = thingAt(m, o => o.station);
+  // (your own things, the tent's included, are broken by holding left click
+  // on them: smash. the ones that come with a place, the bosses' and moles'
+  // chests and the cave's, aren't)
+  const st = thingAt(m, o => o.station || o.decorItem);
+  if (st && st.placed) return { type: st.decorItem ? 'decor' : 'station', st, thing: st, key: `st:${st.placed}`, cx: st.x, cy: st.y - 8, cls: st.kind === 'furnace' ? 'stone' : 'wood', barY: st.y - st.frames[0].height - 6, smash: true };
   if (st) return { type: 'station', st, key: `st:${st.kind}`, cx: st.x, cy: st.y - 8 };
   const bed = thingAt(m, o => o.bed);
   if (bed) return { type: 'bed', thing: bed, key: `bed:${bed.id}`, cx: bed.x, cy: bed.y - 10, cls: 'wood' };
@@ -5210,6 +5284,9 @@ function mineInfo(tgt) {
   const s = heldItem(), it = s ? ITEMS[s.id] : null;
   // picking a bed back up is quick and free
   if (tgt.type === 'bed') return { time: 0.6, drops: true, cost: 0 };
+  // (breaking your things: a furnace is stone, quicker with a pickaxe, the
+  // rest are wood, quicker with an axe. no wear either way)
+  if (tgt.smash) return { time: tgt.st.kind === 'furnace' ? (it && it.tool === 'pickaxe' ? 0.8 : 1.6) : it && it.tool === 'axe' ? 0.6 : 1.2, drops: true, cost: 0 };
   if (CLICK_ONLY.has(tgt.type)) return { time: Infinity };
   // snow is the one thing you can dig anywhere, cleared or not. moe's drill
   // just packs it down.
@@ -5258,7 +5335,7 @@ function mineStep(tgt, dt) {
       sfx.deny();
       lockHintT = 2.5;
     }
-    mining = null;
+    stopMining();
     return;
   }
   if (!mining || mining.key !== tgt.key) {
@@ -5290,13 +5367,15 @@ function mineStep(tgt, dt) {
 const TREE_WOOD = { tree: 'wood', pine: 'spruce-wood', deadtree: 'willow-wood' };
 function breakTarget(tgt, info) {
   if (tgt.thing) tgt.thing.shake = 0;
-  mining = null;
+  stopMining();
   sfx.crunch();
   const held = heldItem();
   const tool = held && ITEMS[held.id];
   if (tgt.type === 'bed') {
     removeBed(tgt.thing);
     gain('bed', 1, tgt.cx, tgt.cy - 10);
+  } else if (tgt.smash) {
+    smashPlaced(tgt.st);
   } else if (tgt.type === 'tree') {
     const o = tgt.thing;
     if (tgt.great) {
@@ -5372,7 +5451,7 @@ function sleepIn(o) {
   quest.spawnBed = o.id;
   sleeping = { t: 0, bed: o, morning: false };
   eating = null;
-  mining = null;
+  stopMining();
   player.path = null;
   player.sleeping = true;
   player.x = o.x;
@@ -5446,10 +5525,8 @@ function drawPlacing(c, toX, toY, t) {
   // (a chest that joins another covers both their tiles)
   let x0 = c.tx * TILE, w = TILE, gx = c.spot.cx, gy = c.ty * TILE + 14, ghost;
   if (c.join) {
-    const left = c.join === 'home' ? HOME_CHEST.x : Math.min(c.join.x, c.tx);
-    x0 = left * TILE; w = 2 * TILE; gx = x0 + TILE; ghost = GHOST.big;
-    if (c.join === 'home') gy = homeChestSt.y;
-  } else ghost = c.what === 'bed' ? GHOST.bed : c.what === 'sapling' ? SAPLING_SPRITE[c.it.sapling] : GHOST[c.it.station];
+    x0 = Math.min(c.join.x, c.tx) * TILE; w = 2 * TILE; gx = x0 + TILE; ghost = GHOST.big;
+  } else ghost = c.what === 'bed' ? GHOST.bed : c.what === 'sapling' ? SAPLING_SPRITE[c.it.sapling] : c.it.decor ? FURNITURE[c.id] : GHOST[c.it.station];
   const y0 = c.ty * TILE;
   ctx.fillStyle = `rgba(${rgb},${ok ? 0.16 : 0.2})`;
   ctx.fillRect(toX(x0), toY(y0), w * S, TILE * S);
@@ -5475,9 +5552,13 @@ function useRight() {
     else toast('Too far...', 'Bed', 'Walk up to it first...');
     return;
   }
-  if (tgt && tgt.type === 'station' && (tgt.st.placed || (tgt.st === homeChestSt && quest.homeBig))) {
-    if (inReach(tgt)) pickUpStation(tgt.st);
-    else toast('Too far...', ITEMS[STATION_ITEM[tgt.st.kind]].name, 'Walk up to it first...');
+  // right click opens a crafting table, a furnace or a chest (alex): nothing
+  // gets picked up with it any more, you break things to move them
+  if (tgt && tgt.type === 'station') {
+    const name = tgt.st.kind === 'chest' ? (tgt.st.slots && tgt.st.slots.length > 18 ? 'Large Chest' : 'Chest') : ITEMS[STATION_ITEM[tgt.st.kind]].name;
+    if (!inReach(tgt)) toast('Too far...', name, 'Walk up to it first');
+    else if (tgt.st.locked) { toast(...(tgt.st.lockMsg || ['Locked', "Moe's Loot", 'Defeat Moe the Mole first.'])); sfx.deny(); }
+    else openUI(tgt.st.kind, tgt.st);
     return;
   }
   const s = heldItem();
@@ -5886,7 +5967,7 @@ function openUI(kind, st) {
   if (st && st === denChest && !quest.moe.chestOpened) { quest.moe.chestOpened = true; markDirty(); }
   stopDrill();
   bookOpen = false;
-  mining = null;
+  stopMining();
   mouse.down = false;
   // held keys aren't dropped: you can't move with a menu open anyway, and
   // whatever you're still holding when it closes carries on straight away
@@ -6075,7 +6156,7 @@ function renderHUD() {
 const countArrows = () => inv.slots.reduce((n, st) => n + (st && ITEMS[st.id].arrow ? st.n : 0), 0);
 function selectSlot(i) {
   inv.sel = (i + 6) % 6;
-  mining = null;
+  stopMining();
   renderHUD();
   markDirty();
 }
@@ -6503,7 +6584,7 @@ function enterRoom(r, quiet, at) {
   player.y = r.h - 6;
   player.face = 'up';
   player.path = null;
-  mining = null;
+  stopMining();
   rockT = 0;
   particles.length = 0;
   projectiles.length = 0;
@@ -6557,7 +6638,7 @@ function playLeaveRoom(quiet) {
   player.x = r.exit.x;
   player.y = r.exit.y;
   player.face = 'down';
-  mining = null;
+  stopMining();
   particles.length = 0;
   // (held keys carry on out of it too)
   Object.assign(cam, clampCam(camTarget()));
@@ -6849,7 +6930,7 @@ function playUpdate(dt, t) {
     const a = aimAngle();
     const tgt = targetAt(mouseWorld());
     const ranged = shootsHere() && held && held.throw;
-    const diggable = tgt && !CLICK_ONLY.has(tgt.type) && inReach(tgt) && (!ranged || mineInfo(tgt).time !== Infinity);
+    const diggable = tgt && (!CLICK_ONLY.has(tgt.type) || tgt.smash) && inReach(tgt) && (!ranged || mineInfo(tgt).time !== Infinity);
     const fighting = !ranged && creatures.some(c => inArc(c, a, tool));
     if (!fighting && diggable) { mineStep(tgt, dt); swingAsk = 0; }
     else {
@@ -6864,7 +6945,7 @@ function playUpdate(dt, t) {
     }
   } else if (mining && !drilling) {
     if (mining.thing) mining.thing.shake = 0;
-    mining = null;
+    stopMining();
   }
 
   // the first nudge, when you walk up to the great tree
@@ -7159,6 +7240,9 @@ canvas.addEventListener('pointerdown', e => {
   if (e.button === 2) { useRight(); return; }
   if (e.button !== 0) return;
   const tgt = targetAt(mouseWorld());
+  // (left click on one of your own things is for breaking it, holding on;
+  // right click opens it)
+  if (tgt && tgt.smash && inReach(tgt)) { mouse.down = true; return; }
   if (tgt && CLICK_ONLY.has(tgt.type)) {
     const name = tgt.type === 'station' ? { craft: 'Crafting Table', furnace: 'Furnace', chest: tgt.st.slots && tgt.st.slots.length > 18 ? 'Large Chest' : 'Chest' }[tgt.st.kind] : tgt.type === 'building' ? tgt.b.name : '???';
     if (!inReach(tgt)) toast('Too far...', name, 'Walk up to it first');

@@ -1782,7 +1782,7 @@ function canTravel(poi) {
 
 function travelTo(poi) {
   if (typeof playTravelBlocked === 'function' && playTravelBlocked()) {
-    toast('No way out...', 'Not now', 'Finish the fight first.');
+    toast(...((typeof playTravelWhy === 'function' && playTravelWhy()) || ['No way out...', 'Not now', 'Finish the fight first.']));
     sfx.deny();
     return;
   }

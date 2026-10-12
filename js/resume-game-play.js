@@ -174,6 +174,9 @@ ITEMS['old-map'] = { name: 'Crumpled Map', keep: true };
 // the lava key, ace's prize for being the last one standing at the poker
 // table (js/resume-game-poker.js). it opens the old door at the teachla site.
 ITEMS['lava-key'] = { name: 'Lava Key', keep: true };
+// the ladder you find leaning on a mole hole's wall: the only way back up out
+// of the hole (alex). one of a kind, so it never despawns if you drop it
+ITEMS.ladder = { name: 'Ladder', keep: true };
 // the tent's furniture, as things you can carry and put down (decor: they're
 // placed like a station but don't open, and the rug lies flat)
 ITEMS['potted-plant'] = { name: 'Potted Plant', station: 'decor', decor: true };
@@ -193,7 +196,7 @@ const NO_HARVEST_SLOW = 3;
 const TREE_TOOL_SLOW = 3, TREE_HAND_SLOW = 5;
 const REACH_TILES = 2.6;
 // things you click once rather than hold down on
-const CLICK_ONLY = new Set(['station', 'building', 'part']);
+const CLICK_ONLY = new Set(['station', 'building', 'part', 'ladder']);
 const ORE_ITEM = { [T.GOLD]: 'gold-ore', [T.DIAMOND]: 'diamond', [T.RUBY]: 'ruby', [T.EMERALD]: 'emerald', [T.IRON]: 'iron-ore' };
 const ORE_NEED = { 'iron-ore': 1, 'gold-ore': 2, ruby: 2, emerald: 2, diamond: 2 };
 const STONE_TILES = new Set([T.STONE, T.PEAK, T.WALL, T.ICEROCK]);
@@ -805,6 +808,14 @@ function makeIcon(id) {
       [[11, 13], [12, 14], [13, 11], [14, 12]].forEach(([x, y]) => G.set(x, y, '#2a2430'));
       [[4, 3], [3, 5], [6, 6], [9, 9], [11, 11], [12, 12]].forEach(([x, y]) => G.set(x, y, '#ff8a1c'));
       G.set(5, 4, '#ffd23f'); G.set(10, 10, '#ffd23f');
+      break;
+    case 'ladder':
+      // a short wooden ladder, leaning
+      pxLine(G, 3, 14, 9, 1, '#8a5a2e', 2);
+      pxLine(G, 8, 15, 14, 2, '#8a5a2e', 2);
+      pxLine(G, 4, 13, 9, 2, '#c48a4f');
+      pxLine(G, 9, 14, 14, 3, '#c48a4f');
+      [[5, 11, 10, 12], [6, 8, 11, 9], [7, 5, 12, 6]].forEach(([a, b, c, d]) => pxLine(G, a, b, c, d, '#a86f3c'));
       break;
     case 'old-map':
       // a crumpled scrap of map with a dotted trail and a red cross
@@ -2998,15 +3009,64 @@ function rollDenLoot() {
   return Array.from({ length: 12 }, (_, i) => out[i] || null);
 }
 
+// a mole hole is a real hole (alex): you drop in through an opening high in
+// the back wall, off to one side, and land on the floor under it, and there's
+// no walking back out. each one has a ladder leaning on a wall somewhere in
+// the dark; pick it up, carry it over, hold it and walk under the opening,
+// and you prop it up into the opening and climb out. it stays propped up in
+// that hole after that, so next time you can just climb.
+// (quest.burrows[i].ladder: undefined, 'taken' or 'placed')
+function makeLadder(h) {
+  const G = pixelGrid(14, h);
+  for (let y = 1; y < h - 1; y++) {
+    G.set(2, y, '#c48a4f'); G.set(3, y, '#8a5a2e');
+    G.set(10, y, '#c48a4f'); G.set(11, y, '#8a5a2e');
+  }
+  for (let y = 4; y < h - 2; y += 6) for (let x = 4; x <= 9; x++) {
+    G.set(x, y, '#b07a42'); G.set(x, y + 1, '#6e4020');
+  }
+  return G.outline(() => '#24160a').canvas();
+}
+const LADDER_WALL = makeLadder(30), LADDER_UP = makeLadder(46);
+// the opening's middle (up in the back wall) and where you land under it
+const HOLE_TOP = 13;
+const holeLand = r => ({ x: r.holeX, y: 54 });
+// the opening, painted into the back wall: a ragged hole with daylight in it,
+// grass hanging over its top edge and a few roots dangling down
+function paintHoleOpening(c, cx, seed) {
+  const g = c.getContext('2d'), rnd = mulberry32(seed);
+  const px = (x, y, col, w = 1, h = 1) => { g.fillStyle = col; g.fillRect(Math.round(x), Math.round(y), w, h); };
+  for (let y = HOLE_TOP - 11; y <= HOLE_TOP + 11; y++) for (let x = cx - 14; x <= cx + 14; x++) {
+    const d = Math.hypot((x - cx) / 12.5, (y - HOLE_TOP) / 9.5) - (hash2(x >> 1, y >> 1, seed) - 0.5) * 0.18;
+    if (d > 1.12) continue;
+    if (d > 0.95) { px(x, y, '#2a1d12'); continue; }
+    // (sky at the top, fading to warm light lower down)
+    const k = (y - (HOLE_TOP - 9)) / 18;
+    px(x, y, k < 0.35 ? '#cfe6ff' : k < 0.7 ? '#eef3e0' : '#fff2cc');
+  }
+  for (let x = cx - 12; x <= cx + 12; x++) if (rnd() < 0.7) for (let k = 0; k < 1 + rnd() * 3; k++) px(x, HOLE_TOP - 9 + k, rnd() < 0.5 ? '#5e9c3a' : '#4a7f2c');
+  for (let r0 = 0; r0 < 3; r0++) {
+    let x = cx - 9 + rnd() * 18, y = HOLE_TOP - 6;
+    for (let k = 0; k < 6 + rnd() * 6; k++) { px(x, y, '#6b4a2c'); x += (rnd() - 0.5) * 1.2; y += 1; }
+  }
+}
+// the ladder standing in the shaft. it's flat, so you're always drawn in front
+// of it while you climb; rise is how far it's been stood up (0 to 1)
+function drawShaftLadder(o, toX, toY) {
+  const f = LADDER_UP, h = Math.round(f.height * (o.rise === undefined ? 1 : o.rise));
+  if (h <= 0) return;
+  ctx.drawImage(f, 0, f.height - h, f.width, h, toX(o.x - f.width / 2), toY(o.y - h + 1), f.width * S, h * S);
+}
+
 // the three burrows: where the moles wait under the floor, the chest, and a
 // few things to look at. rooms are 13 x 8 tiles of floor inside the walls.
 // the moles sit at least 3.5 tiles (their aggro range) from where you come
 // in, so you get a moment to look around before they come up.
 const BURROW_COLS = 13, BURROW_ROWS = 9, BURROW_DOOR = 6;
 const BURROWS = [
-  { moles: [[40, 60], [160, 78]], chest: [56, 47], shrooms: [[26, 100], [184, 60]], rocks: [[124, 62, 0], [172, 118, 1]] },
-  { moles: [[40, 76], [176, 80], [120, 50]], chest: [152, 47], shrooms: [[182, 106], [28, 56]], rocks: [[80, 114, 1], [42, 116, 0]] },
-  { moles: [[40, 50], [172, 86], [36, 96]], chest: [104, 47], shrooms: [[24, 62], [184, 116]], rocks: [[150, 56, 0], [64, 58, 1]] }
+  { moles: [[56, 86], [160, 78]], chest: [56, 47], shrooms: [[26, 100], [184, 60]], rocks: [[124, 62, 0], [172, 118, 1]], ladder: [150, 47], hole: 26 },
+  { moles: [[40, 76], [176, 80], [120, 50]], chest: [152, 47], shrooms: [[182, 106], [28, 56]], rocks: [[80, 114, 1], [42, 116, 0]], ladder: [60, 47], hole: 184 },
+  { moles: [[40, 50], [172, 86], [36, 96]], chest: [104, 47], shrooms: [[24, 62], [184, 116]], rocks: [[150, 56, 0], [64, 58, 1]], ladder: [82, 47], hole: 184 }
 ];
 const doorLight = (cols, rows, door) => ({ x: door * TILE + 8, y: rows * TILE - 6, rgb: '255,236,200', rad: 3.2, flicker: true, strength: 0.2 });
 const burrowRooms = BURROWS.map((B, i) => {
@@ -3015,11 +3075,20 @@ const burrowRooms = BURROWS.map((B, i) => {
   if (!Array.isArray(save.chest)) save.chest = rollBurrowLoot();
   const r = {
     id: `burrow-${i}`, burrow: i, w: BURROW_COLS * TILE, h: BURROW_ROWS * TILE, dust: '#7a5c40', shade: 0.95, fight: true,
-    canvas: paintDig(BURROW_COLS, BURROW_ROWS, BURROW_DOOR, 7000 + i * 31, false),
+    // (no gap in the bottom wall any more: the only way out is up)
+    canvas: paintDig(BURROW_COLS, BURROW_ROWS, -9, 7000 + i * 31, false),
     outside: { x: hole.x, y: hole.y }, exit: { x: hole.x, y: hole.y + HOLE_STEP }, door: BURROW_DOOR,
-    blocked: roomWalls(BURROW_COLS, BURROW_ROWS, BURROW_DOOR), things: [],
-    glows: [doorLight(BURROW_COLS, BURROW_ROWS, BURROW_DOOR)]
+    blocked: roomWalls(BURROW_COLS, BURROW_ROWS, -9), things: [], glows: []
   };
+  r.holeX = B.hole;
+  paintHoleOpening(r.canvas, B.hole, 7300 + i * 17);
+  const land = holeLand(r);
+  r.glows.push({ x: land.x, y: HOLE_TOP + 4, rgb: '255,240,210', rad: 2.2, flicker: true, strength: 0.3 });
+  r.glows.push({ x: land.x, y: land.y - 2, rgb: '255,236,200', rad: 2.2, flicker: true, strength: 0.22 });
+  // (the ladder props up from the floor under the opening into it)
+  r.shaftLadder = { flat: true, x: land.x, y: land.y + 2, draw: drawShaftLadder, gone: save.ladder !== 'placed' };
+  r.things.push(r.shaftLadder);
+  if (!save.ladder) r.things.push({ x: B.ladder[0], y: B.ladder[1], frames: [LADDER_WALL], wallLadder: i });
   const st = addStation('chest', B.chest[0], B.chest[1], r);
   st.slots = save.chest;
   st.where = 'in the burrow';
@@ -3112,7 +3181,7 @@ const moeBeam = { x: 0, y: 0, rgb: '255,240,190', rad: 2.6, flicker: true, stren
 denRoom.glows.push(moeLamp, moeBeam);
 
 BUILDINGS.push(
-  ...burrowRooms.map((r, i) => ({ thing: holeThings[i], tile: MOLE_HOLES[i], room: r, name: 'Mole Hole', hole: true, open: () => true, hint: () => false })),
+  ...burrowRooms.map((r, i) => ({ thing: holeThings[i], tile: MOLE_HOLES[i], room: r, name: 'Mole Hole', hole: true, open: () => true, hint: () => false, enter: startHoleDrop })),
   { thing: denHole, tile: denPoi.at, room: denRoom, name: 'Moe\'s Den', hole: true, pit: { x: denHole.x, y: denHole.y - 15, w: 12 },
     open: () => burrowsCleared() || !!quest.moe.dead, hint: () => false,
     shut: () => ['Not yet...', 'Something large lurks underneath', `Clear the mole holes first (${burrowsLeft()} left).`] }
@@ -3148,7 +3217,11 @@ function playCamFocus() {
   return cine && cine.t < 2.3 * cine.k ? (cine.talked ? { x: moe.x, y: moe.y - 24 } : { x: moe.hx, y: moe.hy - 24 }) : null;
 }
 // (any room that's sealed shut for a fight)
-function playTravelBlocked() { return !!room && (!!room.sealed || (room === denRoom && (!!cine || !!moeMeet)) || (typeof wolfHolds === 'function' && wolfHolds()) || (typeof pokerHolds === 'function' && pokerHolds())); }
+// (down a hole, you can't fast travel out until its ladder's up: that's the
+// whole point of finding it)
+const stuckInHole = () => !!room && room.burrow !== undefined && quest.burrows[room.burrow].ladder !== 'placed';
+function playTravelWhy() { return stuckInHole() || holeDrop || holeFall || holeClimb ? ['Stuck down here...', 'Mole Hole', 'Find a way to climb out first.'] : null; }
+function playTravelBlocked() { return !!holeDrop || !!holeFall || !!holeClimb || stuckInHole() || !!room && (!!room.sealed || (room === denRoom && (!!cine || !!moeMeet)) || (typeof wolfHolds === 'function' && wolfHolds()) || (typeof pokerHolds === 'function' && pokerHolds())); }
 
 // where his hand (and so the drill's grip) and his lamp are in the world,
 // for whichever frame he's on, sunk however far he is into the floor
@@ -4449,7 +4522,8 @@ function updateCreature(c, dt) {
   switch (c.state) {
     case 'sleep':
     case 'burrowed':
-      if (alive && d < def.aggro * TILE) aggro(c);
+      // (a buried mole doesn't notice you landing in its hole, only you moving)
+      if (alive && d < def.aggro * TILE && !(c.state === 'burrowed' && holeHush)) aggro(c);
       break;
     case 'dig':
       // one of moe's crew, scratching at its wall with dirt flying, until it
@@ -5275,6 +5349,8 @@ function targetAt(m) {
     if (room === caveRoom && quest.cave.rock && !quest.cave.part && thingAt(m, o => o === hollowThing)) {
       return { type: 'part', thing: hollowThing, key: 'part', cx: hollowThing.x, cy: hollowThing.y - 10 };
     }
+    const lad = room.burrow !== undefined && thingAt(m, o => o.wallLadder !== undefined);
+    if (lad) return { type: 'ladder', thing: lad, key: 'ladder', cx: lad.x, cy: lad.y - 12 };
     // (the race track's walls, and the ore wolf's)
     return (typeof raceTarget === 'function' && raceTarget(m)) || (typeof wolfTarget === 'function' ? wolfTarget(m) : null);
   }
@@ -6641,6 +6717,8 @@ function enterRoom(r, quiet, at) {
 }
 function playLeaveRoom(quiet) {
   const r = room;
+  if (holeFall || holeClimb) { holeFall = null; holeClimb = null; player.flip = false; warpClear(); }
+  if (r && r.shaftLadder) r.shaftLadder.rise = 1;
   if (r === denRoom) resetMoe();
   if (typeof raceLeave === 'function') raceLeave(r, quiet);
   if (typeof wolfLeave === 'function') wolfLeave(r);
@@ -6663,6 +6741,144 @@ function playLeaveRoom(quiet) {
   if (!quiet) sfx.ui();
 }
 const buildingOpen = b => biomeOpen(regionAt(b.tile[0] + 0.5, b.tile[1] + 0.5));
+// down a mole hole. walking into one outside, you step to the middle of the
+// pit and drop, and the screen goes dark (holeDrop); inside, you fall from up
+// the shaft of light and land in a puff of dirt (holeFall). getting out is
+// holeClimb: stand the ladder up in the light if it isn't already, and climb.
+const HOLE_DROP = 0.35, HOLE_FALL = 0.45, HOLE_SET = 0.6, HOLE_CLIMB = 1, HOLE_HIGH = 54 - HOLE_TOP - 4;
+// (holeHush: the moles stay under the floor while you land, and only notice
+// you once you move, alex)
+let holeDrop = null, holeFall = null, holeClimb = null, holeNagAt = 0, holeArmed = false, holeHush = false;
+const warpEl = $('#warp');
+function warpTo01(v) { warpEl.style.transition = 'none'; warpEl.style.opacity = String(clamp(v, 0, 1)); }
+function warpClear() { warpEl.style.opacity = ''; warpEl.style.transition = ''; }
+function startHoleDrop(b) {
+  if (holeDrop || holeFall || holeClimb) return;
+  holeDrop = { b, t: 0, x0: player.x, y0: player.y };
+  stopMining();
+  sfx.scratch(0.6, true);
+}
+function tickHoles(dt) {
+  if (holeDrop) {
+    const d = holeDrop, k = Math.min(1, (d.t += dt) / HOLE_DROP);
+    player.x = d.x0 + (d.b.thing.x - d.x0) * k;
+    player.y = d.y0 + (d.b.thing.y - 6 - d.y0) * k;
+    warpTo01(k);
+    if (k >= 1) {
+      holeDrop = null;
+      enterRoom(d.b.room);
+      holeFall = { t: 0 };
+      holeArmed = false;
+      holeHush = true;
+    }
+  }
+  if (holeFall) {
+    const f = holeFall, land = holeLand(room);
+    f.t += dt;
+    const k = Math.min(1, f.t / HOLE_FALL);
+    player.x = land.x;
+    player.y = land.y - HOLE_HIGH * (1 - k * k);
+    player.face = 'down';
+    warpTo01(1 - f.t / 0.25);
+    if (k >= 1) {
+      holeFall = null;
+      warpClear();
+      player.y = land.y;
+      if (typeof sfx.thud === 'function') sfx.thud(); else sfx.crunch();
+      addShake(2);
+      if (!reduceMotion) for (let n = 0; n < 14; n++) {
+        const a = Math.random() * Math.PI * 2;
+        particles.push({ x: land.x + Math.cos(a) * 6, y: land.y, vx: Math.cos(a) * (20 + Math.random() * 30), vy: -10 - Math.random() * 25, g: 80, life: 0.5, t: 0, col: Math.random() < 0.5 ? '#8a6644' : '#6e5038', size: 1 });
+      }
+    }
+    return;
+  }
+  if (holeClimb) {
+    const c = holeClimb, land = holeLand(room);
+    c.t += dt;
+    const set = c.set ? HOLE_SET : 0;
+    room.shaftLadder.rise = c.set ? Math.min(1, c.t / HOLE_SET) : 1;
+    if (c.set && c.t < HOLE_SET && Math.random() < dt * 8) sfx.chip();
+    const k = clamp((c.t - set) / HOLE_CLIMB, 0, 1);
+    player.x = land.x;
+    player.y = land.y - k * (land.y - HOLE_TOP - 2);
+    player.face = 'up';
+    // (hand over hand: the back view mirrored back and forth)
+    player.flip = k > 0 && Math.floor(k * 9) % 2 === 1;
+    if (k > 0.65) warpTo01((k - 0.65) / 0.35);
+    if (k >= 1) {
+      holeClimb = null;
+      player.flip = false;
+      playLeaveRoom();
+      warpTo01(1);
+      setTimeout(warpClear, 120);
+    }
+    return;
+  }
+  // standing in the light at the bottom of a hole: climb out if there's a
+  // ladder up or you're holding one, otherwise it's just too high
+  if (!room || room.burrow === undefined || player.dead) { holeHush = false; return; }
+  if (player.moving) holeHush = false;
+  const land = holeLand(room), save = quest.burrows[room.burrow];
+  const inLight = Math.hypot(player.x - land.x, (player.y - land.y) * 1.4) < 10;
+  // (you have to step out of the light once before it counts, or landing in
+  // it with a key held would send you straight back up)
+  if (!inLight) { holeArmed = true; return; }
+  if (!holeArmed || !player.moving) return;
+  const held = heldItem();
+  if (save.ladder === 'placed') { holeClimb = { t: 0, set: false }; return; }
+  if (held && held.id === 'ladder') {
+    held.n--;
+    if (!held.n) inv.slots[inv.sel] = null;
+    afterInventoryChange();
+    save.ladder = 'placed';
+    room.shaftLadder.gone = false;
+    room.shaftLadder.rise = 0;
+    holeClimb = { t: 0, set: true };
+    markDirty();
+    return;
+  }
+  if (performance.now() > holeNagAt) {
+    holeNagAt = performance.now() + 4000;
+    toast('Too high...', 'Mole Hole', save.ladder === 'taken' ? 'Hold the ladder and walk under the opening to climb out.' : 'There must be something down here to climb out with...');
+    sfx.deny();
+  }
+}
+// picking up the ladder off the wall
+function takeLadder(o) {
+  const save = quest.burrows[o.wallLadder];
+  room.things.splice(room.things.indexOf(o), 1);
+  save.ladder = 'taken';
+  addItem('ladder', 1);
+  toast('Found', 'A ladder', 'Hold it and walk under the opening to climb out.');
+  sfx.pickup();
+  markDirty();
+  afterInventoryChange();
+}
+// the shaft of daylight down into a hole, and your shadow growing under you as
+// you fall into it
+function drawHoleLight(toX, toY, t) {
+  if (!room || room.burrow === undefined) return;
+  const land = holeLand(room);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const top = toY(HOLE_TOP + 6), bot = toY(land.y + 4), half = 9 * S;
+  const g = ctx.createLinearGradient(0, top, 0, bot);
+  const flick = 0.9 + Math.sin(t / 700) * 0.05;
+  g.addColorStop(0, `rgba(255,240,210,${0.22 * flick})`);
+  g.addColorStop(1, `rgba(255,236,200,${0.08 * flick})`);
+  ctx.fillStyle = g;
+  ctx.fillRect(toX(land.x) - half, top, half * 2, bot - top);
+  ctx.restore();
+  if (holeFall) {
+    const k = Math.min(1, holeFall.t / HOLE_FALL);
+    ctx.fillStyle = `rgba(0,0,0,${(0.15 + 0.3 * k).toFixed(3)})`;
+    const rx = (3 + 5 * k) * S, ry = (1 + 1.5 * k) * S;
+    ctx.beginPath();
+    ctx.ellipse(toX(land.x), toY(land.y), rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
 // walking up into an open doorway takes you in, same as clicking the building
 // a mole hole you just walk into (you have to actually be walking, so
 // stepping back out of one doesn't drop you straight back in)
@@ -6795,7 +7011,7 @@ function coreMotes(dt) {
 // race (all in js/resume-game-race.js). the engine leaves you alone then.
 // (and the ore wolf's talking and title card, js/resume-game-wolf.js)
 const raceBusy = () => (typeof raceHolds === 'function' && raceHolds()) || (typeof wolfHolds === 'function' && wolfHolds()) || (typeof pokerHolds === 'function' && pokerHolds());
-function playFrozen() { return ui !== null || player.dead || !!sleeping || !!cine || !!moeMeet || raceBusy(); }
+function playFrozen() { return ui !== null || player.dead || !!sleeping || !!cine || !!moeMeet || !!holeDrop || !!holeFall || !!holeClimb || raceBusy(); }
 // which layer of img/player-armor.png to paint over you, or -1 for none
 const ARMOR_LAYERS = ['hide', 'wool', 'gold', 'marble', 'iron', 'emerald', 'diamond'];
 // every worn piece is painted on you: the chestplate from img/player-armor.png,
@@ -6895,7 +7111,9 @@ function playUpdate(dt, t) {
 
   // only what's where you are moves: the overworld waits while you're indoors,
   // and a room's creatures wait while you're out
-  creatures.forEach(c => { if (here(c)) updateCreature(c, dt); });
+  // (everything holds still for the moment you're dropping in or climbing
+  // out, or a mole would follow you up the ladder)
+  if (!holeFall && !holeClimb) creatures.forEach(c => { if (here(c)) updateCreature(c, dt); });
   updateProjectiles(dt);
   if (!room) {
     for (let i = creatures.length - 1; i >= 0; i--) {
@@ -6912,6 +7130,7 @@ function playUpdate(dt, t) {
     else playLeaveRoom();
   }
   shakeAmp = Math.max(0, shakeAmp - dt * 10);
+  tickHoles(dt);
   tickGround(dt);
   tickSnow(dt);
   tickTrees(dt);
@@ -7035,6 +7254,8 @@ function playRenderOverlay(toX, toY, t) {
     ctx.fillRect(gx - rad, gy - rad, rad * 2, rad * 2);
     ctx.globalCompositeOperation = 'source-over';
   }
+
+  drawHoleLight(toX, toY, t);
 
   // target outline + mining progress. with something in your hand you can put
   // down, the tiles show instead (unless you're pointing at a bed or a
@@ -7262,11 +7483,12 @@ canvas.addEventListener('pointerdown', e => {
   // right click opens it)
   if (tgt && tgt.smash && inReach(tgt)) { mouse.down = true; return; }
   if (tgt && CLICK_ONLY.has(tgt.type)) {
-    const name = tgt.type === 'station' ? { craft: 'Crafting Table', furnace: 'Furnace', chest: tgt.st.slots && tgt.st.slots.length > 18 ? 'Large Chest' : 'Chest' }[tgt.st.kind] : tgt.type === 'building' ? tgt.b.name : '???';
+    const name = tgt.type === 'station' ? { craft: 'Crafting Table', furnace: 'Furnace', chest: tgt.st.slots && tgt.st.slots.length > 18 ? 'Large Chest' : 'Chest' }[tgt.st.kind] : tgt.type === 'building' ? tgt.b.name : tgt.type === 'ladder' ? 'Ladder' : '???';
     if (!inReach(tgt)) toast('Too far...', name, 'Walk up to it first');
     else if (tgt.type === 'station' && tgt.st.locked) { toast(...(tgt.st.lockMsg || ['Locked', 'Moe\'s Loot', 'Defeat Moe the Mole first.'])); sfx.deny(); }
     else if (tgt.type === 'station') openUI(tgt.st.kind, tgt.st);
     else if (tgt.type === 'building') useBuilding(tgt.b);
+    else if (tgt.type === 'ladder') takeLadder(tgt.thing);
     else takePart();
     return;
   }

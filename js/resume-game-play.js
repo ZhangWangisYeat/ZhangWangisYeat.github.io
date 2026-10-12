@@ -456,22 +456,16 @@ function flameSwordArt() {
     let col = null;
     if (u >= B0 && u <= L) {
       // the blade, bending a little towards its lit side, slender, and
-      // narrowing over its last stretch to a fine point
-      const vb = v + 0.8 * Math.sin(clamp((u - B0) / (L - B0), 0, 1) * Math.PI);
+      // narrowing over its last stretch to a fine point. (the bend's all
+      // done before that last stretch, so the point is straight and even on
+      // both sides; it used to still be bending there and leaned over)
+      const vb = v + 0.8 * Math.sin(clamp((u - B0) / (L - 9 - B0), 0, 1) * Math.PI);
       const w = u < L - 9 ? 2.05 - ((u - B0) / (L - 9 - B0)) * 0.3 : 1.75 * ((L - u) / 9) ** 0.8;
-      let inside = Math.abs(vb) <= w;
-      // a flame flaring off the front edge at its base, licking up the blade
-      if (!inside && vb < 0 && u < B0 + 5 && -vb <= w + 1.9 * (1 - (u - B0) / 5) ** 1.4) inside = true;
-      // the barb near the point on the back edge, hooking back towards the hilt
-      const bu = u - (L - 11);
-      if (!inside && vb > 0 && bu > -1.5 && bu < 3 && vb - w < 2.2 - Math.abs(bu - 0.2) * 1.1 - Math.max(0, bu) * 0.2) inside = true;
-      // hooked notches cut into the back edge
-      if (inside && vb > 0 && [B0 + 6.5, B0 + 11, B0 + 15.5].some(uc => Math.hypot(u - uc, vb - w - 0.2) < 1.3)) inside = false;
-      if (inside) {
+      // (smooth the whole way up, alex: no flame flaring off its base, no
+      // notches cut in its back and no line inlaid up it any more)
+      if (Math.abs(vb) <= w) {
         const f = vb / Math.max(w, 0.8);
-        // a thin dark flame line inlaid up the lower blade
-        const inlay = u < B0 + 13 && Math.abs(vb - 0.55 * Math.sin((u - B0) * 0.9) + 0.1) < 0.36;
-        col = inlay ? shade(u, 0.3, 0.8) : f < -0.7 ? shade(u, 0.92) : f < -0.05 ? shade(u, 0.76) : f < 0.6 ? shade(u, 0.62) : shade(u, 0.48);
+        col = f < -0.7 ? shade(u, 0.92) : f < -0.05 ? shade(u, 0.76) : f < 0.6 ? shade(u, 0.62) : shade(u, 0.48);
       }
     } else if (u >= 1.2 && u < B0) {
       // the crossguard: a band across, with tongues of flame going up off it
@@ -500,13 +494,10 @@ function flameSwordArt() {
     }
     if (col) G.set(x, y, col);
   }
+  // (it used to have little white stars baked onto the blade and a barb near
+  // the point; alex wanted it clean, so only the bright tip is left. the
+  // glints that run up it in your hand still do)
   const at = (u, v) => [Math.round(SWORD_O.x - 0.5 + (u + v) * Math.SQRT1_2), Math.round(SWORD_O.y - 0.5 + (v - u) * Math.SQRT1_2)];
-  [[L * 0.68, -0.9], [L * 0.42, -1], [2.6, -1.5]].forEach(([u, v]) => {
-    const [cx, cy] = at(u, v);
-    if (!G.get(cx, cy)) return;
-    G.set(cx, cy, '#ffffff');
-    [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => { if (G.get(cx + dx, cy + dy)) G.set(cx + dx, cy + dy, '#fff6ff'); });
-  });
   const [tx, ty] = at(L - 0.5, 0);
   G.set(tx, ty, '#ffffff');
   return G.outline(() => '#1a1024').outline(() => '#141414').canvas();
@@ -6206,12 +6197,71 @@ const REST_POSE = {
   side: { x: 27, y: 37, a: -45, front: true },
   up:   { x: 19, y: 37, a: -120, front: false }
 };
+// a prismasteel tool swings in a rainbow (alex). the white slash in the swing
+// frames is the sprite's own (it's painted into player-swing.png), so with
+// one of these in your hand the engine draws you from a copy with the slash
+// taken out (img/player-swing-clean.png, see playNoSlash), and the slash on
+// its own (img/player-slash.png) is drawn here in rainbow colours instead, in
+// exactly the frames and along exactly the path the white one took, so it
+// keeps up with the blade. it's coloured by a little offscreen canvas: draw
+// the slash, then fill it with a colour wheel round your middle that turns
+// with time (filling over the top works on an image from file://, reading its
+// pixels wouldn't). the follow through frame keeps the last slash, fading.
+// the sword's is a bit bigger than the axe's and pickaxe's, for its reach.
+const slashSheet = new Image();
+slashSheet.src = 'img/player-slash.png';
+const SLASH_CV = mk(CELL, CELL), SLASH_MID = { x: 24, y: 33 }, SLASH_FLIP_Y = 32;
+const prismHeld = () => { const s = heldItem(), it = s && ITEMS[s.id]; return it && it.prism && it.tool ? it : null; };
+function playNoSlash() { return !!prismHeld(); }
+function drawPrismSlash(dx, dy, row, col) {
+  const it = prismHeld();
+  if (!it || player.swing < 0 || row < 6 || row > 8 || !slashSheet.complete || !slashSheet.naturalWidth) return;
+  let f = col, alpha = 1;
+  if (col >= 3) { f = 2; alpha = clamp(1 - (player.swing - 0.225) / 0.075, 0, 1); }
+  if (f < 1 || alpha <= 0) return;
+  const g = SLASH_CV.getContext('2d'), now = performance.now();
+  g.globalCompositeOperation = 'source-over';
+  g.clearRect(0, 0, CELL, CELL);
+  // (the up swing is the down swing's slash turned upside down, alex: same
+  // size and shape, just going the other way. the sprite's own up slash was a
+  // smaller ring and looked too different)
+  const up = row === 8;
+  g.drawImage(slashSheet, f * CELL, (up ? 6 : row) * CELL, CELL, CELL, 0, 0, CELL, CELL);
+  g.globalCompositeOperation = 'source-in';
+  let fill;
+  if (g.createConicGradient) {
+    // (three times round the rainbow, so even a short slash shows all of it)
+    fill = g.createConicGradient(now / 300, SLASH_MID.x, SLASH_MID.y);
+    for (let k = 0; k <= 18; k++) fill.addColorStop(k / 18, hsl((k * 60) % 360, 0.95, 0.66));
+  } else {
+    fill = g.createLinearGradient(0, 0, CELL, CELL);
+    for (let k = 0; k <= 6; k++) fill.addColorStop(k / 6, hsl((k * 60 + now / 5) % 360, 0.95, 0.66));
+  }
+  g.fillStyle = fill;
+  g.fillRect(0, 0, CELL, CELL);
+  const k = it.tool === 'sword' ? 1.25 : 1, mid = SLASH_MID;
+  ctx.save();
+  if (player.flip) { ctx.translate(dx + CELL * S, dy); ctx.scale(-1, 1); } else ctx.translate(dx, dy);
+  if (up) { ctx.translate(0, 2 * SLASH_FLIP_Y * S); ctx.scale(1, -1); }
+  ctx.translate(mid.x * S, mid.y * S);
+  ctx.scale(k, k);
+  ctx.translate(-mid.x * S, -mid.y * S);
+  // a soft glow under it, then the slash itself
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha * 0.35;
+  ctx.drawImage(SLASH_CV, -S, -S, (CELL + 2) * S, (CELL + 2) * S);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = alpha * (player.blink ? 0.4 : 1);
+  ctx.drawImage(SLASH_CV, 0, 0, CELL * S, CELL * S);
+  ctx.restore();
+}
 // called by the engine just before (front false) and after (front true)
 // it draws your sprite, so things held behind your back get covered by you
 function playDrawHeld(dx, dy, row, col, front) {
   if (!started || player.dead || player.sleeping) return;
   const s = heldItem();
   if (!s) return;
+  if (front) drawPrismSlash(dx, dy, row, col);
   const face = ['down', 'side', 'up'][row % 3];
   const pose = (SWING_POSE[row] && SWING_POSE[row][col]) || REST_POSE[face];
   const it = ITEMS[s.id], img = ICON_CANVAS[s.id];

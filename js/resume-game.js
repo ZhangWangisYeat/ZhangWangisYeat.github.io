@@ -1263,6 +1263,10 @@ sheet.src = 'img/player.png';
 // original, dagger and all.
 const sheetPlay = new Image();
 sheetPlay.src = 'img/player-swing.png';
+// and a copy of that with the white slash taken out of the swing frames, for
+// when the play layer draws its own slash (a rainbow one for prismasteel)
+const sheetClean = new Image();
+sheetClean.src = 'img/player-swing-clean.png';
 // armor layers to paint over the torso: seven sheets stacked top to bottom
 // (hide, wool, gold, marble, iron, emerald, diamond), each 10 rows of 48px
 // cells lined up with player-swing.png. only the chest pixels are filled in.
@@ -2235,7 +2239,8 @@ function drawPlayer(toX, toY, t) {
   const sink = wading ? 3 : 0;
   const srcH = wading ? CELL - 8 : CELL;
   const dx = toX(player.x - 24), dy = toY(player.y - 42 + sink);
-  const img = sheetPlay.complete && sheetPlay.naturalWidth ? sheetPlay : sheet;
+  const noSlash = typeof playNoSlash === 'function' && playNoSlash() && sheetClean.complete && sheetClean.naturalWidth;
+  const img = noSlash ? sheetClean : sheetPlay.complete && sheetPlay.naturalWidth ? sheetPlay : sheet;
   // whatever armor you're wearing, as [sheet, layer, tint] from the play layer.
   // a tinted layer (prismasteel) is recoloured by the play layer first and
   // comes back as its own little canvas

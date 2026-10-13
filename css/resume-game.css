@@ -1502,7 +1502,10 @@ body.is-poker .toast { z-index: 39; }
   cursor: pointer;
 }
 .pk-step { width: 26px; height: 24px; font-size: 0.9rem; line-height: 1; }
-.pk-amount { min-width: 78px; text-align: right; font-family: var(--px); font-size: 0.7rem; color: var(--ink); }
+.pk-raise-row .pk-amount { flex: 0 0 84px; width: 84px; padding: 4px 6px; border: 0; text-align: right; font-family: var(--px); font-size: 0.7rem; color: var(--ink); background: var(--well); box-shadow: inset 0 0 0 2px var(--edge-hi); }
+.pk-raise-row .pk-amount:focus { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+.pk-raise-row .pk-amount:disabled { color: var(--faint); }
+.pk-raise-row .pk-amount.is-low { box-shadow: inset 0 0 0 2px #ff7b6b; }
 .pk-presets { display: flex; gap: 4px; margin-top: 6px; }
 .pk-presets button { flex: 1; padding: 5px 0; font-size: 0.5rem; letter-spacing: 0.06em; text-transform: uppercase; }
 .pk-step:hover:not(:disabled), .pk-presets button:hover:not(:disabled) { color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }

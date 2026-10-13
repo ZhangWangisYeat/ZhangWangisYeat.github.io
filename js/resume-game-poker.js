@@ -2854,7 +2854,7 @@ function pvSetRaise(v) {
   const L = PV.legal;
   v = clamp(Math.round(v), L.minTo, L.maxTo);
   pkUI.slider.value = v;
-  pkUI.amount.textContent = pkDollars(v);
+  if (document.activeElement !== pkUI.amount) pkUI.amount.value = pkDollars(v);
   pkUI.raise.innerHTML = `${v >= L.maxTo ? 'All in' : L.isBet ? 'Bet' : 'Raise to'} <b>${pkDollars(v)}</b>`;
 }
 function pvShowControls() {
@@ -2867,19 +2867,19 @@ function pvShowControls() {
   pkUI.fold.disabled = L.canCheck;
   pkUI.call.disabled = false;
   const can = L.canRaise;
-  [pkUI.raise, pkUI.slider, pkUI.minus, pkUI.plus].forEach(el => { el.disabled = !can; });
+  [pkUI.raise, pkUI.slider, pkUI.minus, pkUI.plus, pkUI.amount].forEach(el => { el.disabled = !can; });
   pkUI.presets.querySelectorAll('button').forEach(b => { b.disabled = !can; });
   pkUI.allin.disabled = !(L.maxTo > T.bet && (can || L.toCall >= T.seats[0].stack));
   pkUI.slider.min = L.minTo; pkUI.slider.max = L.maxTo; pkUI.slider.step = 1;
   if (can) pvSetRaise(L.minTo);
-  else { pkUI.raise.innerHTML = 'Raise'; pkUI.amount.textContent = ''; }
+  else { pkUI.raise.innerHTML = 'Raise'; pkUI.amount.value = ''; }
   pkUI.status.textContent = 'Your turn';
   sfx.ui();
 }
 function pvHideControls() {
   PV.human = false;
   pkUI.actions.classList.remove('is-turn');
-  [pkUI.fold, pkUI.call, pkUI.raise, pkUI.allin, pkUI.slider, pkUI.minus, pkUI.plus].forEach(el => { el.disabled = true; });
+  [pkUI.fold, pkUI.call, pkUI.raise, pkUI.allin, pkUI.slider, pkUI.minus, pkUI.plus, pkUI.amount].forEach(el => { el.disabled = true; });
   pkUI.presets.querySelectorAll('button').forEach(b => { b.disabled = true; });
   pkUI.status.textContent = '';
 }
@@ -2896,6 +2896,24 @@ pkUI.call.addEventListener('click', () => pvHuman(PV.legal.canCheck ? 'check' : 
 pkUI.raise.addEventListener('click', () => pvHuman('raise', pvRaiseVal()));
 pkUI.allin.addEventListener('click', () => pvHuman('allin'));
 pkUI.slider.addEventListener('input', () => pvSetRaise(+pkUI.slider.value));
+// typing an amount (alex: any amount, as long as it's at least the minimum
+// raise). it's read as dollars, with or without the $ and commas, and 1.5k
+// works too, then rounded to the nearest $100 (an iron, the smallest chip).
+// under the minimum it goes up to the minimum and the box flashes; over your
+// stack it's all in. enter raises straight away.
+function pvTypedAmount() {
+  if (!PV || !PV.legal) return;
+  const t = pkUI.amount.value.toLowerCase().replace(/[$,\s]/g, '');
+  const n = parseFloat(t) * (t.endsWith('k') ? 1000 : 1);
+  if (!Number.isFinite(n)) { pvSetRaise(pvRaiseVal()); pkUI.amount.value = pkDollars(pvRaiseVal()); return; }
+  const units = Math.round(n / PK.DOLLARS), low = units < PV.legal.minTo;
+  pvSetRaise(units);
+  pkUI.amount.value = pkDollars(pvRaiseVal());
+  pkUI.amount.classList.toggle('is-low', low);
+  if (low) { pkUI.status.textContent = `Min ${pkDollars(PV.legal.minTo)}`; setTimeout(() => pkUI.amount.classList.remove('is-low'), 900); }
+}
+pkUI.amount.addEventListener('change', pvTypedAmount);
+pkUI.amount.addEventListener('focus', () => pkUI.amount.select());
 pkUI.minus.addEventListener('click', () => pvSetRaise(pvRaiseVal() - PV.T.blinds.bb));
 pkUI.plus.addEventListener('click', () => pvSetRaise(pvRaiseVal() + PV.T.blinds.bb));
 pkUI.presets.addEventListener('click', e => {
@@ -4026,6 +4044,12 @@ function pvGameOver(kind) {
 // the world behind it
 function pokerKey(e) {
   if (!PV) return false;
+  // (typing in the amount box: the keys are for the box, not the table)
+  if (e.target === pkUI.amount) {
+    if (e.key === 'Enter') { e.preventDefault(); pvTypedAmount(); if (PV.human && PV.legal.canRaise) pvHuman('raise', pvRaiseVal()); }
+    else if (e.key === 'Escape') pkUI.amount.blur();
+    return true;
+  }
   const k = e.key.toLowerCase();
   e.preventDefault();
   if (PV.scene) { if (/^[1-4]$/.test(k)) pvChoose(+k - 1); else if (k === ' ' || k === 'enter' || k === 'e') pvSceneAdvance(); return true; }

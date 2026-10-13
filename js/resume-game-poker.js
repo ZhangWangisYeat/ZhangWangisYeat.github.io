@@ -4053,18 +4053,22 @@ const pkLairThing = desperatePoi.thing;
 function makeLavaCave() {
   const w = 64, h = 58, cx = 31.5, ground = h - 2, G = pixelGrid(w, h);
   wallFace(G, w, h, 2601);
-  const ar = 14, acy = ground - 14;
-  const edge = (x, y) => (y <= acy
-    ? Math.hypot(x - cx, (y - acy) * 1.15) - ar - (vnoise(Math.atan2(y - acy, x - cx) * 3, 0.5, 2602) - 0.5) * 4
-    : Math.abs(x - cx) - ar - (vnoise(0.5, y / 3, 2603) - 0.5) * 2 + (y - acy) * 0.12);
-  // the mouth: a ragged lip of black basalt, and inside, the glow of lava
-  // somewhere further in, brightest at the floor
+  // the mouth, cut into the wall (wallMouth): a broken slab of basalt across
+  // its top and rough sides down to the floor. (ar and acy are roughly its
+  // half width and middle, for placing things round it)
+  const M = wallMouth(cx, ground, 14, 8, 25, 2602), edge = M.edge, ar = 11, acy = M.top + 10;
+  // the mouth: a ragged lip of black basalt, the passage's sides just inside
+  // it lit red by the lava and the slab's underside dark, and further in the
+  // glow of the lava, brightest at the floor
   for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
     const d = edge(x, y);
     if (d > 1.6) continue;
     if (d > 0) { if (G.get(x, y)) G.set(x, y, hash2(x, y, 2604) < 0.5 ? '#1a1412' : '#2a201c'); continue; }
-    const glow = Math.max(0, 1 - Math.hypot((x - cx) / 13, (y - ground) / 11));
-    G.set(x, y, d > -1.4 ? '#2a0e08' : glow > 0.7 ? '#ffb84a' : glow > 0.5 ? '#f07a2a' : glow > 0.3 ? '#a8401a' : glow > 0.12 ? '#5a1c0e' : '#240a06');
+    const sd = M.side(x, y), ov = M.over(x, y);
+    const glow = Math.max(0, 1 - Math.hypot((x - cx) / 12, (y - ground) / 11));
+    if (ov < 4 && ov < sd) { G.set(x, y, ov < 1.5 ? '#1a1412' : '#2a0e08'); continue; }
+    if (sd < 4) { G.set(x, y, sd < 1.5 ? '#3a1e14' : glow > 0.4 ? '#6a2410' : '#40160c'); continue; }
+    G.set(x, y, glow > 0.7 ? '#ffb84a' : glow > 0.5 ? '#f07a2a' : glow > 0.3 ? '#a8401a' : glow > 0.12 ? '#5a1c0e' : '#240a06');
   }
   // a little river of lava running out of it along the floor, and drips off
   // the lip

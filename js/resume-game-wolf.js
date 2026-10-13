@@ -275,11 +275,10 @@ function makeSeal() {
 const ORE_VEIN = { gold: ['#e6c541', '#9a7616'], ruby: ['#e0473a', '#7d1a14'], iron: ['#e2ddd6', '#8f8a84'], emerald: ['#5fe08a', '#1f7a43'], diamond: ['#86f2e2', '#2b9c90'] };
 function makeOreCave() {
   const w = 80, h = 66, cx = 39.5, ground = h - 2, G = pixelGrid(w, h), r = mulberry32(1402);
-  const ar = 18, acy = ground - 17;
-  // the mouth's edge wobbles, so it's a cave and not a doorway
-  const edge = (x, y) => (y <= acy
-    ? Math.hypot(x - cx, (y - acy) * 1.12) - ar - (vnoise(Math.atan2(y - acy, x - cx) * 3, 0.5, 1471) - 0.5) * 4
-    : Math.abs(x - cx) - ar - (vnoise(0.5, y / 3, 1472) - 0.5) * 2.5 + (y - acy) * 0.1);
+  // the mouth, cut into the wall (wallMouth): a broken slab of rock across
+  // its top and rough sides down to the floor. (ar and acy are roughly its
+  // half width and middle, for placing things round it)
+  const M = wallMouth(cx, ground, 18, 11, 30, 1471), edge = M.edge, ar = 14, acy = M.top + 12;
   const FACE = ['#2a2622', '#3b352f', '#1e1b18', '#332e29'];
   wallFace(G, w, h, 1460);
   // ore all through it: the ore tiles' little veins glinting out of the black,
@@ -291,14 +290,19 @@ function makeOreCave() {
     const [hi, lo] = ORE_VEIN[veins[(r() * veins.length) | 0]];
     [[0, 1, lo], [1, 1, lo], [1, 2, lo], [0, 0, hi], [1, 0, hi], [2, 1, hi]].forEach(([dx, dy, c]) => { const was = G.get(x + dx, y + dy); if (FACE.includes(was) || isVein(was)) G.set(x + dx, y + dy, c); });
   }
-  // the mouth: a ragged edge of broken rock, then the inside going back into
-  // the dark, with violet light coming up off the floor
+  // the mouth: a lit edge of broken rock round it, then just inside the rock
+  // sides of the passage (lit near the mouth, darker going in) and the dark
+  // underside of the slab over it, then the inside going back into the dark,
+  // with violet light coming up off the floor
   for (let y = 0; y <= ground; y++) for (let x = 0; x < w; x++) {
     const d = edge(x, y);
     if (d > 1.6) continue;
-    if (d > 0) { if (G.get(x, y)) G.set(x, y, y < acy - ar * 0.4 || hash2(x, y, 1473) < 0.5 ? '#4a423a' : '#3b352f'); continue; }
-    const glow = Math.max(0, 1 - Math.hypot((x - cx) / 14, (y - ground) / 9));
-    G.set(x, y, d > -1.5 ? '#16121c' : glow > 0.65 ? '#6c4ca4' : glow > 0.4 ? '#48326e' : glow > 0.18 ? '#30224c' : d > -4 ? '#1e1628' : d > -8 ? '#140d1e' : '#0a0610');
+    if (d > 0) { if (G.get(x, y)) G.set(x, y, M.over(x, y) < 1 || hash2(x, y, 1473) < 0.5 ? '#4a423a' : '#3b352f'); continue; }
+    const sd = M.side(x, y), ov = M.over(x, y);
+    if (ov < 4 && ov < sd) { G.set(x, y, ov < 1.5 ? '#1e1b18' : '#141118'); continue; }
+    if (sd < 4) { G.set(x, y, sd < 1.5 ? '#3b352f' : sd < 3 ? '#2e2834' : '#221c2a'); continue; }
+    const glow = Math.max(0, 1 - Math.hypot((x - cx) / 13, (y - ground) / 10));
+    G.set(x, y, glow > 0.65 ? '#6c4ca4' : glow > 0.4 ? '#48326e' : glow > 0.18 ? '#30224c' : ov < 9 ? '#140d1e' : '#0a0610');
   }
   // the floor running in through the mouth, catching the glow
   for (let y = ground - 2; y <= ground; y++) for (let x = 0; x < w; x++) if (edge(x, y) < -1.5) G.set(x, y, y === ground ? '#7e6aa8' : '#5e4a8a');
@@ -347,19 +351,25 @@ function makeOreCave() {
   });
   // bursting out of the rock round the mouth's edge, one of each ore,
   // biggest at the top, growing out of the edge itself so the mouth keeps its
-  // full size
+  // full size: up its left side, across the slab and down its right side
+  const rim = u => {
+    if (u < 0.3) { const y = ground - 8 - (u / 0.3) * (ground - 8 - M.top - 3); return [cx - M.half(y) - 1, y]; }
+    if (u > 0.7) { const y = ground - 8 - ((1 - u) / 0.3) * (ground - 8 - M.top - 3); return [cx + M.half(y) + 1, y]; }
+    const x = cx - 11 + ((u - 0.3) / 0.4) * 22;
+    return [x, M.topAt(x) - 1];
+  };
   ORES.forEach((ore, k) => {
     const u = k / 6, a = Math.PI * (1.04 + u * 0.92), big = 1 - Math.abs(u - 0.5) * 1.2;
-    const ux = Math.cos(a), uy = Math.sin(a);
-    cluster(cx + ux * (ar + 1), acy + uy * (ar + 1) / 1.12, a, 6 + big * 6, ore);
+    const [x, y] = rim(u);
+    cluster(x, y, a, 6 + big * 6, ore);
   });
   // sticking out of its sides, and the clusters at its feet
-  cluster(cx - ar - 1, acy + 7, Math.PI * 1.06, 8, 'emerald');
-  cluster(cx + ar + 1, acy + 6, Math.PI * 1.94, 8, 'diamond');
-  cluster(cx - ar - 3, ground - 1, Math.PI * 1.32, 10, 'ruby');
-  cluster(cx + ar + 3, ground - 1, Math.PI * 1.68, 10, 'gold');
-  shard(cx - ar - 9, ground, Math.PI * 1.15, 6, 1, 'diamond');
-  shard(cx + ar + 9, ground, Math.PI * 1.85, 5, 1, 'emerald');
+  cluster(cx - M.half(acy + 7) - 1, acy + 7, Math.PI * 1.06, 8, 'emerald');
+  cluster(cx + M.half(acy + 6) + 1, acy + 6, Math.PI * 1.94, 8, 'diamond');
+  cluster(cx - M.half(ground) - 3, ground - 1, Math.PI * 1.32, 10, 'ruby');
+  cluster(cx + M.half(ground) + 3, ground - 1, Math.PI * 1.68, 10, 'gold');
+  shard(cx - M.half(ground) - 9, ground, Math.PI * 1.15, 6, 1, 'diamond');
+  shard(cx + M.half(ground) + 9, ground, Math.PI * 1.85, 5, 1, 'emerald');
   return G.outline(c => (FACE.includes(c) || isVein(c) ? null : '#120f18')).canvas();
 }
 

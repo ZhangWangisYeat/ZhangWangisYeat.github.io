@@ -701,6 +701,24 @@ function wallFace(G, w, h, seed) {
   // the bottom of the rock catches the floor's light a little
   for (let x = 0; x < w; x++) if (G.get(x, ground)) G.set(x, ground, '#3b352f');
 }
+// the mouth of a cave cut into a wall face (alex: built into the wall, not a
+// round arch). its top is a broken slab of rock, roughly level with a few
+// teeth hanging off it and a slight tilt, and its sides are rough and run
+// straight down to the floor, a little wider at the bottom. edge(x, y) is
+// negative inside the opening and positive outside, about a pixel per unit,
+// side(x, y) is how far in from the nearer side wall and over(x, y) how far
+// down from the top, for shading the passage just inside.
+function wallMouth(cx, ground, hw0, hw1, height, seed) {
+  const top = ground - height;
+  // (the slab sags lower on one side, with a couple of big chunks and a few
+  // small teeth broken off it, and the sides lean out as they go down)
+  const topAt = x => top + (x - cx) * 0.16 + Math.max(0, 5 - Math.abs(x - cx + hw1 * 0.45) * 0.9) * 0.6
+    + Math.round((vnoise(x / 4, 0.5, seed) - 0.5) * 7) + (hash2(Math.floor(x / 2), 1, seed) < 0.2 ? 2 : 0);
+  const half = y => hw1 + (hw0 - hw1) * Math.pow(Math.min(1, Math.max(0, (y - top) / height)), 0.7) + (vnoise(0.5, y / 4, seed + 1) - 0.5) * 4;
+  const side = (x, y) => half(y) - Math.abs(x - cx);
+  const over = (x, y) => y - topAt(x);
+  return { top, topAt, half, side, over, edge: (x, y) => Math.max(-over(x, y), -side(x, y)) };
+}
 // a stone arch: dressed blocks round a half circle and down two jambs, with
 // mortar lines between them, lit from the top left, and a keystone
 function stoneArch(G, cx, top, ground, ri, ro, pal = ['#b3a892', '#8f8573', '#6c6456', '#3a342c']) {

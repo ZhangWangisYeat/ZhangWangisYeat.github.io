@@ -944,6 +944,57 @@ Object.entries(FURNITURE).forEach(([id, art]) => {
   ICON_CANVAS[id] = c;
 });
 const ICON = Object.fromEntries(Object.entries(ICON_CANVAS).map(([id, c]) => [id, c.toDataURL()]));
+// the rainbow flows through prismasteel (alex): its colours keep running up
+// the thing from the hilt (or the handle) to the tip. its icon is already a
+// rainbow laid out along it, so turning every colour's hue back a little at a
+// time moves the bands along it. a dozen turned copies of each prismasteel
+// icon are made here, once, leaving the dark outline and the white glints as
+// they are, and whatever draws one (your hand, the floor, the slots) picks the
+// copy for the moment. (the slots' own glow animation is a css filter, so they
+// get the turned picture swapped in instead, see flowPrismIcons.)
+const PRISM_FLOW = { frames: 12, period: 1500 };
+const PRISM_FRAMES = {};
+Object.keys(ITEMS).filter(id => ITEMS[id].prism && ICON_CANVAS[id]).forEach(id => {
+  const src = ICON_CANVAS[id], w = src.width, h = src.height;
+  const from = src.getContext('2d').getImageData(0, 0, w, h).data;
+  // (only the prismasteel itself flows, not a wooden handle: the tools and
+  // armor are their diamond icons with the metal recoloured, so whatever
+  // still matches the diamond one is left alone. the sword's its own drawing,
+  // all of it prismasteel.)
+  const dia = ICON_CANVAS[id.replace('prismasteel', 'diamond')];
+  const same = dia && id !== 'prismasteel-sword' && dia.width === w && dia.height === h ? dia.getContext('2d').getImageData(0, 0, w, h).data : null;
+  PRISM_FRAMES[id] = Array.from({ length: PRISM_FLOW.frames }, (_, f) => {
+    const c = mk(w, h), g = c.getContext('2d'), img = g.createImageData(w, h), d = img.data;
+    for (let i = 0; i < from.length; i += 4) {
+      let r = from[i] / 255, gg = from[i + 1] / 255, b = from[i + 2] / 255;
+      const mx = Math.max(r, gg, b), mn = Math.min(r, gg, b), l = (mx + mn) / 2, dd = mx - mn;
+      const sat = dd ? dd / (1 - Math.abs(2 * l - 1)) : 0;
+      const wood = same && from[i] === same[i] && from[i + 1] === same[i + 1] && from[i + 2] === same[i + 2];
+      if (from[i + 3] && !wood && sat > 0.25 && l > 0.12 && l < 0.95) {
+        let hue = mx === r ? ((gg - b) / dd) % 6 : mx === gg ? (b - r) / dd + 2 : (r - gg) / dd + 4;
+        hue = ((hue * 60 - (f / PRISM_FLOW.frames) * 360) % 360 + 360) % 360;
+        const k = n => { const kk = (n + hue / 30) % 12; return l - sat * Math.min(l, 1 - l) * Math.max(-1, Math.min(kk - 3, 9 - kk, 1)); };
+        r = k(0); gg = k(8); b = k(4);
+      }
+      d[i] = Math.round(r * 255); d[i + 1] = Math.round(gg * 255); d[i + 2] = Math.round(b * 255); d[i + 3] = from[i + 3];
+    }
+    g.putImageData(img, 0, 0);
+    return { canvas: c, url: c.toDataURL() };
+  });
+});
+const prismFrame = id => {
+  const F = PRISM_FRAMES[id];
+  return F && !reduceMotion ? F[Math.floor((performance.now() / PRISM_FLOW.period) * PRISM_FLOW.frames) % PRISM_FLOW.frames] : null;
+};
+// the slots: every prismasteel icon on screen gets its turned copy for now
+function flowPrismIcons() {
+  if (reduceMotion) return;
+  document.querySelectorAll('i[data-pid]').forEach(el => {
+    const f = prismFrame(el.dataset.pid);
+    if (f) el.style.backgroundImage = `url(${f.url})`;
+  });
+}
+setInterval(flowPrismIcons, 90);
 const DRILL_SPIN = (() => { const G = pixelGrid(16, 16); drillIconArt(G, 1); return G.outline(() => '#141414').canvas(); })();
 
 // hearts for the hud: full, half, empty
@@ -2910,7 +2961,7 @@ function tickGround(dt) {
   }
 }
 function drawGround(o, toX, toY, t) {
-  const g = o.ground, img = ICON_CANVAS[g.st.id];
+  const g = o.ground, pf = prismFrame(g.st.id), img = pf ? pf.canvas : ICON_CANVAS[g.st.id];
   // still in the air: along an arc from where it was thrown, spinning, with
   // its shadow sliding along the ground under it
   if (g.fly) {
@@ -6092,7 +6143,7 @@ function slotHTML(ref, stack, extra = '', ghost = '') {
   const it = stack && ITEMS[stack.id];
   const label = it ? `${it.name}${stack.n > 1 ? ` ×${stack.n}` : ''}` : '';
   return `<button type="button" class="slot ${extra}" data-ref="${ref}"${label ? ` data-tip="${label}"` : ''}${it && it.prism ? ' data-rainbow' : ''} aria-label="${label || 'Empty'}">
-    ${it ? `<i${it.shiny ? ` class="shine s${shineLevel(it)}${it.prism ? ' prism' : ''}"` : ''} style="background-image:url(${ICON[stack.id]})"></i>${stack.n > 1 ? `<b>${stack.n}</b>` : ''}${durBar(stack)}` : ghost ? `<i class="ghost" style="background-image:url(${ghost})"></i>` : ''}
+    ${it ? `<i${it.shiny ? ` class="shine s${shineLevel(it)}${it.prism ? ' prism' : ''}"` : ''}${it.prism ? ` data-pid="${stack.id}"` : ''} style="background-image:url(${ICON[stack.id]})"></i>${stack.n > 1 ? `<b>${stack.n}</b>` : ''}${durBar(stack)}` : ghost ? `<i class="ghost" style="background-image:url(${ghost})"></i>` : ''}
   </button>`;
 }
 // faint outlines for the empty armor slots, so you can tell which is which
@@ -6289,7 +6340,7 @@ function renderHUD() {
   $('#hotbar').innerHTML = inv.slots.slice(0, 6).map((s, i) => `
     <button type="button" class="hb-slot${i === inv.sel ? ' is-sel' : ''}" data-hotbar="${i}"${s ? ` data-tip="${ITEMS[s.id].name}${s.n > 1 ? ` ×${s.n}` : ''}"` : ''}${s && ITEMS[s.id].prism ? ' data-rainbow' : ''} aria-label="${s ? ITEMS[s.id].name : 'Empty'}">
       <span class="hb-key">${i + 1}</span>
-      ${s ? `<i${ITEMS[s.id].shiny ? ` class="shine s${shineLevel(ITEMS[s.id])}${ITEMS[s.id].prism ? ' prism' : ''}"` : ''} style="background-image:url(${ICON[s.id]})"></i>${s.n > 1 ? `<b>${s.n}</b>` : ''}${durBar(s)}` : ''}
+      ${s ? `<i${ITEMS[s.id].shiny ? ` class="shine s${shineLevel(ITEMS[s.id])}${ITEMS[s.id].prism ? ' prism' : ''}"` : ''}${ITEMS[s.id].prism ? ` data-pid="${s.id}"` : ''} style="background-image:url(${ICON[s.id]})"></i>${s.n > 1 ? `<b>${s.n}</b>` : ''}${durBar(s)}` : ''}
     </button>`).join('');
   const s = heldItem();
   $('#held-name').innerHTML = s && ITEMS[s.id].prism ? `<span class="rainbow">${esc(ITEMS[s.id].name)}</span>` : '';
@@ -6490,7 +6541,7 @@ function playDrawHeld(dx, dy, row, col, front) {
   if (front) drawPrismSlash(dx, dy, row, col);
   const face = ['down', 'side', 'up'][row % 3];
   const pose = (SWING_POSE[row] && SWING_POSE[row][col]) || REST_POSE[face];
-  const it = ITEMS[s.id], img = ICON_CANVAS[s.id];
+  const it = ITEMS[s.id], pf = prismFrame(s.id), img = pf ? pf.canvas : ICON_CANVAS[s.id];
   // the bow goes behind you when it points up, in front otherwise
   if (it.ranged && !it.throw) {
     if ((Math.sin(bowAng) > -0.35) === front) drawDrawnBow(dx + 24 * S, dy + 42 * S);

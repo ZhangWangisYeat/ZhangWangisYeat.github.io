@@ -463,24 +463,25 @@ function flameSwordArt() {
     const u = (px - py) * Math.SQRT1_2, v = (px + py) * Math.SQRT1_2;
     let col = null;
     if (u >= B0 && u <= L) {
-      // the blade, bending a little towards its lit side, slender, and
-      // narrowing over its last stretch to a fine point. (the bend's all
-      // done before that last stretch, so the point is straight and even on
-      // both sides; it used to still be bending there and leaned over)
-      const vb = v + 0.8 * Math.sin(clamp((u - B0) / (L - 9 - B0), 0, 1) * Math.PI);
-      const w = u < L - 9 ? 2.05 - ((u - B0) / (L - 9 - B0)) * 0.3 : 1.75 * ((L - u) / 9) ** 0.8;
-      // (smooth the whole way up, alex: no flame flaring off its base, no
-      // notches cut in its back and no line inlaid up it any more)
-      if (Math.abs(vb) <= w) {
-        const f = vb / Math.max(w, 0.8);
-        col = f < -0.7 ? shade(u, 0.92) : f < -0.05 ? shade(u, 0.76) : f < 0.6 ? shade(u, 0.62) : shade(u, 0.48);
+      // the blade: straight and the same on both sides (alex), slender, and
+      // narrowing over its last stretch to a fine point. it's shaded from a
+      // bright ridge down the middle to darker edges, both sides alike, and
+      // smooth the whole way up (no flame off its base, no notches, no inlay).
+      // the sword's whole outline is mirror symmetric about the blade's line,
+      // which works out pixel for pixel because SWORD_O sits on the diagonal.
+      // (as thick as the diamond sword's blade, alex: the same width, and
+      // the same straight taper to the point over its last 7 pixels)
+      const D = FINE_SWORDS.diamond, w = u > L - D.taper ? (D.bw * (L - u)) / D.taper : D.bw;
+      if (Math.abs(v) <= w + 0.2) {
+        const f = Math.abs(v) / Math.max(w, 0.8);
+        col = f < 0.3 ? shade(u, 0.9) : f < 0.7 ? shade(u, 0.72) : shade(u, 0.52);
       }
     } else if (u >= 1.2 && u < B0) {
       // the crossguard: a band across, with tongues of flame going up off it
       const band = Math.abs(v) <= 3.4 + (u - 1.2) * 0.35;
       if (band) {
         const swirl = Math.hypot(u - 3.1, Math.abs(v) - 2.4) < 0.85;
-        col = swirl ? null : Math.abs(v) > 3.1 + (u - 1.2) * 0.35 ? shade(u, 0.84) : v < 0 ? shade(u, 0.72) : shade(u, 0.54);
+        col = swirl ? null : Math.abs(v) > 3.1 + (u - 1.2) * 0.35 ? shade(u, 0.84) : Math.abs(v) < 1 ? shade(u, 0.74) : shade(u, 0.6);
       }
     }
     // the flames off the guard: three tongues either side, curling up
@@ -488,17 +489,17 @@ function flameSwordArt() {
     if (!col && u >= 3 && u <= 11) [[3.4, 5.4], [4.7, 6.7], [5.9, 8]].forEach(([c0, top], i) => {
       if (col || u > top + 0.01) return;
       const k = (u - 3) / (top - 3), cv = c0 + k * (1 + i * 0.6), half = 0.55 * (1 - k) + 0.18;
-      if (Math.abs(Math.abs(v) - cv) <= half) col = v < 0 ? shade(u, 0.82) : shade(u, 0.58);
+      if (Math.abs(Math.abs(v) - cv) <= half) col = shade(u, 0.7);
     });
     if (!col && u >= -6.5 && u < 1.2) {
       // the hilt: a string of beads
       const bead = Math.abs(Math.sin(u * 1.9)), half = 0.6 + 0.5 * bead;
-      if (Math.abs(v) <= half) col = bead > 0.7 ? (v < 0 ? shade(u, 0.82) : shade(u, 0.6)) : shade(u, 0.4);
+      if (Math.abs(v) <= half) col = bead > 0.7 ? (Math.abs(v) < 0.5 ? shade(u, 0.82) : shade(u, 0.62)) : shade(u, 0.4);
     }
     if (!col && u >= -9 && u < -6.5) {
       // the pommel: a little spiked crown
       const k = (u + 9) / 2.5, spikes = [0, 1.25, -1.25].some(sv => Math.abs(v - sv * k) <= k * (sv ? 0.4 : 0.6));
-      if (spikes) col = v < 0 ? shade(u, 0.8) : shade(u, 0.58);
+      if (spikes) col = Math.abs(v) < 0.5 ? shade(u, 0.8) : shade(u, 0.64);
     }
     if (col) G.set(x, y, col);
   }

@@ -257,9 +257,9 @@ RECIPES.push({ out: 'snow-block', shape: ['SS', 'SS'], key: { S: 'snowball' } })
 // four arrows a craft (it was two, alex): the material on the tip, a stick, a feather
 TIER_ORDER.forEach(m => RECIPES.push({ out: `${m}-arrow`, n: 4, shape: ['M', 'S', 'F'], key: { M: matKey(m), S: 'stick', F: 'feather' } }));
 // pulling a bit of wool apart on the table gives string, and string on a
-// curve of planks makes the bow
+// curve of sticks makes the bow (sticks and not planks, alex, like minecraft)
 RECIPES.push({ out: 'string', n: 3, shape: ['W'], key: { W: 'wool' } });
-RECIPES.push({ out: 'bow', shape: ['.WS', 'W.S', '.WS'], key: { W: WOOD, S: 'string' } });
+RECIPES.push({ out: 'bow', shape: ['.WS', 'W.S', '.WS'], key: { W: 'stick', S: 'string' } });
 RECIPES.forEach(r => { r.n = r.n || 1; r.mats = [...new Set(Object.values(r.key))]; });
 // whether an item can go where a recipe asks for key ('wood' takes any log,
 // 'planks' any planks)

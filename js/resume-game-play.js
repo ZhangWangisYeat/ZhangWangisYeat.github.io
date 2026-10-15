@@ -53,12 +53,17 @@ const ITEMS = {
   // each biome's trees give their own wood (alex): oak in the meadows (the
   // plain 'wood' id, so older saves keep theirs), spruce off the tundra's pines
   // and dried willow off the dunes' dead trees. any of them works wherever a
-  // recipe wants wood, and they all burn the same. each one can also be put
-  // down as a block of planks in its own colour (block is the tile it
-  // becomes, see placeBlock).
-  wood:          { name: 'Oak Wood', fuel: 2, wood: true, block: T.OAKWOOD },
-  'spruce-wood': { name: 'Spruce Wood', fuel: 2, wood: true, block: T.SPRUCEWOOD },
-  'willow-wood': { name: 'Willow Wood', fuel: 2, wood: true, block: T.WILLOWWOOD },
+  // recipe wants wood, and they all burn the same.
+  wood:          { name: 'Oak Wood', fuel: 2, wood: true },
+  'spruce-wood': { name: 'Spruce Wood', fuel: 2, wood: true },
+  'willow-wood': { name: 'Willow Wood', fuel: 2, wood: true },
+  // the logs get sawn into planks (alex: you build with planks, not logs),
+  // each wood its own planks, and the planks are what goes down as a block
+  // (block is the tile it becomes, see placeBlock). four planks burn as long
+  // as the two logs they came from.
+  'oak-planks':    { name: 'Oak Planks', fuel: 1, block: T.OAKPLANKS },
+  'spruce-planks': { name: 'Spruce Planks', fuel: 1, block: T.SPRUCEPLANKS },
+  'willow-planks': { name: 'Willow Planks', fuel: 1, block: T.WILLOWPLANKS },
   // saplings fall off trees when they come down. plant one (right click the
   // ground) and it grows into that kind of tree (see SAPLING_GROW)
   'oak-sapling':    { name: 'Oak Sapling', sapling: 'tree' },
@@ -73,8 +78,8 @@ const ITEMS = {
   stick:         { name: 'Stick', fuel: 0.5 },
   stone:         { name: 'Stone' },
   // blocks to build with (alex): loose stone and snowballs get packed into a
-  // block on the table first, four to a block, and then go down like wood
-  // does. ores never do, and a block you mine back up comes back whole.
+  // block on the table first, four to a block, and then go down like planks
+  // do. ores never do, and a block you mine back up comes back whole.
   'stone-block': { name: 'Stone Block', block: T.STONE },
   'snow-block':  { name: 'Snow Block', block: T.SNOWBLOCK },
   marble:        { name: 'Marble' },
@@ -234,9 +239,12 @@ RECIPES.push({ out: 'stick', n: 4, shape: ['W'], key: { W: 'wood' } });
 RECIPES.push({ out: 'crafting-table', shape: ['WW', 'WW'], key: { W: 'wood' } });
 RECIPES.push({ out: 'furnace', shape: ['SSS', 'S.S', 'SSS'], key: { S: 'stone' } });
 RECIPES.push({ out: 'chest', shape: ['WWW', 'W.W', 'WWW'], key: { W: 'wood' } });
-// four stone or four snowballs in a square pack into a block. wood doesn't
-// need this because four wood in a square is already the crafting table, so
-// wood just goes down as it is.
+// two logs of one kind, one on top of the other, saw into four of its planks.
+// it's two and not one because a single log is already four sticks. the key
+// is the exact log, so oak only makes oak planks and a mixed pair makes nothing.
+[['wood', 'oak-planks'], ['spruce-wood', 'spruce-planks'], ['willow-wood', 'willow-planks']].forEach(([log, planks]) =>
+  RECIPES.push({ out: planks, n: 4, shape: ['L', 'L'], key: { L: log }, exact: true }));
+// four stone or four snowballs in a square pack into a block
 RECIPES.push({ out: 'stone-block', shape: ['SS', 'SS'], key: { S: 'stone' } });
 RECIPES.push({ out: 'snow-block', shape: ['SS', 'SS'], key: { S: 'snowball' } });
 // four arrows a craft (it was two, alex): the material on the tip, a stick, a feather
@@ -248,6 +256,9 @@ RECIPES.push({ out: 'bow', shape: ['.WS', 'W.S', '.WS'], key: { W: 'wood', S: 's
 RECIPES.forEach(r => { r.n = r.n || 1; r.mats = [...new Set(Object.values(r.key))]; });
 // whether an item can go where a recipe asks for key ('wood' takes any wood)
 const fitsKey = (key, id) => key === id || (key === 'wood' && !!ITEMS[id] && !!ITEMS[id].wood);
+// (except in an exact recipe, where 'wood' only means the oak log whose id it
+// is, or two spruce logs would come out as oak planks)
+const keyFits = (r, key, id) => (r.exact ? key === id : fitsKey(key, id));
 
 const COOK_RATE = 0.5;        // meat per second while the furnace has fuel
 
@@ -863,6 +874,9 @@ function makeIcon(id) {
       break;
     case 'stone-block':
     case 'snow-block':
+    case 'oak-planks':
+    case 'spruce-planks':
+    case 'willow-planks':
       blockIcon(G, it.block);
       break;
     case 'iron':
@@ -1948,7 +1962,7 @@ const rand = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 // needs (any amount) or crafted it, and then it stays for good
 function checkRecipeUnlocks() {
   const have = new Set([...inv.slots, ...Object.values(inv.armor)].filter(Boolean).map(s => s.id));
-  const fresh = RECIPES.filter(r => !quest.recipes.includes(r.out) && r.mats.every(m => [...have].some(id => fitsKey(m, id))));
+  const fresh = RECIPES.filter(r => !quest.recipes.includes(r.out) && r.mats.every(m => [...have].some(id => keyFits(r, m, id))));
   if (!fresh.length) return;
   fresh.forEach(r => quest.recipes.push(r.out));
   const first = ITEMS[fresh[0].out].name;
@@ -2037,6 +2051,10 @@ quest.snowGrow = Array.isArray(quest.snowGrow) ? quest.snowGrow.filter(e => Arra
 // blocks you've put down (quest.blocks, saved), each [tile, item, the tile
 // that was there before]. breaking one puts that tile back and gives you the
 // item, so a block you mine up is never lost and never turns into stone.
+// (for a little while logs went down as blocks themselves, so one of those
+// in a save is that wood's planks now)
+const LOG_PLANKS = { wood: 'oak-planks', 'spruce-wood': 'spruce-planks', 'willow-wood': 'willow-planks' };
+if (Array.isArray(quest.blocks)) quest.blocks.forEach(e => { if (Array.isArray(e) && LOG_PLANKS[e[1]]) e[1] = LOG_PLANKS[e[1]]; });
 quest.blocks = Array.isArray(quest.blocks) ? quest.blocks.filter((e, k, all) => Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 0 && e[0] < W * H
   && ITEMS[e[1]] && ITEMS[e[1]].block !== undefined && all.findIndex(f => f[0] === e[0]) === k) : [];
 quest.blocks.forEach(e => { if (!Number.isInteger(e[2]) || !PAL[e[2]] || SOLID[e[2]]) e[2] = baseOf(e[0]); });
@@ -5993,7 +6011,7 @@ function matchRecipe() {
       for (let y = 0; y < h && ok; y++) for (let x = 0; x < w && ok; x++) {
         const ch = r.shape[y][mirror ? w - 1 - x : x] || '.';
         const s = craftGrid[(y0 + y) * 5 + x0 + x];
-        ok = ch === '.' ? !s : !!s && fitsKey(r.key[ch], s.id);
+        ok = ch === '.' ? !s : !!s && keyFits(r, r.key[ch], s.id);
       }
       if (ok) return r;
     }
@@ -6029,9 +6047,9 @@ function recipeNeeds(r) {
 // grid in the right shape
 function fillRecipe(r) {
   craftGrid.forEach((s, i) => { if (s) { craftGrid[i] = null; addStack(s); } });
-  const missing = Object.entries(recipeNeeds(r)).filter(([id, n]) => countMat(id) < n);
+  const missing = Object.entries(recipeNeeds(r)).filter(([id, n]) => countMat(id, r.exact) < n);
   if (missing.length) {
-    hint(`Missing ${missing.map(([id, n]) => `${n - countMat(id)} ${id === 'wood' ? 'Wood' : ITEMS[id].name}`).join(', ')}`);
+    hint(`Missing ${missing.map(([id, n]) => `${n - countMat(id, r.exact)} ${id === 'wood' && !r.exact ? 'Wood' : ITEMS[id].name}`).join(', ')}`);
     sfx.deny();
     renderUI();
     return;
@@ -6039,7 +6057,7 @@ function fillRecipe(r) {
   r.shape.forEach((row, y) => [...row].forEach((ch, x) => {
     if (ch === '.') return;
     // (wood comes off whichever kind you have the most of)
-    const id = matFor(r.key[ch]);
+    const id = matFor(r.key[ch], r.exact);
     takeItem(id, 1);
     craftGrid[y * 5 + x] = { id, n: 1 };
   }));
@@ -6048,9 +6066,9 @@ function fillRecipe(r) {
   renderUI();
 }
 function countItem(id) { return inv.slots.reduce((n, s) => n + (s && s.id === id ? s.n : 0), 0); }
-function countMat(key) { return inv.slots.reduce((n, s) => n + (s && fitsKey(key, s.id) ? s.n : 0), 0); }
-function matFor(key) {
-  if (key !== 'wood') return key;
+function countMat(key, exact) { return inv.slots.reduce((n, s) => n + (s && (exact ? s.id === key : fitsKey(key, s.id)) ? s.n : 0), 0); }
+function matFor(key, exact) {
+  if (key !== 'wood' || exact) return key;
   return Object.keys(ITEMS).filter(id => ITEMS[id].wood).sort((a, b) => countItem(b) - countItem(a))[0];
 }
 function takeItem(id, n) {
@@ -6304,7 +6322,7 @@ function bookHTML() {
   if (!known.length) return '<p class="rb-empty">Nothing yet. A recipe shows up here once you\'ve held every material it needs.</p>';
   return `<ul class="rb-list">${known.map(r => {
     const need = recipeNeeds(r);
-    const ready = Object.entries(need).every(([id, n]) => countMat(id) >= n);
+    const ready = Object.entries(need).every(([id, n]) => countMat(id, r.exact) >= n);
     const w = Math.max(...r.shape.map(row => row.length));
     const cells = [];
     for (let y = 0; y < r.shape.length; y++) for (let x = 0; x < w; x++) {
@@ -7469,8 +7487,8 @@ function playRenderOverlay(toX, toY, t) {
     const tgt = targetAt(mouseWorld());
     let pc = !sleeping && !(tgt && (tgt.type === 'bed' || tgt.type === 'station')) ? placeCheck() : null;
     // (with a block in hand, pointing at something you could mine shows that
-    // instead: there's nowhere to put a block on top of a block, and you're
-    // holding wood half the time you're chopping)
+    // instead: there's nowhere to put a block on top of a block, and you'd
+    // want to see what you're about to dig)
     if (pc && pc.what === 'block' && tgt && ['tile', 'racetile', 'tree'].includes(tgt.type)) pc = null;
     if (pc) drawPlacing(pc, toX, toY, t);
     else if (tgt) {

@@ -291,12 +291,12 @@ const T = {
   SAND: 0, STONE: 1, PEAK: 2, WATER: 3, SNOW: 4, ICE: 5, ICEROCK: 6,
   GRASS: 7, FLOOR: 8, WALL: 9, GOLD: 10, DIAMOND: 11, RUBY: 12, IRON: 13, EMERALD: 14,
   DIRT: 15, SNOWBLOCK: 16,
-  // blocks of wood you've put down, one per kind of wood. they start at 19
+  // planks you've put down, one per kind of wood. they start at 19
   // because the race file already uses 17 and 18 for its mud and flag tiles.
-  OAKWOOD: 19, SPRUCEWOOD: 20, WILLOWWOOD: 21
+  OAKPLANKS: 19, SPRUCEPLANKS: 20, WILLOWPLANKS: 21
 };
 const SOLID = new Uint8Array(32);
-[T.STONE, T.PEAK, T.ICEROCK, T.WALL, T.GOLD, T.DIAMOND, T.RUBY, T.IRON, T.EMERALD, T.SNOWBLOCK, T.OAKWOOD, T.SPRUCEWOOD, T.WILLOWWOOD].forEach(t => { SOLID[t] = 1; });
+[T.STONE, T.PEAK, T.ICEROCK, T.WALL, T.GOLD, T.DIAMOND, T.RUBY, T.IRON, T.EMERALD, T.SNOWBLOCK, T.OAKPLANKS, T.SPRUCEPLANKS, T.WILLOWPLANKS].forEach(t => { SOLID[t] = 1; });
 
 // colours are pulled from the game's screenshots, then knocked down a notch so
 // four biomes side by side don't vibrate (the real grass is pure #09b509).
@@ -321,9 +321,9 @@ const PAL = {
   [T.SNOWBLOCK]: { base: '#f3f6fc', dots: ['#dfe6f2', '#c9d4e6', '#ffffff'], line: '#c2cde0', style: 'brick' },
   // planked wood in the colours of each log's cut end: dots are the lit top
   // of each board and then its grain
-  [T.OAKWOOD]:    { base: '#b67c45', dots: ['#d39a5e', '#9c6636'], line: '#6e3a1e', style: 'planks' },
-  [T.SPRUCEWOOD]: { base: '#7a4a2c', dots: ['#9a6440', '#653b22'], line: '#3c2214', style: 'planks' },
-  [T.WILLOWWOOD]: { base: '#a89a80', dots: ['#c8bb9c', '#8f826b'], line: '#665d4e', style: 'planks' }
+  [T.OAKPLANKS]:    { base: '#b67c45', dots: ['#d39a5e', '#9c6636'], line: '#6e3a1e', style: 'planks' },
+  [T.SPRUCEPLANKS]: { base: '#7a4a2c', dots: ['#9a6440', '#653b22'], line: '#3c2214', style: 'planks' },
+  [T.WILLOWPLANKS]: { base: '#a89a80', dots: ['#c8bb9c', '#8f826b'], line: '#665d4e', style: 'planks' }
 };
 const MINI = { [T.GOLD]: '#e6c541', [T.DIAMOND]: '#86f2e2', [T.RUBY]: '#e0473a', [T.IRON]: '#cfcac3', [T.EMERALD]: '#5fe08a' };
 

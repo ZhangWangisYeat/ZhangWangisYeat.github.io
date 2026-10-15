@@ -53,10 +53,12 @@ const ITEMS = {
   // each biome's trees give their own wood (alex): oak in the meadows (the
   // plain 'wood' id, so older saves keep theirs), spruce off the tundra's pines
   // and dried willow off the dunes' dead trees. any of them works wherever a
-  // recipe wants wood, and they all burn the same.
-  wood:          { name: 'Oak Wood', fuel: 2, wood: true },
-  'spruce-wood': { name: 'Spruce Wood', fuel: 2, wood: true },
-  'willow-wood': { name: 'Willow Wood', fuel: 2, wood: true },
+  // recipe wants wood, and they all burn the same. each one can also be put
+  // down as a block of planks in its own colour (block is the tile it
+  // becomes, see placeBlock).
+  wood:          { name: 'Oak Wood', fuel: 2, wood: true, block: T.OAKWOOD },
+  'spruce-wood': { name: 'Spruce Wood', fuel: 2, wood: true, block: T.SPRUCEWOOD },
+  'willow-wood': { name: 'Willow Wood', fuel: 2, wood: true, block: T.WILLOWWOOD },
   // saplings fall off trees when they come down. plant one (right click the
   // ground) and it grows into that kind of tree (see SAPLING_GROW)
   'oak-sapling':    { name: 'Oak Sapling', sapling: 'tree' },
@@ -2010,17 +2012,24 @@ document.addEventListener('DOMContentLoaded', () => fixFoundIds(true));
 // standing in the way. quest.snowGrow is [tile, seconds left] for each one.
 const SNOW_REGROW = 120;
 quest.snowGrow = Array.isArray(quest.snowGrow) ? quest.snowGrow.filter(e => Array.isArray(e) && Number.isInteger(e[0])) : [];
+// blocks you've put down (quest.blocks, saved), each [tile, item, the tile
+// that was there before]. breaking one puts that tile back and gives you the
+// item, so a block you mine up is never lost and never turns into stone.
+quest.blocks = Array.isArray(quest.blocks) ? quest.blocks.filter((e, k, all) => Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 0 && e[0] < W * H
+  && ITEMS[e[1]] && ITEMS[e[1]].block !== undefined && all.findIndex(f => f[0] === e[0]) === k) : [];
+quest.blocks.forEach(e => { if (!Number.isInteger(e[2]) || !PAL[e[2]] || SOLID[e[2]]) e[2] = baseOf(e[0]); });
+const blockAt = i => quest.blocks.find(e => e[0] === i);
 // replay the saved world edits: mined blocks and chopped trees
-if (quest.mined.length) {
-  quest.mined.forEach(i => {
-    if (i < 0 || i >= W * H || !SOLID[tiles[i]]) return;
-    // (snow dug before it grew back has no timer yet, so it gets one)
-    if (tiles[i] === T.SNOWBLOCK && !quest.snowGrow.some(e => e[0] === i)) quest.snowGrow.push([i, 30 + Math.random() * 90]);
-    tiles[i] = baseOf(i);
-    reach[i] = 1;
-  });
-  paintWorld();
-}
+quest.mined.forEach(i => {
+  if (i < 0 || i >= W * H || !SOLID[tiles[i]]) return;
+  // (snow dug before it grew back has no timer yet, so it gets one)
+  if (tiles[i] === T.SNOWBLOCK && !quest.snowGrow.some(e => e[0] === i)) quest.snowGrow.push([i, 30 + Math.random() * 90]);
+  tiles[i] = baseOf(i);
+  reach[i] = 1;
+});
+// (after the mined ones, because a block can stand where you dug something out)
+quest.blocks.forEach(e => { tiles[e[0]] = ITEMS[e[1]].block; });
+if (quest.mined.length || quest.blocks.length) paintWorld();
 function tickSnow(dt) {
   for (let k = quest.snowGrow.length - 1; k >= 0; k--) {
     const e = quest.snowGrow[k];
@@ -2031,6 +2040,8 @@ function tickSnow(dt) {
     const inTheWay = (x, y) => Math.abs(x - cx) < 14 && y > cy - 10 && y < cy + 14;
     if (!room && inTheWay(player.x, player.y)) continue;
     if (creatures.some(c => !c.room && !c.dead && !c.gone && inTheWay(c.x, c.y))) continue;
+    // (or a block you've put there, it waits for that to go too)
+    if (blockAt(i)) continue;
     quest.snowGrow.splice(k, 1);
     if (tiles[i] !== baseOf(i)) continue;
     tiles[i] = T.SNOWBLOCK;
@@ -2129,14 +2140,15 @@ function tickTrees(dt) {
 // reach, join the chest it'd make a large chest with, blocked no room.
 function placeCheck() {
   const s = heldItem(), it = s && ITEMS[s.id];
-  const what = !it ? null : s.id === 'bed' ? 'bed' : it.station ? 'station' : it.sapling ? 'sapling' : null;
+  const what = !it ? null : s.id === 'bed' ? 'bed' : it.station ? 'station' : it.sapling ? 'sapling' : it.block !== undefined ? 'block' : null;
   if (!what) return null;
   const m = mouseWorld();
   const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE);
   const spot = { cx: tx * TILE + 8, cy: ty * TILE + 8 };
   const c = { what, it, id: s.id, name: it.name, tx, ty, spot, ok: false };
-  if (room && (what === 'sapling' || room !== homeRoom)) {
-    c.no = what === 'sapling' ? ['Not in here...', it.name, 'Plant it outside.'] : ['No room...', it.name, 'Put it down outside, or at home.'];
+  // (blocks are tiles of the world, so they only go down outside)
+  if (room && (what === 'sapling' || what === 'block' || room !== homeRoom)) {
+    c.no = what === 'sapling' ? ['Not in here...', it.name, 'Plant it outside.'] : what === 'block' ? ['Not in here...', it.name, 'Build with it outside.'] : ['No room...', it.name, 'Put it down outside, or at home.'];
     return c;
   }
   if (!room) {
@@ -2147,7 +2159,10 @@ function placeCheck() {
   // (only onto a free tile: a chest can't join one by landing on something)
   if (it.station === 'chest' && !tileTaken(tx, ty, room)) c.join = chestJoin(tx, ty);
   if (c.join) { c.ok = !c.far; return c; }
-  if (what === 'sapling') {
+  if (what === 'block') {
+    c.solid = inside(tx, ty) && solidTile(tx, ty);
+    c.blocked = !inside(tx, ty) || c.solid || blockClash(tx, ty);
+  } else if (what === 'sapling') {
     const ground = inside(tx, ty) && [T.GRASS, T.SNOW, T.SAND, T.DIRT].includes(tiles[idx(tx, ty)]) && !solidTile(tx, ty);
     const crowded = things.some(o => !o.gone && !o.creature && !o.flat && Math.hypot(o.x - spot.cx, o.y - (spot.cy + 6)) < 2.2 * TILE);
     c.blocked = !ground || crowded;
@@ -2168,6 +2183,30 @@ function placeCheck() {
   }
   c.ok = !c.far && !c.blocked;
   return c;
+}
+// what stops a block going onto an open tile: you or anything alive standing
+// in it, anything standing or lying there (trees, saplings, your things, a
+// pile on the ground, a mole hole), a doorway or a landmark (so nothing can be
+// bricked up for good), or a tree that's due to grow back there
+function blockClash(tx, ty) {
+  const x0 = tx * TILE, y0 = ty * TILE;
+  // (feet boxes like the one blocked() uses for you, a bit wider for creatures)
+  const feet = (x, y, r) => x + r > x0 && x - r < x0 + TILE && y > y0 && y - 4 < y0 + TILE;
+  if (feet(player.x, player.y, 5)) return true;
+  if (creatures.some(c => !c.room && !c.dead && !c.gone && feet(c.x, c.y, 8))) return true;
+  const cheb = (ax, ay) => Math.max(Math.abs(ax - tx), Math.abs(ay - ty)) <= 1;
+  if (BUILDINGS.some(b => b.tile && cheb(b.tile[0], b.tile[1])) || POIS.some(p => cheb(p.at[0], p.at[1]))) return true;
+  if (quest.treeGrow.some(e => WILD_TREES[e[0]] && WILD_TREES[e[0]].tx === tx && WILD_TREES[e[0]].ty === ty)) return true;
+  return things.some(o => {
+    if (o.gone || o.creature || !o.frames) return false;
+    // (flat things lie over the floor, so it's their whole picture that
+    // counts, the rest stand on the tile their feet are on)
+    if (o.flat) {
+      const w = o.frames[0].width, h = o.frames[0].height;
+      return o.x + w / 2 > x0 + 2 && o.x - w / 2 < x0 + TILE - 2 && o.y > y0 + 2 && o.y - h < y0 + TILE - 2;
+    }
+    return Math.abs(o.x - (x0 + 8)) < 12 && o.y > y0 && o.y <= y0 + TILE + 4;
+  });
 }
 // whether one of your things already stands on a tile (in the tent if r is
 // the tent, out in the world if it's null)
@@ -2198,6 +2237,26 @@ function plantSapling() {
   floatText('Planted', c.spot.cx, c.spot.cy - 10, '#9bf07a');
   sfx.pickup();
   afterInventoryChange();
+}
+// right click with a block: it goes on the open tile you're pointing at and
+// stays there (saved) until you mine it back up, which gives you the block
+function placeBlock() {
+  const c = placeCheck(), s = heldItem(), name = c.name;
+  if (c.no) { toast(...c.no); sfx.deny(); return; }
+  if (c.locked) { lockedToast(c.locked); return; }
+  if (c.far) { toast('Too far...', name, 'Put it down somewhere closer...'); return; }
+  if (c.blocked) { toast('No room...', name, c.solid ? 'There\'s already a block there.' : 'Something\'s in the way...'); sfx.deny(); return; }
+  const i = idx(c.tx, c.ty);
+  quest.blocks.push([i, s.id, tiles[i]]);
+  tiles[i] = c.it.block;
+  repaintAround(c.tx, c.ty);
+  paintMinimap();
+  s.n--;
+  if (!s.n) inv.slots[inv.sel] = null;
+  burst(c.spot.cx, c.spot.cy + 6, PAL[c.it.block].dots[0].match(/\w\w/g).map(h => parseInt(h, 16)).join(','), 5);
+  if (c.it.block === T.SNOWBLOCK) sfx.snow(); else sfx.place();
+  afterInventoryChange();
+  markDirty();
 }
 function stumpGreatTree() {
   greatTree.frames = [STUMP];
@@ -5466,6 +5525,9 @@ function targetAt(m) {
   const tx = Math.floor(m.x / TILE), ty = Math.floor(m.y / TILE);
   if (!inside(tx, ty)) return null;
   const tile = tiles[idx(tx, ty)];
+  // (one of your blocks: it mines like what it's made of, and comes back whole)
+  const pb = blockAt(idx(tx, ty));
+  if (pb) return { type: 'tile', tx, ty, key: `tile:${idx(tx, ty)}`, cx: tx * TILE + 8, cy: ty * TILE + 8, cls: tile === T.SNOWBLOCK ? 'snow' : STONE_TILES.has(tile) ? 'stone' : 'wood', block: pb };
   if (STONE_TILES.has(tile) || ORE_ITEM[tile] || tile === T.SNOWBLOCK) {
     const cls = tile === T.SNOWBLOCK ? 'snow' : ORE_ITEM[tile] ? 'ore' : 'stone';
     return { type: 'tile', tx, ty, key: `tile:${idx(tx, ty)}`, cx: tx * TILE + 8, cy: ty * TILE + 8, cls, ore: ORE_ITEM[tile] };
@@ -5495,8 +5557,10 @@ function mineInfo(tgt) {
   // the ore wolf's until you've beaten her: a wall like that brings its own
   // lock and its own hint)
   if (tgt.type === 'racetile' && (tgt.locked ? tgt.locked() : !raceWon())) return { time: Infinity, hint: ['Not now', tgt.ore ? ITEMS[tgt.ore].name : 'Stone', tgt.lockHint || 'Beat Darryl first.'] };
-  if (tgt.type === 'tree') {
-    if (!tgt.great && !quest.greatTree) return { time: Infinity };
+  if (tgt.type === 'tree' || (tgt.block && tgt.cls === 'wood')) {
+    // (a block of wood is chopped like a tree, and works before the great
+    // tree is down too, since you've already got the wood)
+    if (tgt.type === 'tree' && !tgt.great && !quest.greatTree) return { time: Infinity };
     const base = MINE_TIME.wood * (tgt.great ? 1.4 : 1);
     const time = it && it.tool === 'axe' ? base / it.speed
       : it && it.treeSpeed ? base / it.treeSpeed
@@ -5538,7 +5602,7 @@ function mineStep(tgt, dt) {
     if (mining && mining.thing) mining.thing.shake = 0;
     mining = { key: tgt.key, t: 0, thing: tgt.thing, tgt };
     if (!info.drops && noDropHintT <= 0) {
-      if (tgt.cls === 'stone') toast('Needs a pickaxe...', 'Stone', 'Without one it just crumbles to nothing.');
+      if (tgt.cls === 'stone') toast('Needs a pickaxe...', tgt.block ? ITEMS[tgt.block[1]].name : 'Stone', 'Without one it just crumbles to nothing.');
       else toast('Too hard...', ITEMS[tgt.ore].name, ORE_NEED[tgt.ore] >= 2
         ? 'Needs an iron pickaxe or better. This will crumble to nothing.'
         : 'Needs a stone, marble or gold pickaxe or better.');
@@ -5601,6 +5665,17 @@ function breakTarget(tgt, info) {
     }
   } else if (tgt.type === 'racetile') {
     (tgt.mine || raceMineTile)(tgt, info);
+  } else if (tgt.block) {
+    // one of yours: what was there before comes back, and so does the block
+    // (it's not counted as mined, so snow you put down doesn't grow back)
+    const e = tgt.block;
+    tiles[e[0]] = e[2];
+    quest.blocks = quest.blocks.filter(q => q !== e);
+    repaintAround(tgt.tx, tgt.ty);
+    paintMinimap();
+    burst(tgt.cx, tgt.cy, tgt.cls === 'snow' ? '240,244,252' : tgt.cls === 'wood' ? '160,102,58' : '140,140,140', 12);
+    if (info.drops) gain(e[1], 1, tgt.cx, tgt.cy - 8);
+    else floatText('Nothing dropped', tgt.cx, tgt.cy - 8, '#bdbdbd');
   } else {
     const i = idx(tgt.tx, tgt.ty);
     tiles[i] = baseOf(i);
@@ -5722,6 +5797,10 @@ function drawPlacing(c, toX, toY, t) {
   let x0 = c.tx * TILE, w = TILE, gx = c.spot.cx, gy = c.ty * TILE + 14, ghost;
   if (c.join) {
     x0 = Math.min(c.join.x, c.tx) * TILE; w = 2 * TILE; gx = x0 + TILE; ghost = GHOST.big;
+  } else if (c.what === 'block') {
+    // (a block fills its tile, so its ghost is the tile it'd become)
+    ghost = TEX[c.it.block][(hash2(c.tx, c.ty, SEED) * 4) | 0];
+    gy = c.ty * TILE + TILE;
   } else ghost = c.what === 'bed' ? GHOST.bed : c.what === 'sapling' ? SAPLING_SPRITE[c.it.sapling] : c.it.decor ? FURNITURE[c.id] : GHOST[c.it.station];
   const y0 = c.ty * TILE;
   ctx.fillStyle = `rgba(${rgb},${ok ? 0.16 : 0.2})`;
@@ -5761,6 +5840,7 @@ function useRight() {
   if (s && s.id === 'bed') { placeBed(); return; }
   if (s && ITEMS[s.id].station) { placeStation(); return; }
   if (s && ITEMS[s.id].sapling) { plantSapling(); return; }
+  if (s && ITEMS[s.id].block !== undefined) { placeBlock(); return; }
   if (s && ITEMS[s.id].ranged) { startBowDraw(); return; }
   if (s && ITEMS[s.id].tool === 'drill') { startDrill(); return; }
   if (s && ITEMS[s.id].armor) { wearFrom(`inv:${inv.sel}`); return; }
@@ -6424,6 +6504,7 @@ Object.assign(sfx, {
   hit:    () => { noiseBurst(0.08, 1800, 0.12); tone(140, 0.06, 'square', 0.03); },
   hurt:   () => { tone(220, 0.08, 'sawtooth', 0.05); tone(150, 0.12, 'sawtooth', 0.04, 0.06); },
   chip:   () => noiseBurst(0.04, 2600, 0.06),
+  place:  () => { noiseBurst(0.07, 700, 0.1); tone(120, 0.07, 'triangle', 0.04); },
   chew:   () => noiseBurst(0.05, 1100, 0.07),
   crunch: () => { noiseBurst(0.18, 900, 0.14); tone(90, 0.12, 'triangle', 0.05); },
   snap:   () => { noiseBurst(0.12, 3000, 0.14); tone(300, 0.1, 'square', 0.04); tone(180, 0.15, 'square', 0.04, 0.08); },
@@ -7364,7 +7445,11 @@ function playRenderOverlay(toX, toY, t) {
   // station, which right click would use)
   if (!ui && !player.dead && mouse.inCanvas && !mouse.touch) {
     const tgt = targetAt(mouseWorld());
-    const pc = !sleeping && !(tgt && (tgt.type === 'bed' || tgt.type === 'station')) ? placeCheck() : null;
+    let pc = !sleeping && !(tgt && (tgt.type === 'bed' || tgt.type === 'station')) ? placeCheck() : null;
+    // (with a block in hand, pointing at something you could mine shows that
+    // instead: there's nowhere to put a block on top of a block, and you're
+    // holding wood half the time you're chopping)
+    if (pc && pc.what === 'block' && tgt && ['tile', 'racetile', 'tree'].includes(tgt.type)) pc = null;
     if (pc) drawPlacing(pc, toX, toY, t);
     else if (tgt) {
       const ok = inReach(tgt) && (CLICK_ONLY.has(tgt.type) || mineInfo(tgt).time !== Infinity);

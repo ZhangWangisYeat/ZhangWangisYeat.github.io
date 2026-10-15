@@ -251,6 +251,18 @@ RECIPES.push({ out: 'chest', shape: ['WWW', 'W.W', 'WWW'], key: { W: WOOD } });
 // log, so oak only makes oak planks and a mixed pair makes nothing.
 [['wood', 'oak-planks'], ['spruce-wood', 'spruce-planks'], ['willow-wood', 'willow-planks']].forEach(([log, planks]) =>
   RECIPES.push({ out: planks, n: 4, shape: ['L', 'L'], key: { L: log }, exact: true }));
+// growing prismasteel (alex): a prismasteel in the middle of the whole 5x5,
+// diamonds all the way round the outside, and in the ring between them one of
+// each of the seven ores the ore wolf is made of plus a second diamond. it
+// gives two back, so one prismasteel becomes two. the inner ring can go in
+// any order (anyOrder), it's one of each and nobody should have to remember
+// where the marble goes. iron and gold are the ingots, like everywhere else.
+RECIPES.push({
+  out: 'prismasteel', n: 2,
+  shape: ['DDDDD', 'DGSMD', 'DIPRD', 'DEddD', 'DDDDD'],
+  key: { D: 'diamond', P: 'prismasteel', G: 'gold', S: 'stone', M: 'marble', I: 'iron', R: 'ruby', E: 'emerald', d: 'diamond' },
+  anyOrder: 'GSMIREd'
+});
 // four stone or four snowballs in a square pack into a block
 RECIPES.push({ out: 'stone-block', shape: ['SS', 'SS'], key: { S: 'stone' } });
 RECIPES.push({ out: 'snow-block', shape: ['SS', 'SS'], key: { S: 'snowball' } });
@@ -6004,7 +6016,10 @@ function furnaceStep(st, F, dt) {
 }
 
 // trim the grid down to the box that has items in it, then compare that box
-// against each recipe's shape (and its mirror image)
+// against each recipe's shape (and its mirror image). cells whose letter is in
+// the recipe's anyOrder can swap things between them, so those are only
+// checked once the rest fits: everything in them has to pair off with the
+// things those letters ask for.
 function matchRecipe() {
   let x0 = 5, y0 = 5, x1 = -1, y1 = -1;
   craftGrid.forEach((s, i) => {
@@ -6018,11 +6033,19 @@ function matchRecipe() {
     if (r.shape.length !== h || Math.max(...r.shape.map(row => row.length)) !== w) continue;
     for (const mirror of [false, true]) {
       let ok = true;
+      const loose = [], want = [];
       for (let y = 0; y < h && ok; y++) for (let x = 0; x < w && ok; x++) {
         const ch = r.shape[y][mirror ? w - 1 - x : x] || '.';
         const s = craftGrid[(y0 + y) * 5 + x0 + x];
+        if (ch !== '.' && r.anyOrder && r.anyOrder.includes(ch)) { ok = !!s; if (s) { loose.push(s.id); want.push(r.key[ch]); } continue; }
         ok = ch === '.' ? !s : !!s && keyFits(r, r.key[ch], s.id);
       }
+      if (ok && loose.length) ok = loose.every(id => {
+        const k = want.findIndex(key => keyFits(r, key, id));
+        if (k < 0) return false;
+        want.splice(k, 1);
+        return true;
+      });
       if (ok) return r;
     }
   }

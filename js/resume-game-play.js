@@ -72,6 +72,11 @@ const ITEMS = {
   chest:            { name: 'Chest', station: 'chest' },
   stick:         { name: 'Stick', fuel: 0.5 },
   stone:         { name: 'Stone' },
+  // blocks to build with (alex): loose stone and snowballs get packed into a
+  // block on the table first, four to a block, and then go down like wood
+  // does. ores never do, and a block you mine back up comes back whole.
+  'stone-block': { name: 'Stone Block', block: T.STONE },
+  'snow-block':  { name: 'Snow Block', block: T.SNOWBLOCK },
   marble:        { name: 'Marble' },
   hide:          { name: 'Hide' },
   iron:          { name: 'Iron Ingot' },
@@ -229,6 +234,11 @@ RECIPES.push({ out: 'stick', n: 4, shape: ['W'], key: { W: 'wood' } });
 RECIPES.push({ out: 'crafting-table', shape: ['WW', 'WW'], key: { W: 'wood' } });
 RECIPES.push({ out: 'furnace', shape: ['SSS', 'S.S', 'SSS'], key: { S: 'stone' } });
 RECIPES.push({ out: 'chest', shape: ['WWW', 'W.W', 'WWW'], key: { W: 'wood' } });
+// four stone or four snowballs in a square pack into a block. wood doesn't
+// need this because four wood in a square is already the crafting table, so
+// wood just goes down as it is.
+RECIPES.push({ out: 'stone-block', shape: ['SS', 'SS'], key: { S: 'stone' } });
+RECIPES.push({ out: 'snow-block', shape: ['SS', 'SS'], key: { S: 'snowball' } });
 // four arrows a craft (it was two, alex): the material on the tip, a stick, a feather
 TIER_ORDER.forEach(m => RECIPES.push({ out: `${m}-arrow`, n: 4, shape: ['M', 'S', 'F'], key: { M: m, S: 'stick', F: 'feather' } }));
 // pulling a bit of wool apart on the table gives string, and string on a
@@ -851,6 +861,10 @@ function makeIcon(id) {
       pxLine(G, 5, 8, 8, 11, '#8a6a2e');
       pxLine(G, 3, 13, 6, 10, '#6b4422', 2);
       break;
+    case 'stone-block':
+    case 'snow-block':
+      blockIcon(G, it.block);
+      break;
     case 'iron':
     case 'gold': {
       // an ingot: a little bar with a lit top face
@@ -886,6 +900,14 @@ function makeIcon(id) {
     lit.filter((_, i) => i % 3 === 0).slice(0, 4).forEach(([x, y]) => G.set(x, y, '#ffffff'));
   }
   return G.outline(() => '#141414').canvas();
+}
+// a block's icon is a square of its own tile texture (so it matches what
+// goes down exactly), lit along the top and with the bottom few rows shaded
+// as its front face, so it reads as a block and not a patch of floor
+function blockIcon(G, t) {
+  const d = TEX[t][0].getContext('2d').getImageData(0, 0, TILE, TILE).data;
+  const hex = (x, y, k) => '#' + [0, 1, 2].map(c => Math.min(255, Math.round(d[(y * TILE + x) * 4 + c] * k)).toString(16).padStart(2, '0')).join('');
+  for (let y = 2; y <= 13; y++) for (let x = 2; x <= 13; x++) G.set(x, y, hex(x, y, y === 2 ? 1.12 : y === 10 ? 0.6 : y > 10 ? 0.74 : 1));
 }
 // a sapling standing with its foot at (fx, fy): a thin stem and a few leaves
 // in its tree's colours. oak is a round green tuft, spruce a little dark

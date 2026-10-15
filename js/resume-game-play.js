@@ -253,15 +253,17 @@ RECIPES.push({ out: 'chest', shape: ['WWW', 'W.W', 'WWW'], key: { W: WOOD } });
   RECIPES.push({ out: planks, n: 4, shape: ['L', 'L'], key: { L: log }, exact: true }));
 // growing prismasteel (alex): a prismasteel in the middle of the whole 5x5,
 // diamonds all the way round the outside, and in the ring between them one of
-// each of the seven ores the ore wolf is made of plus a second diamond. it
-// gives two back, so one prismasteel becomes two. the inner ring can go in
-// any order (anyOrder), it's one of each and nobody should have to remember
-// where the marble goes. iron and gold are the ingots, like everywhere else.
+// each of the seven ores the ore wolf is made of plus a second diamond. the
+// two inner diamonds sit right beside the prismasteel, one on each side (so
+// the middle row is all diamond but the prismasteel), and the other six go in
+// the rest of the ring in any order (anyOrder), since it's one of each and
+// nobody should have to remember where the marble goes. iron and gold are the
+// ingots, like everywhere else. it gives two back, so one becomes two.
 RECIPES.push({
   out: 'prismasteel', n: 2,
-  shape: ['DDDDD', 'DGSMD', 'DIPRD', 'DEddD', 'DDDDD'],
-  key: { D: 'diamond', P: 'prismasteel', G: 'gold', S: 'stone', M: 'marble', I: 'iron', R: 'ruby', E: 'emerald', d: 'diamond' },
-  anyOrder: 'GSMIREd'
+  shape: ['DDDDD', 'DGSMD', 'DDPDD', 'DIRED', 'DDDDD'],
+  key: { D: 'diamond', P: 'prismasteel', G: 'gold', S: 'stone', M: 'marble', I: 'iron', R: 'ruby', E: 'emerald' },
+  anyOrder: 'GSMIRE'
 });
 // four stone or four snowballs in a square pack into a block
 RECIPES.push({ out: 'stone-block', shape: ['SS', 'SS'], key: { S: 'stone' } });

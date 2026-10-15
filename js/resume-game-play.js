@@ -61,9 +61,9 @@ const ITEMS = {
   // each wood its own planks, and the planks are what goes down as a block
   // (block is the tile it becomes, see placeBlock). four planks burn as long
   // as the two logs they came from.
-  'oak-planks':    { name: 'Oak Planks', fuel: 1, block: T.OAKPLANKS },
-  'spruce-planks': { name: 'Spruce Planks', fuel: 1, block: T.SPRUCEPLANKS },
-  'willow-planks': { name: 'Willow Planks', fuel: 1, block: T.WILLOWPLANKS },
+  'oak-planks':    { name: 'Oak Planks', fuel: 1, planks: true, block: T.OAKPLANKS },
+  'spruce-planks': { name: 'Spruce Planks', fuel: 1, planks: true, block: T.SPRUCEPLANKS },
+  'willow-planks': { name: 'Willow Planks', fuel: 1, planks: true, block: T.WILLOWPLANKS },
   // saplings fall off trees when they come down. plant one (right click the
   // ground) and it grows into that kind of tree (see SAPLING_GROW)
   'oak-sapling':    { name: 'Oak Sapling', sapling: 'tree' },
@@ -214,10 +214,15 @@ const ORE_NEED = { 'iron-ore': 1, 'gold-ore': 2, ruby: 2, emerald: 2, diamond: 2
 const STONE_TILES = new Set([T.STONE, T.PEAK, T.WALL, T.ICEROCK]);
 
 // shapes inside the 5x5 table. a shape can sit anywhere in the grid and can be
-// mirrored left to right, like minecraft. "." is an empty cell.
+// mirrored left to right, like minecraft. "." is an empty cell. everything
+// made of wood takes planks (alex), any kind, and only the planks themselves
+// are made from logs. (WOOD is the key for that, so the wooden tools and
+// arrows ask for planks and not for the oak log whose id is 'wood'.)
 const RECIPES = [];
+const WOOD = 'planks';
+const matKey = m => (m === 'wood' ? WOOD : m);
 TIER_ORDER.forEach(m => {
-  const key = { M: m, S: 'stick' };
+  const key = { M: matKey(m), S: 'stick' };
   RECIPES.push(
     { out: `${m}-sword`, shape: ['M', 'M', 'S'], key },
     { out: `${m}-pickaxe`, shape: ['MMM', '.S.', '.S.'], key },
@@ -232,30 +237,33 @@ Object.keys(ARMORS).forEach(m => Object.entries(ARMOR_SHAPES).forEach(([piece, s
 // either side of it
 ['sword', 'pickaxe', 'axe', ...ARMOR_SLOTS.map(a => a.piece)].forEach(k =>
   RECIPES.push({ out: `prismasteel-${k}`, shape: ['PXP'], key: { P: 'prismasteel', X: `diamond-${k}` } }));
-RECIPES.push({ out: 'bed', shape: ['WWW', 'PPP'], key: { W: 'wool', P: 'wood' } });
-RECIPES.push({ out: 'stick', n: 4, shape: ['W'], key: { W: 'wood' } });
-// the stations, the way minecraft makes them: four wood in a square for a
-// table, a ring of stone for a furnace, a ring of wood for a chest
-RECIPES.push({ out: 'crafting-table', shape: ['WW', 'WW'], key: { W: 'wood' } });
+RECIPES.push({ out: 'bed', shape: ['WWW', 'PPP'], key: { W: 'wool', P: WOOD } });
+// two planks stacked make four sticks like minecraft, so two logs still come
+// to eight sticks, the same as when one log was four
+RECIPES.push({ out: 'stick', n: 4, shape: ['P', 'P'], key: { P: WOOD } });
+// the stations, the way minecraft makes them: four planks in a square for a
+// table, a ring of stone for a furnace, a ring of planks for a chest
+RECIPES.push({ out: 'crafting-table', shape: ['WW', 'WW'], key: { W: WOOD } });
 RECIPES.push({ out: 'furnace', shape: ['SSS', 'S.S', 'SSS'], key: { S: 'stone' } });
-RECIPES.push({ out: 'chest', shape: ['WWW', 'W.W', 'WWW'], key: { W: 'wood' } });
+RECIPES.push({ out: 'chest', shape: ['WWW', 'W.W', 'WWW'], key: { W: WOOD } });
 // two logs of one kind, one on top of the other, saw into four of its planks.
-// it's two and not one because a single log is already four sticks. the key
-// is the exact log, so oak only makes oak planks and a mixed pair makes nothing.
+// (it was two because one log used to be four sticks.) the key is the exact
+// log, so oak only makes oak planks and a mixed pair makes nothing.
 [['wood', 'oak-planks'], ['spruce-wood', 'spruce-planks'], ['willow-wood', 'willow-planks']].forEach(([log, planks]) =>
   RECIPES.push({ out: planks, n: 4, shape: ['L', 'L'], key: { L: log }, exact: true }));
 // four stone or four snowballs in a square pack into a block
 RECIPES.push({ out: 'stone-block', shape: ['SS', 'SS'], key: { S: 'stone' } });
 RECIPES.push({ out: 'snow-block', shape: ['SS', 'SS'], key: { S: 'snowball' } });
 // four arrows a craft (it was two, alex): the material on the tip, a stick, a feather
-TIER_ORDER.forEach(m => RECIPES.push({ out: `${m}-arrow`, n: 4, shape: ['M', 'S', 'F'], key: { M: m, S: 'stick', F: 'feather' } }));
+TIER_ORDER.forEach(m => RECIPES.push({ out: `${m}-arrow`, n: 4, shape: ['M', 'S', 'F'], key: { M: matKey(m), S: 'stick', F: 'feather' } }));
 // pulling a bit of wool apart on the table gives string, and string on a
-// curve of wood makes the bow
+// curve of planks makes the bow
 RECIPES.push({ out: 'string', n: 3, shape: ['W'], key: { W: 'wool' } });
-RECIPES.push({ out: 'bow', shape: ['.WS', 'W.S', '.WS'], key: { W: 'wood', S: 'string' } });
+RECIPES.push({ out: 'bow', shape: ['.WS', 'W.S', '.WS'], key: { W: WOOD, S: 'string' } });
 RECIPES.forEach(r => { r.n = r.n || 1; r.mats = [...new Set(Object.values(r.key))]; });
-// whether an item can go where a recipe asks for key ('wood' takes any wood)
-const fitsKey = (key, id) => key === id || (key === 'wood' && !!ITEMS[id] && !!ITEMS[id].wood);
+// whether an item can go where a recipe asks for key ('wood' takes any log,
+// 'planks' any planks)
+const fitsKey = (key, id) => key === id || (key === 'wood' && !!ITEMS[id] && !!ITEMS[id].wood) || (key === 'planks' && !!ITEMS[id] && !!ITEMS[id].planks);
 // (except in an exact recipe, where 'wood' only means the oak log whose id it
 // is, or two spruce logs would come out as oak planks)
 const keyFits = (r, key, id) => (r.exact ? key === id : fitsKey(key, id));
@@ -982,6 +990,8 @@ Object.entries(FURNITURE).forEach(([id, art]) => {
   ICON_CANVAS[id] = c;
 });
 const ICON = Object.fromEntries(Object.entries(ICON_CANVAS).map(([id, c]) => [id, c.toDataURL()]));
+// (any planks shows as oak in the recipe book)
+ICON.planks = ICON['oak-planks'];
 // the rainbow flows through prismasteel (alex): its colours keep running up
 // the thing from the hilt (or the handle) to the tip. its icon is already a
 // rainbow laid out along it, so turning every colour's hue back a little at a
@@ -6049,7 +6059,7 @@ function fillRecipe(r) {
   craftGrid.forEach((s, i) => { if (s) { craftGrid[i] = null; addStack(s); } });
   const missing = Object.entries(recipeNeeds(r)).filter(([id, n]) => countMat(id, r.exact) < n);
   if (missing.length) {
-    hint(`Missing ${missing.map(([id, n]) => `${n - countMat(id, r.exact)} ${id === 'wood' && !r.exact ? 'Wood' : ITEMS[id].name}`).join(', ')}`);
+    hint(`Missing ${missing.map(([id, n]) => `${n - countMat(id, r.exact)} ${id === 'wood' && !r.exact ? 'Wood' : id === 'planks' ? 'Planks' : ITEMS[id].name}`).join(', ')}`);
     sfx.deny();
     renderUI();
     return;
@@ -6068,8 +6078,8 @@ function fillRecipe(r) {
 function countItem(id) { return inv.slots.reduce((n, s) => n + (s && s.id === id ? s.n : 0), 0); }
 function countMat(key, exact) { return inv.slots.reduce((n, s) => n + (s && (exact ? s.id === key : fitsKey(key, s.id)) ? s.n : 0), 0); }
 function matFor(key, exact) {
-  if (key !== 'wood' || exact) return key;
-  return Object.keys(ITEMS).filter(id => ITEMS[id].wood).sort((a, b) => countItem(b) - countItem(a))[0];
+  if ((key !== 'wood' && key !== 'planks') || exact) return key;
+  return Object.keys(ITEMS).filter(id => ITEMS[id][key]).sort((a, b) => countItem(b) - countItem(a))[0];
 }
 function takeItem(id, n) {
   for (let i = inv.slots.length - 1; i >= 0 && n > 0; i--) {
